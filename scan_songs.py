@@ -321,6 +321,42 @@ def escanear_carpeta_audio(progress_callback=None):
     print(f"📁 Carpeta de letras: {carpeta_lyrics}")
     print("-" * 60)
     
+    # -------------------------------------------------------------
+    # Limpieza primero: borrar de la BD lo que ya no existe físicamente
+    # -------------------------------------------------------------
+    emit_progress({
+        'stage': 'processing',
+        'message': 'Buscando y eliminando canciones huérfanas...',
+        'percent': 0
+    })
+    print("🧹 Buscando canciones huérfanas en BD...")
+    canciones_db = Cancion.query.all()
+    huerfanas = 0
+    for cancion in canciones_db:
+        if not os.path.exists(cancion.ruta_archivo_audio):
+            print(f"  🗑 Eliminando de BD (no encontrada en disco): {cancion.ruta_archivo_audio}")
+            db.session.delete(cancion)
+            huerfanas += 1
+    
+    if huerfanas > 0:
+        db.session.commit()
+        print(f"✅ Se eliminaron {huerfanas} canciones huérfanas de la base de datos.")
+        
+        # Limpiar álbumes vacíos
+        albumes_db = Album.query.all()
+        for alb in albumes_db:
+            if not alb.canciones:
+                db.session.delete(alb)
+                
+        # Limpiar artistas vacíos
+        artistas_db = Artista.query.all()
+        for art in artistas_db:
+            if not art.canciones and not art.albums:
+                db.session.delete(art)
+                
+        db.session.commit()
+        print("✅ Se limpiaron álbumes y artistas vacíos en la base de datos.")
+
     archivos_encontrados = []
     
     # Escanear archivos de audio recursivamente en todas las subcarpetas

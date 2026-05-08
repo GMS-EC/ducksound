@@ -139,6 +139,29 @@ def admin_clean_metadata():
                         _scan_tasks[task_id].update(data)
             
             try:
+                import os
+                from models import Cancion
+                emit({'message': 'Eliminando canciones huérfanas...', 'percent': 5})
+                canciones = Cancion.query.all()
+                eliminadas = 0
+                for c in canciones:
+                    if not os.path.exists(c.ruta_archivo_audio):
+                        db.session.delete(c)
+                        eliminadas += 1
+                if eliminadas > 0:
+                    db.session.commit()
+                    # Limpiar álbumes vacíos
+                    albumes_all = Album.query.all()
+                    for a in albumes_all:
+                        if not a.canciones:
+                            db.session.delete(a)
+                    # Limpiar artistas vacíos
+                    artistas_all = Artista.query.all()
+                    for a in artistas_all:
+                        if not a.canciones and not a.albums:
+                            db.session.delete(a)
+                    db.session.commit()
+
                 emit({'message': 'Buscando artistas para agrupar...', 'percent': 10})
                 artistas = Artista.query.all()
                 total = len(artistas)
