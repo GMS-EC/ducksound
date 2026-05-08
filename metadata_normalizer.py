@@ -22,7 +22,9 @@ VERSION_PATTERNS = [
 # Palabras a limpiar al final de nombres de artistas/álbumes
 CLEANUP_WORDS = [
     r'(?i)\s*[-–—]+\s*(the original|original motion picture soundtrack|ost|soundtrack)\s*$',
-    r'(?i)\s*[-–—]+\s*(feat\.|ft\.)\s*.*$',
+    r'(?i)\s*[-–—]+\s*(feat\.|ft\.|featuring)\s*.*$',
+    r'(?i)\s*[\(\[]\s*(feat\.|ft\.|featuring).*?[\)\]]',  # Remove (feat. Person) completely anywhere
+    r'(?i)\s*(feat\.|ft\.|featuring)\s+.*$',              # Remove feat. Person at the end
     r'(?i)\s*[\[\(].*?remaster(ed)?.*?[\]\)]\s*$',
     r'(?i)\s*[\[\(].*?deluxe.*?[\]\)]\s*$',
     r'^\s+|\s+$',
@@ -77,12 +79,16 @@ def normalizar_artista(nombre):
         r'(?i)\s+ft\.?\s+', 
         r'(?i)\s+featuring\s+', 
         r'\s*/\s*',
-        r'\s*,\s*(?=(?:feat|ft)\.?\s)',
+        r'\s*,\s+',             # Split by any comma to take the first artist
+        r'\s+x\s+(?=[A-Z])',    # Sometimes 'x' is used as separator (e.g. Artist x Artist)
     ]
     for sep in separators:
         partes = re.split(sep, n)
         if len(partes) > 1:
             n = partes[0].strip()
+            
+    # Casos ultra-específicos que suelen repetirse:
+    n = re.sub(r'(?i)\s+B\.C\.$', '', n)  # Ghost B.C. -> Ghost
             
     return n
 
