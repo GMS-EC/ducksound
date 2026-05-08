@@ -198,7 +198,7 @@ def admin_panel():
 
     # Parsear CHANGELOG.md para mostrarlo en el admin
     import re as _re
-    changelog_path = os.path.join(os.path.dirname(__file__), 'CHANGELOG.md')
+    changelog_path = os.path.join(current_app.root_path, 'CHANGELOG.md')
     versions = []
     try:
         with open(changelog_path, 'r', encoding='utf-8') as f:
