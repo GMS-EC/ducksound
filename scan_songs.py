@@ -122,7 +122,7 @@ def _extraer_metadatos_mutagen_legacy(ruta_archivo):
             artista_b = metadatos.get('artista', '')
             album_b = metadatos.get('album', '')
             if titulo_b and artista_b:
-                print(f"  🔍 Buscando portada en internet para: {titulo_b}")
+                print(f"  Buscando portada en internet para: {titulo_b}")
                 cover_url = fetch_cover_from_itunes(artista_b, album_b, titulo_b)
                 if cover_url:
                     ruta_img = descargar_y_guardar_portada(cover_url, ruta_archivo)
@@ -192,7 +192,7 @@ def extraer_metadatos(ruta_archivo):
                     metadatos['genero'] = analisis['genero']
                 metadatos['audio_analysis'] = analisis
         except Exception as e:
-            print(f"  âš  Error en anÃ¡lisis de audio: {e}")
+            print(f"  ⚠ Error en análisis de audio: {e}")
 
         try:
             audio_file = File(ruta_archivo)
@@ -206,24 +206,24 @@ def extraer_metadatos(ruta_archivo):
                 elif getattr(audio_file, 'pictures', None):
                     metadatos['ruta_imagen'] = guardar_imagen_album(audio_file.pictures[0], ruta_archivo)
         except Exception as e:
-            print(f"  âš  Error al extraer portada embebida: {e}")
+            print(f"  ⚠ Error al extraer portada embebida: {e}")
 
         if not metadatos.get('ruta_imagen'):
             titulo_b = metadatos.get('titulo') or Path(ruta_archivo).stem
             artista_b = metadatos.get('albumartist') or metadatos.get('artista') or ''
             album_b = metadatos.get('album') or ''
             if titulo_b and artista_b:
-                print(f"  ðŸ” Buscando portada en internet para: {titulo_b}")
+                print(f"  Buscando portada en internet para: {titulo_b}")
                 cover_url = fetch_cover_from_itunes(artista_b, album_b, titulo_b)
                 if cover_url:
                     ruta_img = descargar_y_guardar_portada(cover_url, ruta_archivo)
                     if ruta_img:
                         metadatos['ruta_imagen'] = ruta_img
-                        print(f"  âœ… Portada descargada desde internet.")
+                        print(f"  ✅ Portada descargada desde internet.")
 
         return metadatos
     except Exception as e:
-        print(f"  âš  Error al leer metadatos: {e}")
+        print(f"  ⚠ Error al leer metadatos: {e}")
         return None
 
 
@@ -243,9 +243,9 @@ def obtener_o_crear_artista(nombre, enriquecer=True):
     if enriquecer:
         try:
             enrich_artist(artista_obj, commit=False)
-            print(f"  ðŸŒ Metadatos automÃ¡ticos obtenidos para: {nombre_norm or nombre}")
+            print(f"  Metadatos automáticos obtenidos para: {nombre_norm or nombre}")
         except Exception as e:
-            print(f"  âš  No se pudieron obtener metadatos automÃ¡ticos: {e}")
+            print(f"  ⚠ No se pudieron obtener metadatos automáticos: {e}")
 
     return artista_obj
 
@@ -272,6 +272,127 @@ def obtener_o_crear_album(album, albumartist):
     db.session.add(album_obj)
     db.session.flush()
     return album_obj
+
+
+def limpiar_entidades_vacias():
+    albumes_eliminados = 0
+    artistas_eliminados = 0
+
+    for album in Album.query.all():
+        if not album.canciones:
+            db.session.delete(album)
+            albumes_eliminados += 1
+
+    db.session.flush()
+
+    for artista in Artista.query.all():
+        if not artista.canciones and not artista.albums:
+            db.session.delete(artista)
+            artistas_eliminados += 1
+
+    return albumes_eliminados, artistas_eliminados
+
+
+def normalizar_biblioteca(progress_callback=None, percent_start=90, percent_end=99):
+    """Unifica artistas y albumes duplicados usando las reglas normalizadas actuales."""
+    def emit(payload):
+        if not progress_callback:
+            return
+        try:
+            progress_callback(payload)
+        except Exception:
+            pass
+
+    resumen = {
+        'artistas_renombrados': 0,
+        'artistas_fusionados': 0,
+        'albumes_renombrados': 0,
+        'albumes_fusionados': 0,
+        'albumes_eliminados': 0,
+        'artistas_eliminados': 0,
+    }
+
+    emit({'stage': 'normalizing', 'message': 'Normalizando artistas...', 'percent': percent_start})
+    artistas = Artista.query.order_by(Artista.id).all()
+    total_artistas = max(len(artistas), 1)
+    mid_percent = percent_start + int((percent_end - percent_start) * 0.45)
+
+    for idx, artista in enumerate(artistas, start=1):
+        nombre_norm = normalizar_artista(artista.nombre)
+        emit({
+            'stage': 'normalizing',
+            'message': f'Normalizando artista: {artista.nombre}',
+            'processed': idx,
+            'total': len(artistas),
+            'percent': percent_start + int((idx / total_artistas) * max(mid_percent - percent_start, 1)),
+        })
+
+        if not nombre_norm:
+            continue
+
+        artista_existente = Artista.query.filter(
+            Artista.nombre == nombre_norm,
+            Artista.id != artista.id
+        ).order_by(Artista.id).first()
+
+        if artista_existente:
+            destino = artista_existente if artista_existente.id < artista.id else artista
+            origen = artista if destino.id == artista_existente.id else artista_existente
+            for cancion in list(origen.canciones):
+                cancion.artista_id = destino.id
+            for album in list(origen.albums):
+                album.artista_id = destino.id
+            db.session.delete(origen)
+            resumen['artistas_fusionados'] += 1
+        elif nombre_norm != artista.nombre:
+            artista.nombre = nombre_norm
+            resumen['artistas_renombrados'] += 1
+
+    db.session.flush()
+
+    emit({'stage': 'normalizing', 'message': 'Normalizando albumes...', 'percent': mid_percent})
+    artistas = Artista.query.order_by(Artista.id).all()
+    total_albumes = max(Album.query.count(), 1)
+    albumes_vistos = 0
+
+    for artista in artistas:
+        albumes_artista = Album.query.filter_by(artista_id=artista.id).order_by(Album.id).all()
+        albumes_base = []
+
+        for album in albumes_artista:
+            albumes_vistos += 1
+            titulo_norm = normalizar_album(album.titulo)
+            emit({
+                'stage': 'normalizing',
+                'message': f'Normalizando album: {album.titulo}',
+                'processed': albumes_vistos,
+                'total': total_albumes,
+                'percent': mid_percent + int((albumes_vistos / total_albumes) * max(percent_end - mid_percent, 1)),
+            })
+
+            if titulo_norm and titulo_norm != album.titulo:
+                album.titulo = titulo_norm
+                resumen['albumes_renombrados'] += 1
+
+            album_existente = obtener_album_base_fuzz(titulo_norm or album.titulo, albumes_base)
+            if album_existente and album_existente.id != album.id:
+                for cancion in list(album.canciones):
+                    cancion.album_id = album_existente.id
+                if not album_existente.portada_url and album.portada_url:
+                    album_existente.portada_url = album.portada_url
+                if not album_existente.anio and album.anio:
+                    album_existente.anio = album.anio
+                db.session.delete(album)
+                resumen['albumes_fusionados'] += 1
+            else:
+                albumes_base.append(album)
+
+    eliminados = limpiar_entidades_vacias()
+    resumen['albumes_eliminados'], resumen['artistas_eliminados'] = eliminados
+    db.session.commit()
+
+    emit({'stage': 'normalizing', 'message': 'Normalizacion de metadatos finalizada', 'percent': percent_end})
+    return resumen
 
 
 def guardar_imagen_album(picture, ruta_audio):
@@ -390,7 +511,7 @@ def descargar_letra_lrc(cancion: str, artista: str, ruta_archivo: str):
     """
     Busca y descarga una letra sincronizada usando la API pública de LRCLIB.
     """
-    print(f"  🔍 Buscando letra: '{cancion}' de '{artista}'...")
+    print(f"  Buscando letra: '{cancion}' de '{artista}'...")
 
     # Preparamos la URL para la API
     base_url = "https://lrclib.net/api/search"
@@ -406,7 +527,7 @@ def descargar_letra_lrc(cancion: str, artista: str, ruta_archivo: str):
 
         # Comprobar si encontramos resultados
         if not datos:
-            print(f"  ❌ No se encontró la canción en la base de datos.")
+            print("  No se encontro la cancion en la base de datos.")
             return False
 
         # Tomamos el primer resultado que tenga letra sincronizada (syncedLyrics)
@@ -417,7 +538,7 @@ def descargar_letra_lrc(cancion: str, artista: str, ruta_archivo: str):
                 break
 
         if not resultado_ideal:
-            print(f"  ❌ Se encontró la canción, pero no tiene letra sincronizada.")
+            print("  Se encontro la cancion, pero no tiene letra sincronizada.")
             return False
 
         letra_sincronizada = resultado_ideal['syncedLyrics']
@@ -430,7 +551,7 @@ def descargar_letra_lrc(cancion: str, artista: str, ruta_archivo: str):
         return True
 
     except requests.exceptions.RequestException as e:
-        print(f"  ❌ Error al conectar con la API: {e}")
+        print(f"  Error al conectar con la API: {e}")
         return False
 
 def escanear_carpeta_audio(progress_callback=None):
@@ -453,12 +574,12 @@ def escanear_carpeta_audio(progress_callback=None):
     carpeta_lyrics = Config.LYRICS_FOLDER
     
     if not carpeta_audio.exists():
-        print(f"❌ La carpeta de audio no existe: {carpeta_audio}")
+        print(f"La carpeta de audio no existe: {carpeta_audio}")
         emit_progress({'stage': 'error', 'message': f'La carpeta de audio no existe: {carpeta_audio}', 'percent': 100})
         return {'agregadas': 0, 'actualizadas': 0, 'omitidas': 0, 'procesadas': 0, 'error': 'carpeta_audio_no_existe'}
     
-    print(f"📁 Carpeta de audio: {carpeta_audio}")
-    print(f"📁 Carpeta de letras: {carpeta_lyrics}")
+    print(f"Carpeta de audio: {carpeta_audio}")
+    print(f"Carpeta de letras: {carpeta_lyrics}")
     print("-" * 60)
     
     # -------------------------------------------------------------
@@ -505,7 +626,7 @@ def escanear_carpeta_audio(progress_callback=None):
             archivos_encontrados.append(archivo)
     
     if not archivos_encontrados:
-        print("❌ No se encontraron archivos de audio en la carpeta.")
+        print("No se encontraron archivos de audio en la carpeta.")
         emit_progress({'stage': 'done', 'message': 'No se encontraron archivos de audio.', 'percent': 100, 'processed': 0, 'total': 0})
         return {'agregadas': 0, 'actualizadas': 0, 'omitidas': 0, 'procesadas': 0}
     
@@ -537,13 +658,13 @@ def escanear_carpeta_audio(progress_callback=None):
             'total': total_archivos,
             'percent': int(((idx - 1) / total_archivos) * 100)
         })
-        print(f"\n📝 Procesando: {archivo.name}")
+        print(f"\nProcesando: {archivo.name}")
 
         # Verificar si ya existe en la base de datos por ruta exacta
         cancion_existente = Cancion.query.filter_by(ruta_archivo_audio=str(archivo)).first()
 
         if cancion_existente:
-            print(f"  ⏭ Ya existe en la base de datos (ID: {cancion_existente.id})")
+            print(f"  Ya existe en la base de datos (ID: {cancion_existente.id})")
             canciones_omitidas += 1
             emit_progress({
                 'stage': 'file_done',
@@ -602,7 +723,7 @@ def escanear_carpeta_audio(progress_callback=None):
             print(f"  📋 Metadatos encontrados:")
             print(f"     Título: {titulo}")
             print(f"     Artista: {artista}")
-            print(f"     Álbum: {album}")
+            print(f"     Album: {album}")
             print(f"     Duración: {duracion}s")
         else:
             # Usar nombre del archivo como fallback
@@ -621,10 +742,10 @@ def escanear_carpeta_audio(progress_callback=None):
             if artista_carpeta and not artista:
                 artista = artista_carpeta
                 albumartist = albumartist or artista_carpeta
-                print(f"  📁 Artista inferido desde carpeta: {artista}")
+                print(f"  Artista inferido desde carpeta: {artista}")
             if album_carpeta and not album:
                 album = album_carpeta
-                print(f"  📁 Álbum inferido desde carpeta: {album}")
+                print(f"  Album inferido desde carpeta: {album}")
 
         albumartist = albumartist or artista
 
@@ -639,7 +760,7 @@ def escanear_carpeta_audio(progress_callback=None):
             # Auto-enriquecer metadatos del nuevo artista desde APIs públicas
             try:
                 enrich_artist(artista_obj, commit=False)
-                print(f"  🌐 Metadatos automáticos obtenidos para: {artista_norm or artista}")
+                print(f"  Metadatos automaticos obtenidos para: {artista_norm or artista}")
             except Exception as e:
                 print(f"  ⚠ No se pudieron obtener metadatos automáticos: {e}")
 
@@ -710,10 +831,15 @@ def escanear_carpeta_audio(progress_callback=None):
 
     # Guardar cambios fuera del bucle
     db.session.commit()
+    resumen_norm = normalizar_biblioteca(
+        progress_callback=progress_callback,
+        percent_start=94,
+        percent_end=98,
+    )
 
     # Auto-enriquecer metadatos de artistas y álbumes
     print("\n" + "=" * 60)
-    print("🌐 ENRIQUECIENDO METADATOS...")
+    print("ENRIQUECIENDO METADATOS...")
     print("=" * 60)
 
     # Notificar al frontend que comenzó la fase de enriquecimiento
@@ -734,7 +860,7 @@ def escanear_carpeta_audio(progress_callback=None):
     try:
         res_meta = enrich_all(commit=True)
         print(f"   Artistas enriquecidos: {res_meta['artistas'][0]}/{res_meta['artistas'][1]}")
-        print(f"   Álbumes enriquecidos:  {res_meta['albumes'][0]}/{res_meta['albumes'][1]}")
+        print(f"   Albumes enriquecidos:  {res_meta['albumes'][0]}/{res_meta['albumes'][1]}")
     except Exception as e:
         print(f"   ⚠ Error al enriquecer metadatos: {e}")
         res_meta = {'artistas': (0, 0), 'albumes': (0, 0)}
@@ -744,11 +870,11 @@ def escanear_carpeta_audio(progress_callback=None):
     print("=" * 60)
     print(f"✅ Canciones agregadas: {canciones_agregadas}")
     print(f"🔄 Canciones actualizadas: {canciones_actualizadas}")
-    print(f"⏭ Canciones omitidas (ya existían): {canciones_omitidas}")
-    print(f"📁 Total procesadas: {len(archivos_encontrados)}")
+    print(f"Canciones omitidas (ya existian): {canciones_omitidas}")
+    print(f"Total procesadas: {len(archivos_encontrados)}")
     if res_meta['artistas'][0] > 0 or res_meta['albumes'][0] > 0:
-        print(f"🌐 Metadatos enriquecidos:")
-        print(f"   Artistas: {res_meta['artistas'][0]} · Álbumes: {res_meta['albumes'][0]}")
+        print("Metadatos enriquecidos:")
+        print(f"   Artistas: {res_meta['artistas'][0]} - Albumes: {res_meta['albumes'][0]}")
     print("=" * 60)
 
     # Devolver resumen para uso por llamadas programáticas (ej. ruta web)
@@ -765,6 +891,7 @@ def escanear_carpeta_audio(progress_callback=None):
         'procesadas': len(archivos_encontrados),
         'meta_artistas': meta_artistas,
         'meta_albumes': meta_albumes,
+        'normalizacion': resumen_norm,
     }
     emit_progress({
         'stage': 'done',
@@ -793,7 +920,7 @@ def escaneo_rapido(progress_callback=None):
             pass
 
     print("=" * 60)
-    print("⚡ ESCANEO RÁPIDO (INCREMENTAL)")
+    print("ESCANEO RAPIDO (INCREMENTAL)")
     print("=" * 60)
 
     carpeta_audio = Config.AUDIO_FOLDER
@@ -826,7 +953,7 @@ def escaneo_rapido(progress_callback=None):
     canciones_eliminadas = 0
     errores = 0
 
-    # 4. Marcar canciones eliminadas (no las borramos de BD para no perder historial)
+    # 4. Eliminar de la biblioteca las canciones cuyos archivos ya no existen.
     if archivos_eliminados:
         emit_progress({
             'stage': 'processing',
@@ -836,25 +963,31 @@ def escaneo_rapido(progress_callback=None):
         for ruta_eliminada in archivos_eliminados:
             cancion = Cancion.query.filter_by(ruta_archivo_audio=ruta_eliminada).first()
             if cancion:
-                # Marcamos con un prefijo para indicar que el archivo ya no existe
-                if not cancion.ruta_archivo_audio.startswith('[ELIMINADO]'):
-                    cancion.ruta_archivo_audio = '[ELIMINADO] ' + cancion.ruta_archivo_audio
-                    db.session.add(cancion)
-                    canciones_eliminadas += 1
-                    print(f"  🗑 Marcada como eliminada: {Path(ruta_eliminada).name}")
+                db.session.delete(cancion)
+                canciones_eliminadas += 1
+                print(f"  Eliminada de BD: {Path(ruta_eliminada).name}")
+        db.session.commit()
+        limpiar_entidades_vacias()
         db.session.commit()
 
     if not archivos_nuevos:
+        resumen_norm = normalizar_biblioteca(
+            progress_callback=progress_callback,
+            percent_start=90,
+            percent_end=99,
+        )
         emit_progress({
             'stage': 'done',
             'message': f'Sin cambios — biblioteca al día. ({canciones_eliminadas} eliminadas)',
             'percent': 100, 'processed': 0, 'total': 0,
-            'summary': {'agregadas': 0, 'actualizadas': 0, 'omitidas': len(rutas_bd),
+            'summary': {'agregadas': 0, 'actualizadas': 0, 'omitidas': len(rutas_bd) - canciones_eliminadas,
                         'procesadas': 0, 'eliminadas': canciones_eliminadas,
-                        'meta_artistas': 0, 'meta_albumes': 0}
+                        'meta_artistas': 0, 'meta_albumes': 0,
+                        'normalizacion': resumen_norm}
         })
-        return {'agregadas': 0, 'actualizadas': 0, 'omitidas': len(rutas_bd),
-                'procesadas': 0, 'eliminadas': canciones_eliminadas, 'meta_artistas': 0, 'meta_albumes': 0}
+        return {'agregadas': 0, 'actualizadas': 0, 'omitidas': len(rutas_bd) - canciones_eliminadas,
+                'procesadas': 0, 'eliminadas': canciones_eliminadas, 'meta_artistas': 0, 'meta_albumes': 0,
+                'normalizacion': resumen_norm}
 
     # 5. Procesar solo los archivos nuevos (misma lógica que el escaneo completo)
     archivos_nuevos_lista = [Path(p) for p in sorted(archivos_nuevos)]
@@ -930,9 +1063,15 @@ def escaneo_rapido(progress_callback=None):
             print(f"  ✅ Agregada: {archivo.name}")
         except Exception as ex:
             errores += 1
-            print(f"  ❌ Error procesando {archivo.name}: {ex}")
+            print(f"  Error procesando {archivo.name}: {ex}")
 
     db.session.commit()
+
+    resumen_norm = normalizar_biblioteca(
+        progress_callback=progress_callback,
+        percent_start=92,
+        percent_end=96,
+    )
 
     # 6. Enriquecer solo artistas y álbumes sin foto/bio (los ya enriquecidos se omiten)
     emit_progress({
@@ -957,6 +1096,7 @@ def escaneo_rapido(progress_callback=None):
         'eliminadas': canciones_eliminadas,
         'meta_artistas': meta_artistas,
         'meta_albumes': meta_albumes,
+        'normalizacion': resumen_norm,
     }
     emit_progress({
         'stage': 'done',
@@ -978,6 +1118,6 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         print("\n\n⚠ Escaneo interrumpido por el usuario")
     except Exception as e:
-        print(f"\n❌ Error durante el escaneo: {e}")
+        print(f"\nError durante el escaneo: {e}")
         import traceback
         traceback.print_exc()

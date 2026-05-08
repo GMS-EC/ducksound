@@ -12,7 +12,7 @@
             <div class="admin-action-icon"><i class="fa-solid fa-magnifying-glass"></i></div>
             <div class="admin-action-info" style="flex:1">
                 <h3>Escanear biblioteca</h3>
-                <p>Agrega nuevas canciones y mantiene tu biblioteca al día</p>
+                <p>Agrega canciones, limpia archivos borrados y normaliza la biblioteca</p>
                 <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
                     <button id="btn-quick-scan" class="btn btn-accent" title="Solo procesa archivos nuevos/eliminados. Ultra rápido.">
                         <i class="fa-solid fa-bolt"></i> Escaneo rápido
@@ -20,14 +20,10 @@
                     <button id="btn-start-scan" class="btn" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15)" title="Recorre todos los archivos. Úsar cuando se cambien metadatos o portadas.">
                         <i class="fa-solid fa-rotate"></i> Escaneo completo
                     </button>
-                    <button id="btn-clean-metadata" class="btn" style="background:rgba(251,191,36,0.15);border:1px solid rgba(251,191,36,0.3);color:#fbbf24;" title="Agrupa artistas y álbumes repetidos por colaboraciones o ediciones.">
-                        <i class="fa-solid fa-wand-magic-sparkles"></i> Limpiar Duplicados
-                    </button>
                 </div>
                 <p style="font-size:11px;color:var(--muted);margin-top:6px">
-                    <i class="fa-solid fa-bolt" style="color:var(--accent)"></i> Rápido: solo archivos nuevos &nbsp;·&nbsp;
-                    <i class="fa-solid fa-rotate"></i> Completo: re-analiza todo &nbsp;·&nbsp;
-                    <i class="fa-solid fa-wand-magic-sparkles" style="color:#fbbf24"></i> Limpiar: normaliza etiquetas
+                    <i class="fa-solid fa-bolt" style="color:var(--accent)"></i> Rápido: nuevos, borrados y normalización &nbsp;·&nbsp;
+                    <i class="fa-solid fa-rotate"></i> Completo: recorre todo y normaliza
                 </p>
             </div>
         </div>
@@ -493,7 +489,6 @@
     // ===== Scan logic =====
     const startBtn = document.getElementById('btn-start-scan');
     const quickBtn = document.getElementById('btn-quick-scan');
-    const cleanBtn = document.getElementById('btn-clean-metadata');
     const panel = document.getElementById('scan-progress-panel');
     const bar = document.getElementById('scan-progress-bar');
     const statusText = document.getElementById('scan-status-text');
@@ -508,16 +503,13 @@
     let currentTaskId = null;
 
     function setRunningState(running, label){
-        [startBtn, quickBtn, cleanBtn].forEach(b => { if(b){ b.disabled = running; b.style.opacity = running ? '0.6' : '1'; } });
+        [startBtn, quickBtn].forEach(b => { if(b){ b.disabled = running; b.style.opacity = running ? '0.6' : '1'; } });
         if (quickBtn) quickBtn.innerHTML = running
             ? '<i class="fa-solid fa-spinner fa-spin"></i> Escaneando...'
             : '<i class="fa-solid fa-bolt"></i> Escaneo rápido';
         if (startBtn) startBtn.innerHTML = running
             ? '<i class="fa-solid fa-spinner fa-spin"></i> Escaneando...'
             : '<i class="fa-solid fa-rotate"></i> Escaneo completo';
-        if (cleanBtn) cleanBtn.innerHTML = running
-            ? '<i class="fa-solid fa-spinner fa-spin"></i> Agrupando...'
-            : '<i class="fa-solid fa-wand-magic-sparkles"></i> Ejecutar Agrupación';
     }
 
     function renderStatus(data){
@@ -553,6 +545,13 @@
                     '<div style="font-weight:600;margin-bottom:4px"><i class="fa-solid fa-globe" style="margin-right:6px"></i>Metadatos enriquecidos</div>' +
                     '<div><i class="fa-solid fa-user" style="margin-right:6px"></i>Artistas: <strong>' + (s.meta_artistas ?? 0) + '</strong></div>' +
                     '<div><i class="fa-solid fa-compact-disc" style="margin-right:6px"></i>Álbumes: <strong>' + (s.meta_albumes ?? 0) + '</strong></div></div>';
+            }
+            if (s.normalizacion) {
+                const n = s.normalizacion;
+                html += '<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.06)">' +
+                    '<div style="font-weight:600;margin-bottom:4px"><i class="fa-solid fa-wand-magic-sparkles" style="margin-right:6px"></i>Normalización</div>' +
+                    '<div>Artistas fusionados: <strong>' + (n.artistas_fusionados ?? 0) + '</strong> · Álbumes fusionados: <strong>' + (n.albumes_fusionados ?? 0) + '</strong></div>' +
+                    '<div>Renombrados: <strong>' + ((n.artistas_renombrados ?? 0) + (n.albumes_renombrados ?? 0)) + '</strong></div></div>';
             }
             summary.innerHTML = html;
         } else if (data.status === 'error'){
@@ -595,7 +594,7 @@
             const res = await fetch('/admin/escanear/active');
             if (!res.ok) return;
             const data = await res.json();
-            if (data && data.task_id && data.status && ['running', 'enriching'].includes(data.status)) {
+            if (data && data.task_id && data.status && ['running', 'normalizing', 'enriching'].includes(data.status)) {
                 msg.textContent = '⟳ Reconectando al escaneo en progreso...';
                 attachPoller(data.task_id);
             }
@@ -637,7 +636,6 @@
 
     startBtn.addEventListener('click', () => startScan('/admin/escanear/start', 'Iniciando escaneo completo...'));
     if (quickBtn) quickBtn.addEventListener('click', () => startScan('/admin/escanear/quick', 'Iniciando escaneo rápido...'));
-    if (cleanBtn) cleanBtn.addEventListener('click', () => startScan('/admin/clean_metadata', 'Agrupando artistas y álbumes...'));
 
 })();
 </script>
