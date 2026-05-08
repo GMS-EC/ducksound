@@ -76,7 +76,22 @@ def normalizar_artista(nombre):
         return nombre
     n = limpiar_nombre(nombre)
     
-    # Expresiones regulares para separar por colaboraciones o feat
+    # Detectar si es una colaboración con "and" vs un nombre legítimo con "and"
+    # Regla: Si hay más de 3 palabras y "and" está en medio, probablemente es colaboración
+    palabras = n.split()
+    if len(palabras) > 3 and 'and' in palabras:
+        # Probablemente es una colaboración: "Artist A and Artist B"
+        and_index = palabras.index('and')
+        # Solo separar si hay palabras antes y después de "and"
+        if 0 < and_index < len(palabras) - 1:
+            # Separar en el primer "and" que cumpla las condiciones
+            primera_parte = ' '.join(palabras[:and_index])
+            n = primera_parte.strip()
+    else:
+        # Para nombres cortos con "and" (ej: "Blade and Bath"), mantener completo
+        pass
+    
+    # Expresiones regulares para separar por colaboraciones o feat (excluyendo "and")
     separadores = (
         r'(?i:\s+feat\.?\s+)'
         r'|(?i:\s+ft\.?\s+)'
@@ -84,7 +99,6 @@ def normalizar_artista(nombre):
         r'|\s*/\s*'
         r'|\s*,\s+'
         r'|\s*&\s*'
-        r'|(?i:\s+and\s+)'
         r'|\s+y\s+(?=[A-ZÁÉÍÓÚÑ])'
         r'|\s+x\s+(?=[A-ZÁÉÍÓÚÑ])'
     )
