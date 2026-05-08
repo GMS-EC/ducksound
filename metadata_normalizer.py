@@ -100,6 +100,30 @@ def normalizar_titulo(titulo):
     return limpiar_nombre(titulo)
 
 
+def normalizar_album(titulo):
+    """Normaliza títulos de álbum para agrupar versiones y variantes equivalentes."""
+    if not titulo:
+        return titulo
+
+    n = limpiar_nombre(titulo)
+    base, _ = detectar_version(n)
+    n = limpiar_nombre(base)
+
+    # Elimina descriptores editoriales o de banda sonora que suelen quedar al final.
+    n = re.sub(
+        r'(?i)\s*[-–—:]\s*(original motion picture soundtrack|ost|soundtrack)\s*$',
+        '',
+        n,
+    )
+    n = re.sub(
+        r'(?i)\s*[\(\[]\s*(original motion picture soundtrack|ost|soundtrack|deluxe(ed\.)?|remaster(ed)?|anniversary( edition)?|expanded( edition)?|reissue|live|remix|demo|acoustic|instrumental|bonus track(s)?|limited edition|special edition|collector.?edition|fan edition).*?[\)\]]\s*$',
+        '',
+        n,
+    )
+    n = re.sub(r'\s{2,}', ' ', n)
+    return n.strip()
+
+
 def agrupar_albumes_por_base(albumes):
     """
     Agrupa álbumes por su nombre base (ignorando versiones).
@@ -107,7 +131,8 @@ def agrupar_albumes_por_base(albumes):
     """
     grupos = {}
     for album in albumes:
-        base, version = detectar_version(album.titulo)
+        base = normalizar_album(album.titulo)
+        version = detectar_version(album.titulo)[1]
         if base not in grupos:
             grupos[base] = []
         grupos[base].append((album, version))

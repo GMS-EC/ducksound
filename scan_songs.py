@@ -16,7 +16,7 @@ from config import Config
 from models import db, Artista, Album, Cancion
 from datetime import datetime
 from metadata_fetcher import enrich_artist, enrich_all
-from metadata_normalizer import normalizar_artista, normalizar_titulo, detectar_version, limpiar_nombre
+from metadata_normalizer import normalizar_artista, normalizar_titulo, normalizar_album, detectar_version, limpiar_nombre
 
 # Extensiones de audio soportadas
 AUDIO_EXTENSIONS = {'.mp3', '.flac', '.wav', '.m4a', '.ogg'}
@@ -500,7 +500,7 @@ def escanear_carpeta_audio(progress_callback=None):
 
         album_obj = None
         album_base, album_version = detectar_version(album)
-        album_final = limpiar_nombre(album_base or album)
+        album_final = normalizar_album(album_base or album)
         if album_final and artista_obj:
             album_obj = Album.query.filter_by(titulo=album_final, artista_id=artista_obj.id).first()
         if not album_obj and album_final and artista_obj:
@@ -759,9 +759,9 @@ def escaneo_rapido(progress_callback=None):
                         pass
 
             album_obj = None
-            from metadata_normalizer import detectar_version, limpiar_nombre
+            from metadata_normalizer import detectar_version, normalizar_album
             album_base, _ = detectar_version(album)
-            album_final = limpiar_nombre(album_base or album)
+            album_final = normalizar_album(album_base or album)
             if album_final and artista_obj:
                 album_obj = Album.query.filter_by(titulo=album_final, artista_id=artista_obj.id).first()
                 if not album_obj:

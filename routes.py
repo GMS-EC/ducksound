@@ -129,7 +129,7 @@ def admin_clean_metadata():
 
     def _run_clean():
         from models import Artista, Album, db
-        from metadata_normalizer import normalizar_artista, limpiar_nombre
+        from metadata_normalizer import normalizar_artista, normalizar_album
         from app import app
         
         with app.app_context():
@@ -191,7 +191,7 @@ def admin_clean_metadata():
                 total_al = len(albumes)
                 for idx, album in enumerate(albumes):
                     emit({'percent': 50 + int((idx/total_al)*40), 'message': f'Álbumes: {album.titulo}', 'processed': idx, 'total': total_al})
-                    titulo_norm = limpiar_nombre(album.titulo)
+                    titulo_norm = normalizar_album(album.titulo)
                     
                     album_existente = Album.query.filter(Album.titulo == titulo_norm, Album.artista_id == album.artista_id, Album.id < album.id).first()
                     if album_existente:

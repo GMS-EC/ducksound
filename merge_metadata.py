@@ -1,6 +1,6 @@
 from app import app
 from models import db, Artista, Album, Cancion
-from metadata_normalizer import normalizar_artista, limpiar_nombre
+from metadata_normalizer import normalizar_artista, normalizar_album
 
 with app.app_context():
     print("Unificando artistas...")
@@ -24,7 +24,7 @@ with app.app_context():
     print("Unificando álbumes...")
     albumes = Album.query.all()
     for album in albumes:
-        titulo_norm = limpiar_nombre(album.titulo)
+        titulo_norm = normalizar_album(album.titulo)
         album_existente = Album.query.filter(Album.titulo == titulo_norm, Album.artista_id == album.artista_id, Album.id < album.id).first()
         if album_existente:
             print(f"Combinando álbum '{album.titulo}' con '{album_existente.titulo}'...")
