@@ -181,6 +181,7 @@ def extraer_metadatos(ruta_archivo):
             'ruta_imagen': None,
             'genero': getattr(tag, 'genre', None) or extra_tag('genre', 'GENRE'),
             'numero_pista': parse_track_num(getattr(tag, 'track', None) or extra_tag('tracknumber', 'TRACKNUMBER', 'TRCK')),
+            'numero_disco': parse_track_num(getattr(tag, 'disc', None) or extra_tag('discnumber', 'DISCNUMBER', 'TPA')),
         }
 
         try:
@@ -227,7 +228,7 @@ def extraer_metadatos(ruta_archivo):
         return None
 
 
-def obtener_o_crear_artista(nombre, enriquecer=True):
+def obtener_o_crear_artista(nombre, enriquecer=False):
     if not nombre:
         return None
 
@@ -239,13 +240,6 @@ def obtener_o_crear_artista(nombre, enriquecer=True):
     artista_obj = Artista(nombre=nombre_norm or nombre)
     db.session.add(artista_obj)
     db.session.flush()
-
-    if enriquecer:
-        try:
-            enrich_artist(artista_obj, commit=False)
-            print(f"  Metadatos automáticos obtenidos para: {nombre_norm or nombre}")
-        except Exception as e:
-            print(f"  ⚠ No se pudieron obtener metadatos automáticos: {e}")
 
     return artista_obj
 
@@ -473,8 +467,11 @@ def inferir_metadatos_desde_ruta(ruta_archivo, carpeta_base_audio):
       Artist/song.mp3              → artista='Artist', album=None
       Artist/Album/song.mp3        → artista='Artist', album='Album'
       Genre/Artist/Album/song.mp3  → artista='Artist', album='Album'
+      Artist/CD 1/song.mp3        → artista='Artist', album=None (ignorar carpeta de disco)
+      Artist/Disc 2/song.mp3      → artista='Artist', album=None (ignorar carpeta de disco)
       song.mp3                     → artista=None, album=None
     """
+    import re
     try:
         rel_path = Path(ruta_archivo).resolve().relative_to(Path(carpeta_base_audio).resolve())
         parts = list(rel_path.parts)
@@ -483,27 +480,61 @@ def inferir_metadatos_desde_ruta(ruta_archivo, carpeta_base_audio):
             return None, None  # Sin subcarpetas
         # Quitamos el nombre del archivo, solo nos quedamos con los directorios
         dirs = parts[:-1]
-        if len(dirs) == 1:
+        
+        # Verificar si alguna carpeta es de disco (CD/Disc) y omitirla
+        filtered_dirs = []
+        for dir_name in dirs:
+            if re.match(r'^(CD|Disc)\s*\d+$', dir_name, re.IGNORECASE):
+                continue  # Ignorar carpetas de disco
+            filtered_dirs.append(dir_name)
+        
+        if len(filtered_dirs) == 1:
             # Artist/song.mp3
-            return dirs[0], None
-        elif len(dirs) >= 2:
-            # Artist/Album/song.mp3 → tomamos útlimo como album, penúltimo como artista
-            return dirs[-2], dirs[-1]
+            return filtered_dirs[0], None
+        elif len(filtered_dirs) >= 2:
+            # Artist/Album/song.mp3 → tomamos último como album, penúltimo como artista
+            return filtered_dirs[-2], filtered_dirs[-1]
     except Exception:
         pass
     return None, None
 
 
-def buscar_archivo_lrc(ruta_audio, carpeta_lyrics):
+def buscar_archivo_lrc(ruta_audio, carpeta_lyrics, cancion_id=None):
     """
     Busca un archivo .lrc correspondiente al archivo de audio.
-    Busca con el mismo nombre base (sin extensión).
+    Estrategias de búsqueda:
+    1. Mismo nombre base en carpeta de la canción
+    2. Mismo nombre base en Config.LYRICS_FOLDER
+    3. Basado en ID de canción en Config.LYRICS_FOLDER
     """
-    nombre_base = Path(ruta_audio).stem
-    ruta_lrc = carpeta_lyrics / f"{nombre_base}.lrc"
+    from config import Config
+    import os
     
-    if ruta_lrc.exists():
-        return str(ruta_lrc)
+    nombre_base = Path(ruta_audio).stem
+    ruta_audio_path = Path(ruta_audio)
+    
+    # Estrategia 1: Buscar en la misma carpeta que el audio
+    ruta_lrc_local = ruta_audio_path.parent / f"{nombre_base}.lrc"
+    if ruta_lrc_local.exists():
+        return str(ruta_lrc_local)
+    
+    # Estrategia 2: Buscar en LYRICS_FOLDER por nombre base
+    ruta_lrc_lyrics = carpeta_lyrics / f"{nombre_base}.lrc"
+    if ruta_lrc_lyrics.exists():
+        return str(ruta_lrc_lyrics)
+    
+    # Estrategia 3: Buscar por ID de canción si está disponible
+    if cancion_id:
+        # Buscar archivos que comiencen con el ID
+        for lrc_file in Config.LYRICS_FOLDER.glob(f"{cancion_id}_*.lrc"):
+            if lrc_file.exists():
+                return str(lrc_file)
+    
+    # Estrategia 4: Búsqueda flexible (case-insensitive y variaciones)
+    # Buscar en LYRICS_FOLDER con variaciones del nombre
+    for lrc_file in Config.LYRICS_FOLDER.glob("*.lrc"):
+        if lrc_file.stem.lower() == nombre_base.lower():
+            return str(lrc_file)
     
     return None
 
@@ -645,6 +676,10 @@ def escanear_carpeta_audio(progress_callback=None):
     canciones_actualizadas = 0
     canciones_omitidas = 0
     
+    # Contador para commits en bloque cada 100 canciones
+    commit_counter = 0
+    batch_size = 100
+    
     # Se asume que el llamador (CLI o la ruta Flask) ejecuta esto dentro
     # del contexto de aplicación apropiado. No creamos un nuevo
     # app.app_context() aquí para evitar importaciones circulares.
@@ -665,6 +700,19 @@ def escanear_carpeta_audio(progress_callback=None):
 
         if cancion_existente:
             print(f"  Ya existe en la base de datos (ID: {cancion_existente.id})")
+            
+            # ESCANEO COMPLETO: Buscar letra localmente (NO descargar de API para mantener rapidez)
+            if not cancion_existente.ruta_archivo_lrc or not Path(cancion_existente.ruta_archivo_lrc).exists():
+                ruta_lrc_existente = buscar_archivo_lrc(archivo, carpeta_lyrics, cancion_existente.id)
+                if ruta_lrc_existente:
+                    cancion_existente.ruta_archivo_lrc = ruta_lrc_existente
+                    print(f"  🎤 Letra local actualizada: {Path(ruta_lrc_existente).name}")
+                    canciones_actualizadas += 1
+                else:
+                    print(f"  ⚠ Sin letra local (se descargará en segundo plano)")
+            else:
+                print(f"  ✅ Letra ya existente: {Path(cancion_existente.ruta_archivo_lrc).name}")
+            
             canciones_omitidas += 1
             emit_progress({
                 'stage': 'file_done',
@@ -775,17 +823,12 @@ def escanear_carpeta_audio(progress_callback=None):
             db.session.flush()
         album_obj = obtener_o_crear_album(album, albumartist)
 
-        # Buscar archivo LRC correspondiente
+        # Buscar archivo LRC correspondiente (solo local para rapidez)
         ruta_lrc = buscar_archivo_lrc(archivo, carpeta_lyrics)
         if ruta_lrc:
-            print(f"  🎤 Letra encontrada: {Path(ruta_lrc).name}")
+            print(f"  🎤 Letra encontrada localmente: {Path(ruta_lrc).name}")
         else:
-            print(f"  ⚠ Sin letra sincronizada local")
-            # Intentar descargar letra automáticamente
-            nombre_base = Path(archivo).stem
-            ruta_lrc_destino = carpeta_lyrics / f"{nombre_base}.lrc"
-            if descargar_letra_lrc(titulo or archivo.stem, artista or 'Desconocido', str(ruta_lrc_destino)):
-                ruta_lrc = str(ruta_lrc_destino)
+            print(f"  ⚠️ Sin letra local (se descargará en segundo plano)")
 
         # Extraer análisis de audio de metadatos
         aa = (metadatos or {}).get('audio_analysis', {})
@@ -800,6 +843,7 @@ def escanear_carpeta_audio(progress_callback=None):
             ruta_archivo_lrc=ruta_lrc,
             ruta_imagen_album=metadatos.get('ruta_imagen') if metadatos else None,
             numero_pista=(metadatos or {}).get('numero_pista'),
+            numero_disco=(metadatos or {}).get('numero_disco'),
             genero=(metadatos or {}).get('genero') or aa.get('genero'),
             sample_rate=aa.get('sample_rate'),
             bit_depth=aa.get('bit_depth'),
@@ -814,7 +858,15 @@ def escanear_carpeta_audio(progress_callback=None):
 
         db.session.add(nueva_cancion)
         canciones_agregadas += 1
+        commit_counter += 1
         print(f"  ✅ Canción agregada a la base de datos")
+        
+        # Hacer commit cada 100 canciones
+        if commit_counter >= batch_size:
+            db.session.commit()
+            commit_counter = 0
+            print(f"  💾 Commit de {batch_size} canciones procesadas")
+        
         emit_progress({
             'stage': 'file_done',
             'message': f'Agregada: {archivo.name}',
@@ -829,8 +881,10 @@ def escanear_carpeta_audio(progress_callback=None):
             }
         })
 
-    # Guardar cambios fuera del bucle
-    db.session.commit()
+    # Commit final para cualquier canción restante
+    if commit_counter > 0:
+        db.session.commit()
+        print(f"  💾 Commit final de {commit_counter} canciones restantes")
     resumen_norm = normalizar_biblioteca(
         progress_callback=progress_callback,
         percent_start=94,
@@ -901,6 +955,19 @@ def escanear_carpeta_audio(progress_callback=None):
         'total': len(archivos_encontrados),
         'summary': resumen
     })
+    
+    # Lanzar descarga de letras en segundo plano
+    try:
+        from lyrics_fetcher import descargar_letras_segundo_plano
+        import threading
+        print("\n🚀 Iniciando descarga de letras en segundo plano...")
+        thread = threading.Thread(target=descargar_letras_segundo_plano, kwargs={'batch_size': 10})
+        thread.daemon = True
+        thread.start()
+        print("✅ Hilo de descarga iniciado (no espera a que termine)")
+    except Exception as e:
+        print(f"⚠️ No se pudo iniciar la descarga en segundo plano: {e}")
+    
     return resumen
 
 
@@ -993,6 +1060,10 @@ def escaneo_rapido(progress_callback=None):
     archivos_nuevos_lista = [Path(p) for p in sorted(archivos_nuevos)]
     total = len(archivos_nuevos_lista)
 
+    # Contador para commits en bloque cada 100 canciones
+    commit_counter = 0
+    batch_size = 100
+
     for idx, archivo in enumerate(archivos_nuevos_lista, start=1):
         emit_progress({
             'stage': 'processing',
@@ -1030,12 +1101,12 @@ def escaneo_rapido(progress_callback=None):
             artista_obj = obtener_o_crear_artista(artista)
             album_obj = obtener_o_crear_album(album, albumartist)
 
+            # Solo búsqueda local (escaneo rápido no descarga de API)
             ruta_lrc = buscar_archivo_lrc(archivo, carpeta_lyrics)
-            if not ruta_lrc:
-                nombre_base = Path(archivo).stem
-                ruta_lrc_destino = carpeta_lyrics / f"{nombre_base}.lrc"
-                if descargar_letra_lrc(titulo or archivo.stem, artista or 'Desconocido', str(ruta_lrc_destino)):
-                    ruta_lrc = str(ruta_lrc_destino)
+            if ruta_lrc:
+                print(f"  🎤 Letra ya existe localmente: {Path(ruta_lrc).name}")
+            else:
+                print(f"  ⚠️ Sin letra local (se descargará en segundo plano)")
 
             aa = (metadatos or {}).get('audio_analysis', {})
             nueva_cancion = Cancion(
@@ -1047,6 +1118,7 @@ def escaneo_rapido(progress_callback=None):
                 ruta_archivo_lrc=ruta_lrc,
                 ruta_imagen_album=metadatos.get('ruta_imagen') if metadatos else None,
                 numero_pista=(metadatos or {}).get('numero_pista'),
+                numero_disco=(metadatos or {}).get('numero_disco'),
                 genero=(metadatos or {}).get('genero') or aa.get('genero'),
                 sample_rate=aa.get('sample_rate'),
                 bit_depth=aa.get('bit_depth'),
@@ -1060,12 +1132,22 @@ def escaneo_rapido(progress_callback=None):
             )
             db.session.add(nueva_cancion)
             canciones_agregadas += 1
+            commit_counter += 1
             print(f"  ✅ Agregada: {archivo.name}")
+            
+            # Hacer commit cada 100 canciones
+            if commit_counter >= batch_size:
+                db.session.commit()
+                commit_counter = 0
+                print(f"  💾 Commit de {batch_size} canciones procesadas")
         except Exception as ex:
             errores += 1
             print(f"  Error procesando {archivo.name}: {ex}")
 
-    db.session.commit()
+    # Commit final para cualquier canción restante
+    if commit_counter > 0:
+        db.session.commit()
+        print(f"  💾 Commit final de {commit_counter} canciones restantes")
 
     resumen_norm = normalizar_biblioteca(
         progress_callback=progress_callback,
@@ -1106,6 +1188,19 @@ def escaneo_rapido(progress_callback=None):
         'total': total,
         'summary': resumen
     })
+    
+    # Lanzar descarga de letras en segundo plano
+    try:
+        from lyrics_fetcher import descargar_letras_segundo_plano
+        import threading
+        print("\n🚀 Iniciando descarga de letras en segundo plano...")
+        thread = threading.Thread(target=descargar_letras_segundo_plano, kwargs={'batch_size': 10})
+        thread.daemon = True
+        thread.start()
+        print("✅ Hilo de descarga iniciado (no espera a que termine)")
+    except Exception as e:
+        print(f"⚠️ No se pudo iniciar la descarga en segundo plano: {e}")
+    
     return resumen
 
 if __name__ == '__main__':

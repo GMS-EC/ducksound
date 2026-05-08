@@ -400,7 +400,8 @@
                     activeGain.gain.value = gain;
                 });
                 
-                if (st.isPlaying){ activeAudio.play().catch(()=>{}); isPlaying=true; btnPlay.textContent='⏸'; }
+                // No reproducir automáticamente al recargar la página
+        // if (st.isPlaying){ activeAudio.play().catch(()=>{}); isPlaying=true; btnPlay.textContent='⏸'; }
             }
             setTimeout(postState, 200);
         }

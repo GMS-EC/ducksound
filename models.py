@@ -196,11 +196,15 @@ class Cancion(db.Model):
     dynamic_range = db.Column(db.Float, nullable=True)
     peak_level = db.Column(db.Float, nullable=True)
     rms_level = db.Column(db.Float, nullable=True)
+    bpm = db.Column(db.Float, nullable=True)
     total_samples = db.Column(db.BigInteger, nullable=True)
     bit_rate = db.Column(db.Integer, nullable=True)
 
     # Género musical
     genero = db.Column(db.String(100), nullable=True)
+    
+    # Número de disco (para álbumes de múltiples discos)
+    numero_disco = db.Column(db.Integer, nullable=True)
 
     # Relaciones
     artista_obj = db.relationship('Artista', back_populates='canciones')

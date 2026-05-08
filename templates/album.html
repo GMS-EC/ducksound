@@ -40,7 +40,15 @@
     </div>
 
     <div class="tracklist" id="album-tracklist">
-        {% for s in songs %}
+        {% for disc_num, canciones_disco in discos %}
+        <!-- Disc separator -->
+        <div class="disc-separator">
+            <div class="disc-line"></div>
+            <span class="disc-label">Disco {{ disc_num }}</span>
+            <div class="disc-line"></div>
+        </div>
+        
+        {% for s in canciones_disco %}
         <div class="track-item" data-cancion-id="{{ s.id }}" 
              data-audio="{{ url_for('servir_audio', cancion_id=s.id) }}"
              data-lyrics="{{ url_for('servir_lyrics', cancion_id=s.id) }}"
@@ -49,7 +57,7 @@
              data-artista="{{ s.artista_obj.nombre if s.artista_obj else 'Desconocido' }}"
              data-context="album" data-album-id="{{ album.id }}">
             <button class="track-play-btn" title="Reproducir"><i class="fa-solid fa-play"></i></button>
-            <span class="track-num">{{ loop.index }}</span>
+            <span class="track-num">{{ s.numero_pista if s.numero_pista else loop.index }}</span>
             <div class="track-cover-sm">
                 {% if cover_url %}
                 <img src="{{ cover_url }}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
@@ -72,6 +80,7 @@
             </span>
             <button class="btn-add-collection" data-type="cancion" data-id="{{ s.id }}" title="Añadir a colección" style="background:transparent; border:none; color:var(--muted); cursor:pointer; padding:4px"><i class="fa-solid fa-plus"></i></button>
         </div>
+        {% endfor %}
         {% else %}
         <div class="empty-state" style="grid-column:1/-1">
             <div class="empty-icon"><i class="fa-solid fa-inbox"></i></div>
@@ -81,6 +90,31 @@
         {% endfor %}
     </div>
 </div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.disc-separator {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 20px 0;
+    grid-column: 1 / -1;
+}
+.disc-line {
+    flex: 1;
+    height: 1px;
+    background: var(--border-color);
+}
+.disc-label {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    white-space: nowrap;
+}
+</style>
 {% endblock %}
 
 {% block extra_js %}

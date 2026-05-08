@@ -3,12 +3,51 @@
 Todos los cambios notables de DuckSound serán documentados en este archivo.
 El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/).
 
-## [1.0.1] - 2026-05-08
+## [1.1.0] - 2026-05-08
 
-### Funcionalidad / Fixes
-- **Organización de Artistas y Álbumes:** Se mejoró la lógica de agrupación y normalización. Las colaboraciones (feats, st, /, etc.) ahora se asocian al artista principal.
-- **Normalización de Álbumes:** Ahora se aplican patrones de limpieza regulares (`Original Motion Picture Soundtrack`, etc.) que reducen duplicados al clasificar álbumes.
-- **Panel de Administración:** Se corrigió el renderizado del listado de versiones en `CHANGELOG.md` integrándolo al colapsable general para que ahora sea visible correctamente.
+### 🚀 Optimizaciones de Rendimiento
+- **Escaneo de música ultra-rápido**: Implementado commits en bloque cada 100 canciones en lugar de por cada canción
+- **Análisis de audio optimizado**: librosa.load ahora analiza solo 30 segundos desde el segundo 30 (o carga completa si es < 60s)
+- **Eliminadas peticiones HTTP síncronas**: Las letras ya no se descargan durante el escaneo principal
+- **Enriquecimiento asíncrono**: Metadatos de artistas solo se procesan al final del escaneo
+
+### 🎵 Sistema de Letras Mejorado
+- **Detección local robusta**: Búsqueda de letras en múltiples ubicaciones (misma carpeta, LYRICS_FOLDER, por ID, case-insensitive)
+- **Lógica de rescate**: Si una canción no tiene letra en BD, busca automáticamente en disco antes de ir a API
+- **Endpoint API**: `/api/cancion/<int:cancion_id>/lyrics` con caché local y descarga bajo demanda
+- **Headers User-Agent**: Corregido Error 403 de Wikipedia con `DuckSound/1.0 (contacto@ejemplo.com)`
+
+### 🎧 Sistema de Recomendaciones Optimizado
+- **Pesos balanceados**: Corregidos porcentajes (antes 6000%, ahora máximo 80%)
+- **Mejor scoring**: Pesos ajustados a Género (35%), Acústico (35%), Artista (10%)
+
+### 🖥️ Mejoras de UI/UX
+- **Menú contextual**: Click derecho en canciones con opciones (Reproducir siguiente, Añadir a cola, Añadir a playlist, Ir al álbum/artista)
+- **Sin reproducción automática**: La música ya no comienza sola al recargar la página
+- **Sincronización de letras**: Corregido conflicto entre sistemas de letras, ahora sincroniza correctamente con la música actual
+
+### 🐛 Correcciones de Bugs
+- **Salto de carpetas de discos**: El escaneo ahora ignora carpetas "CD 1", "Disc 2", etc. y usa carpetas superiores
+- **Logs optimizados**: El aviso de "librosa no disponible" solo se muestra una vez al inicio
+- **Limpieza de temporales**: Eliminados scripts de desarrollo innecesarios
+
+### 🔧 Mejoras Técnicas
+- **User-Agent consistente**: Todas las peticiones a APIs externas usan `DuckSound/1.0 (app_music)`
+- **Error 403 Wikipedia**: Solucionado con headers obligatorios
+- **Imports optimizados**: Mejor manejo de dependencias faltantes
+- **Caché mejorado**: Sistema de caché con TTL para recomendaciones
+
+### 📱 PWA (Progressive Web App)
+- **Service Worker**: Registro automático para instalación como app nativa
+- **Manifest JSON**: Configuración para instalación en pantalla de inicio
+- **Modo offline**: Soporte básico para funcionalidad sin internet
+
+---
+
+## [1.0.1] - Versiones anteriores
+- Versión inicial estable
+- Sistema básico de reproducción y escaneo
+- Interfaz web responsive
 
 ## [1.0.0] - 2026-05-07
 

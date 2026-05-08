@@ -791,24 +791,34 @@ def album_detail(album_id):
     album = Album.query.get_or_404(album_id)
     songs = Cancion.query.filter_by(album_id=album.id).all()
     
-    # Extraer el número de pista de la ruta para ordenamiento numérico
+    # Agrupar por número de disco
+    discos_dict = {}
+    for s in songs:
+        disc_num = s.numero_disco if s.numero_disco is not None else 1
+        if disc_num not in discos_dict:
+            discos_dict[disc_num] = []
+        discos_dict[disc_num].append(s)
+    
+    # Ordenar discos numéricamente
+    discos_ordenados = sorted(discos_dict.items())
+    
+    # Dentro de cada disco, ordenar por número de pista
     def get_track_num(c):
-        # Priorizar metadatos si están disponibles
         if hasattr(c, 'numero_pista') and c.numero_pista is not None:
             return c.numero_pista
-            
-        # Respaldo: Buscar el nombre del archivo (todo después de la última barra)
         filename = c.ruta_archivo_audio.replace('\\', '/').split('/')[-1]
-        # Buscar números al principio del archivo
         m = re.match(r'^\s*(\d+)', filename)
         return int(m.group(1)) if m else 9999
-        
-    songs.sort(key=get_track_num)
+    
+    discos = []
+    for disc_num, canciones_disco in discos_ordenados:
+        canciones_ordenadas = sorted(canciones_disco, key=get_track_num)
+        discos.append((disc_num, canciones_ordenadas))
     
     cover_url = _album_cover_url(album)
     total_dur = _album_total_duration(album)
     track_count = len(songs)
-    return render_template('album.html', album=album, songs=songs, cover_url=cover_url, total_duration=total_dur, track_count=track_count)
+    return render_template('album.html', album=album, discos=discos, cover_url=cover_url, total_duration=total_dur, track_count=track_count)
 
 
 @api_bp.route('/api/playlist/<int:playlist_id>/songs', methods=['GET'])
@@ -860,6 +870,42 @@ def api_similares(cancion_id):
         except Exception:
             pass
         return jsonify([]), 200
+
+
+@api_bp.route('/api/cancion/<int:cancion_id>/lyrics', methods=['GET'])
+def api_cancion_lyrics(cancion_id):
+    """Devuelve la letra de una canción (sincronizada o plano) desde caché o API LRCLIB."""
+    try:
+        from lyrics_fetcher import obtener_o_descargar_letra
+        from models import Cancion
+        
+        # Debug logging: mostrar información de la canción
+        cancion = Cancion.query.get(cancion_id)
+        if cancion:
+            current_app.logger.info(f"Solicitando letra para canción ID {cancion_id}: '{cancion.titulo}' - '{cancion.artista_obj.nombre if cancion.artista_obj else 'Desconocido'}'")
+            current_app.logger.info(f"Ruta LRC en BD: {cancion.ruta_archivo_lrc}")
+            if cancion.ruta_archivo_lrc:
+                exists = Path(cancion.ruta_archivo_lrc).exists()
+                current_app.logger.info(f"Archivo LRC existe: {exists}")
+        else:
+            current_app.logger.info(f"Canción ID {cancion_id} no encontrada en BD")
+        
+        resultado = obtener_o_descargar_letra(cancion_id)
+        
+        if resultado:
+            current_app.logger.info(f"Letra encontrada para canción ID {cancion_id}, tipo: {resultado.get('tipo')}")
+            return jsonify(resultado), 200
+        else:
+            current_app.logger.info(f"Letra no encontrada para canción ID {cancion_id}")
+            return jsonify({'error': 'Letra no encontrada'}), 404
+            
+    except Exception as e:
+        # Registrar error pero no exponer detalles al cliente
+        try:
+            current_app.logger.exception('Error obteniendo letra')
+        except Exception:
+            pass
+        return jsonify({'error': 'Error interno del servidor'}), 500
 
 
 # ============================================
@@ -998,7 +1044,8 @@ def api_favoritos_canciones():
                 'artista': c.artista_obj.nombre if c.artista_obj else 'Desconocido',
                 'album': c.album_obj.titulo if c.album_obj else None,
                 'duracion': c.duracion,
-                'cover': c.ruta_imagen_album
+                'cover': c.ruta_imagen_album,
+                'lyrics': f'/lyrics/{c.id}'
             })
     return jsonify(canciones)
 
@@ -1048,5 +1095,28 @@ def admin_crear_usuario():
         'role': nuevo_usuario.role,
         'message': 'Usuario creado exitosamente'
     }), 201
+
+
+# ========== API PARA PROGRESO DE LETRAS ==========
+
+@api_bp.route('/api/lyrics-progress', methods=['GET'])
+def api_lyrics_progress():
+    """Devuelve el progreso actual de la descarga de letras en segundo plano."""
+    try:
+        from lyrics_fetcher import _lyrics_progress, _lyrics_progress_lock
+        
+        with _lyrics_progress_lock:
+            return jsonify({
+                'active': _lyrics_progress['active'],
+                'finished': _lyrics_progress['finished'],
+                'total': _lyrics_progress['total'],
+                'completed': _lyrics_progress['completed'],
+                'downloaded': _lyrics_progress['downloaded'],
+                'errors': _lyrics_progress['errors'],
+                'current_song': _lyrics_progress['current_song'],
+                'percent': int((_lyrics_progress['completed'] / _lyrics_progress['total']) * 100) if _lyrics_progress['total'] > 0 else 0
+            }), 200
+    except Exception as e:
+        return jsonify({'error': str(e), 'active': False, 'finished': True}), 500
 
 

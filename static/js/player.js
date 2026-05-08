@@ -12,10 +12,10 @@ let currentSongIndex = -1;
 let playlist = [];
 let isPlaying = false;
 
-// Lyrics state for the right panel
-let panelLyricsData = [];
-let panelLyricElements = [];
-let activePanelLyricIndex = -1;
+// Lyrics state for the right panel - manejado por player_parent.js
+// let panelLyricsData = [];
+// let panelLyricElements = [];
+// let activePanelLyricIndex = -1;
 
 // ============================================
 // FUNCIONES DE FORMATO
@@ -416,8 +416,8 @@ window.addEventListener('DOMContentLoaded', () => {
                 const percent = (audioPlayer.currentTime / audioPlayer.duration) * 100;
                 if (progressFill) progressFill.style.width = `${percent}%`;
                 if (currentTimeEl) currentTimeEl.textContent = formatTime(audioPlayer.currentTime);
-                // Sincronizar letras en el panel derecho
-                syncPanelLyrics();
+                // Sincronizar letras en el panel derecho - manejado por player_parent.js
+                // syncPanelLyrics();
             }
         });
 

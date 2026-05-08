@@ -93,10 +93,13 @@ def buscar_biografia_wikipedia(nombre_artista):
             'redirects': 1,
             'exchars': 500,
         }
+        headers = {'User-Agent': 'DuckSound/1.0 (contacto@ejemplo.com)'}
+        
         # Intentar en español primero
         resp = requests.get(
             'https://es.wikipedia.org/w/api.php',
             params=params,
+            headers=headers,
             timeout=REQUEST_TIMEOUT
         )
         resp.raise_for_status()
@@ -116,6 +119,7 @@ def buscar_biografia_wikipedia(nombre_artista):
         resp2 = requests.get(
             'https://en.wikipedia.org/w/api.php',
             params=params,
+            headers=headers,
             timeout=REQUEST_TIMEOUT
         )
         if resp2.ok:

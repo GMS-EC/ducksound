@@ -4,13 +4,18 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# Variable global para controlar el aviso de librosa
+_librosa_warning_shown = False
+
 # Intentar importar librosa (opcional, para análisis más precisos)
 try:
     import librosa
     HAS_LIBROSA = True
 except ImportError:
     HAS_LIBROSA = False
-    logger.warning("librosa no disponible, usando análisis básico con mutagen")
+    if not _librosa_warning_shown:
+        logger.warning("librosa no disponible, usando análisis básico con mutagen")
+        _librosa_warning_shown = True
 
 
 def analyze_audio(filepath):
@@ -107,8 +112,15 @@ def analyze_audio(filepath):
     # --- FASE 2: Análisis de señal con librosa (más preciso) ---
     if HAS_LIBROSA and result['sample_rate']:
         try:
-            # Cargar solo el primer canal, mono para análisis
-            y, sr = librosa.load(filepath, sr=None, mono=True)
+            # Cargar solo 30 segundos desde el segundo 30 para análisis rápido
+            # Si la canción dura menos de 60 segundos, cargar sin offset
+            duration = result.get('duration', 0)
+            if duration >= 60:
+                # Cargar 30 segundos comenzando desde el segundo 30
+                y, sr = librosa.load(filepath, sr=None, mono=True, offset=30.0, duration=30.0)
+            else:
+                # Canción corta: cargar sin offset
+                y, sr = librosa.load(filepath, sr=None, mono=True)
 
             if len(y) > 0:
                 # Peak level (dB)
@@ -118,6 +130,10 @@ def analyze_audio(filepath):
                 # RMS level (dB)
                 rms = np.sqrt(np.mean(y ** 2))
                 result['rms_level'] = float(20 * np.log10(max(rms, 1e-10)))
+
+                # Detectar el tempo (BPM)
+                tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+                result['bpm'] = float(tempo.item() if hasattr(tempo, 'item') else tempo)
 
                 # Dynamic Range (dB) - diferencia entre pico y RMS
                 if result['peak_level'] is not None and result['rms_level'] is not None:

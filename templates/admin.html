@@ -61,6 +61,23 @@
         <div id="scan-summary" style="display:none;margin-top:10px;padding:10px;border-radius:8px;background:rgba(0,0,0,0.2)"></div>
     </div>
 
+    <!-- Panel de progreso de descarga de letras -->
+    <div id="lyrics-progress-panel" style="display:none;margin-top:20px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">
+            <strong style="font-size:14px"><i class="fa-solid fa-music" style="margin-right:6px;color:var(--accent)"></i>Descarga de letras</strong>
+            <span id="lyrics-status-text" style="font-size:12px;color:rgba(232,234,237,0.75)">Iniciando...</span>
+        </div>
+        <div style="height:10px;background:rgba(255,255,255,0.08);border-radius:999px;overflow:hidden">
+            <div id="lyrics-progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg, #3b82f6 0%, #60a5fa 100%);transition:width .25s ease"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:12px;color:rgba(232,234,237,0.65)">
+            <span id="lyrics-message">Esperando inicio...</span>
+            <span id="lyrics-counter">0/0</span>
+        </div>
+        <div id="lyrics-current-song" style="margin-top:8px;font-size:12px;color:rgba(232,234,237,0.8)"></div>
+        <div id="lyrics-summary" style="display:none;margin-top:10px;padding:10px;border-radius:8px;background:rgba(0,0,0,0.2)"></div>
+    </div>
+
     <!-- ===== VERSIÓN Y ACTUALIZACIONES ===== -->
     <div class="version-section">
         <h2 class="version-section-title"><i class="fa-solid fa-code-branch"></i> Versión y Actualizaciones</h2>
@@ -636,6 +653,70 @@
 
     startBtn.addEventListener('click', () => startScan('/admin/escanear/start', 'Iniciando escaneo completo...'));
     if (quickBtn) quickBtn.addEventListener('click', () => startScan('/admin/escanear/quick', 'Iniciando escaneo rápido...'));
+
+    // ===== Lyrics download progress =====
+    const lyricsPanel = document.getElementById('lyrics-progress-panel');
+    const lyricsBar = document.getElementById('lyrics-progress-bar');
+    const lyricsStatusText = document.getElementById('lyrics-status-text');
+    const lyricsMsg = document.getElementById('lyrics-message');
+    const lyricsCounter = document.getElementById('lyrics-counter');
+    const lyricsCurrentSong = document.getElementById('lyrics-current-song');
+    const lyricsSummary = document.getElementById('lyrics-summary');
+
+    let lyricsPollTimer = null;
+
+    function renderLyricsProgress(data) {
+        if (!data) return;
+        
+        lyricsPanel.style.display = 'block';
+        const pct = Number(data.percent || 0);
+        lyricsBar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+        
+        if (data.finished) {
+            lyricsStatusText.textContent = 'COMPLETADO';
+            lyricsMsg.textContent = 'Descarga de letras finalizada';
+            if (lyricsPollTimer) { clearInterval(lyricsPollTimer); lyricsPollTimer = null; }
+            
+            lyricsSummary.style.display = 'block';
+            lyricsSummary.innerHTML = 
+                '<div style="font-weight:600;margin-bottom:6px"><i class="fa-regular fa-circle-check" style="color:#4ade80;margin-right:6px"></i>Descarga completada</div>' +
+                '<div><i class="fa-solid fa-download" style="margin-right:6px"></i>Descargadas: <strong>' + (data.downloaded ?? 0) + '</strong></div>' +
+                '<div><i class="fa-solid fa-circle-exclamation" style="margin-right:6px"></i>Errores: <strong>' + (data.errors ?? 0) + '</strong></div>';
+        } else if (data.active) {
+            lyricsStatusText.textContent = 'DESCARGANDO';
+            lyricsMsg.textContent = 'Descargando letras...';
+            lyricsCurrentSong.textContent = data.current_song ? ('Canción actual: ' + data.current_song) : '';
+        } else {
+            lyricsStatusText.textContent = 'INACTIVO';
+            lyricsMsg.textContent = 'No hay descarga en progreso';
+        }
+        
+        const completed = Number(data.completed || 0);
+        const total = Number(data.total || 0);
+        lyricsCounter.textContent = total > 0 ? (completed + '/' + total) : '0/0';
+    }
+
+    async function pollLyricsProgress() {
+        try {
+            const res = await fetch('/api/lyrics-progress');
+            if (!res.ok) return;
+            const data = await res.json();
+            renderLyricsProgress(data);
+            
+            // Si no está activo y ya terminó, detener el polling después de 30 segundos
+            if (!data.active && data.finished) {
+                setTimeout(() => {
+                    if (lyricsPollTimer) { clearInterval(lyricsPollTimer); lyricsPollTimer = null; }
+                }, 30000);
+            }
+        } catch (err) {
+            // Silencioso
+        }
+    }
+
+    // Iniciar polling de letras
+    pollLyricsProgress();
+    lyricsPollTimer = setInterval(pollLyricsProgress, 3000);
 
 })();
 </script>

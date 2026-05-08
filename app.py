@@ -42,6 +42,17 @@ with app.app_context():
         # Ignorar si ya existe la columna
         pass
     
+    # Migración automática: Añadir numero_disco si no existe
+    try:
+        from sqlalchemy import text
+        db.session.execute(text('ALTER TABLE canciones ADD COLUMN numero_disco INTEGER'))
+        db.session.commit()
+        print("Migración completada: Columna 'numero_disco' añadida a la tabla 'canciones'.")
+    except Exception as e:
+        db.session.rollback()
+        # Ignorar si ya existe la columna
+        pass
+    
     # Crear usuario administrador si no existe ninguno
     if Usuario.query.count() == 0:
         admin_user = Usuario(
@@ -635,8 +646,20 @@ def servir_audio(cancion_id):
 
 @app.route('/lyrics/<int:cancion_id>')
 def servir_lyrics(cancion_id):
-    """Sirve el archivo .lrc de una canción"""
+    """Sirve el archivo .lrc de una canción, intentando descargarlo si no existe localmente"""
+    from lyrics_fetcher import obtener_o_descargar_letra
+    
     cancion = Cancion.query.get_or_404(cancion_id)
+    
+    # Intentar obtener o descargar la letra
+    resultado = obtener_o_descargar_letra(cancion_id)
+    
+    if resultado and resultado.get('letra'):
+        # Devolver el contenido como texto plano
+        from flask import Response
+        return Response(resultado['letra'], mimetype='text/plain; charset=utf-8')
+    
+    # Si lyrics_fetcher no pudo obtenerla, intentar servir el archivo directamente (fallback)
     original_path = cancion.ruta_archivo_lrc
     tried_paths = [original_path]
 
@@ -779,6 +802,12 @@ def servir_album_art(cancion_id):
     </svg>'''
     return placeholder_svg, 200, {'Content-Type': 'image/svg+xml'}
 
+
+@app.route('/service-worker.js')
+def service_worker():
+    """Sirve el service worker desde la raíz para que tenga scope sobre toda la app"""
+    from flask import send_from_directory
+    return send_from_directory('static/js', 'service-worker.js', mimetype='application/javascript')
 
 @app.route('/api/canciones')
 def api_canciones():
