@@ -797,14 +797,14 @@ def api_cancion(cancion_id):
 if __name__ == '__main__':
     print("=" * 60)
     print("🎵 PLATAFORMA DE STREAMING DE MÚSICA CON KARAOKE 🎵")
-    print("=" * 60)
-    print("Servidor iniciado en: http://0.0.0.0:5000")
-    print("=" * 60)
-
+    print("DuckSound - v" + Config.APP_VERSION)
+    print("Servidor iniciado en: http://0.0.0.0:8604")
+    
+    # Waitress multi-hilo para desarrollo local en Windows
     try:
         from waitress import serve
-        print("✅ Usando Waitress (servidor de producción, 8 threads)")
-        serve(app, host='0.0.0.0', port=5000, threads=8)
+        print("Usando Waitress (8 threads)...")
+        serve(app, host='0.0.0.0', port=8604, threads=8)
     except ImportError:
-        print("⚠ Waitress no instalado, usando servidor de desarrollo")
-        app.run(host='0.0.0.0', port=5000, debug=False)
+        print("Waitress no encontrado, usando servidor de desarrollo Flask...")
+        app.run(host='0.0.0.0', port=8604, debug=False)

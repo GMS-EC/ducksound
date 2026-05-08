@@ -10,7 +10,7 @@ services:
     environment:
       - ADMIN_SECRET_TOKEN=${ADMIN_SECRET_TOKEN}
     ports:
-      - '5000:5000'
+      - '8604:8604'
 
 volumes:
   ducksound_data:

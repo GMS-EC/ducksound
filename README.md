@@ -84,6 +84,128 @@ La documentación técnica detallada sobre la estructura del proyecto, el stack 
 
 ---
 
+## 🚀 Instalación
+
+### Requisitos previos
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) instalado
+- Una carpeta con tu música (MP3, FLAC, WAV, M4A, OGG)
+
+### Paso 1: Clonar el repositorio
+
+```bash
+git clone https://github.com/GamersEC/ducksound.git
+cd ducksound
+```
+
+### Paso 2: Configurar variables de entorno
+
+Copia el archivo de ejemplo y edítalo con tus valores:
+
+```bash
+cp .env.example .env
+```
+
+Edita `.env`:
+
+```env
+# Ruta a tu carpeta de música en el host
+MUSIC_PATH=/ruta/a/tu/musica
+
+# Token para proteger los endpoints de administración
+ADMIN_SECRET_TOKEN=tu-token-secreto
+```
+
+> **Eso es todo lo que necesitas configurar.** Los datos de la app (base de datos, letras descargadas, carátulas) se almacenan automáticamente en un volumen Docker.
+
+### Paso 3: Construir y levantar
+
+```bash
+docker compose build
+docker compose up -d
+```
+
+### Paso 4: Abrir la app
+
+Abre tu navegador en **http://localhost:8604**
+
+**Credenciales por defecto:**
+| Usuario | Contraseña |
+|---------|------------|
+| `ducksound` | `ducksound` |
+
+> ⚠️ Cambia la contraseña del admin desde el perfil después del primer inicio de sesión.
+
+### Paso 5: Escanear tu música
+
+1. Inicia sesión como admin
+2. Ve a **Panel de Administración → Iniciar escaneo completo**
+3. El escaneo detectará canciones, extraerá metadatos, descargará portadas y letras, y enriquecerá artistas/álbumes automáticamente
+4. ¡Disfruta tu música!
+
+---
+
+## 🐳 Despliegue
+
+### Docker Compose (recomendado)
+
+```yaml
+services:
+  web:
+    build: .
+    container_name: ducksound_web
+    volumes:
+      - ${MUSIC_PATH}:/music:ro
+      - ducksound_data:/data
+    environment:
+      - ADMIN_SECRET_TOKEN=${ADMIN_SECRET_TOKEN}
+    ports:
+      - '8604:8604'
+
+volumes:
+  ducksound_data:
+    driver: local
+```
+
+### Portainer / CasaOS
+
+1. Crea un nuevo stack con el `docker-compose.yml`
+2. Configura las variables de entorno `MUSIC_PATH` y `ADMIN_SECRET_TOKEN`
+3. Despliega el stack
+
+---
+
+## 📁 Volúmenes
+
+DuckSound usa **dos volúmenes**:
+
+| Volumen | Montaje | Contenido | Modo |
+|---------|---------|-----------|------|
+| Tu carpeta de música | `/music` | Tu biblioteca musical | Solo lectura |
+| `ducksound_data` | `/data` | Datos de la app | Lectura/escritura |
+
+```
+/music              ← tu música (solo lectura, configurada en MUSIC_PATH)
+/data               ← volumen Docker gestionado automáticamente
+  ├── db/           ← ducksound.db (base de datos SQLite)
+  ├── lyrics/       ← archivos .lrc descargados
+  └── album_art/    ← carátulas extraídas/descargadas
+```
+
+> **Solo configuras `MUSIC_PATH`** en tu `.env`. Todo lo demás lo gestiona Docker automáticamente.
+
+---
+
+## ⚙️ Variables de entorno
+
+| Variable | Requerida | Descripción | Default |
+|----------|-----------|-------------|---------|
+| `MUSIC_PATH` | ✅ | Ruta a tu carpeta de música en el host | — |
+| `ADMIN_SECRET_TOKEN` | ✅ | Token para proteger endpoints `/admin/*` | — |
+| `FLASK_ENV` | ❌ | Entorno de Flask | `production` |
+| `SECRET_KEY` | ❌ | Clave secreta para sesiones Flask | Auto-generada |
+
+---
+
 ## 💻 Desarrollo local (sin Docker)
 
 ```bash

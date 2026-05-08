@@ -21,11 +21,11 @@ RUN pip install -r requirements.txt
 COPY . /app
 
 # Exponer puerto Flask
-EXPOSE 5000
+EXPOSE 8604
 
 # Variables por defecto
 ENV FLASK_ENV=production
 
 # Comando por defecto: servidor WSGI de producción con workers y threads
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--threads", "2", "--timeout", "120", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8604", "--workers", "4", "--threads", "2", "--timeout", "120", "app:app"]
 
