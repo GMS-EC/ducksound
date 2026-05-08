@@ -5,7 +5,7 @@
 ![Flask](https://img.shields.io/badge/Flask-3.0-blue)
 ![Python](https://img.shields.io/badge/Python-3.10+-yellow)
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue)
-![License](https://img.shields.io/badge/License-MIT-green)
+![License](https://img.shields.io/badge/License-AGPL_v3-blue)
 
 ---
 
