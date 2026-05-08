@@ -3,191 +3,204 @@
 {% block title %}Biblioteca - DuckSound{% endblock %}
 
 {% block content %}
-    <div class="dashboard-header">
-        <h1 class="dashboard-title">
-            <i class="fa-solid {% if es_favoritos %}fa-heart{% else %}fa-music{% endif %}" style="color:var(--accent);margin-right:8px"></i> 
-            {% if es_favoritos %}Tus Favoritos{% else %}<span id="dynamic-greeting">Buenos días</span>{% endif %}
-        </h1>
-        <p class="dashboard-subtitle">Hola, {{ usuario }}</p>
+<div class="dashboard-header">
+    <h1 class="dashboard-title">
+        <i class="fa-solid {% if es_favoritos %}fa-heart{% else %}fa-music{% endif %}"
+            style="color:var(--accent);margin-right:8px"></i>
+        {% if es_favoritos %}Tus Favoritos{% else %}<span id="dynamic-greeting">Buenos días</span>{% endif %}
+    </h1>
+    <!--<p class="dashboard-subtitle">Hola, {{ usuario }}</p>-->
+    <p class="dashboard-subtitle">Hola, {{ nombre_usuario }}</p>
+</div>
+
+{% if not canciones and es_favoritos %}
+<div class="empty-state">
+    <div class="empty-icon"><i class="fa-solid fa-inbox"></i></div>
+    <h2 class="empty-title">No hay canciones guardadas</h2>
+    <p class="empty-text">Aún no has marcado ninguna canción como favorita.</p>
+</div>
+{% elif not canciones and not es_favoritos and not albumes_recientes %}
+<div class="empty-state">
+    <div class="empty-icon"><i class="fa-solid fa-inbox"></i></div>
+    <h2 class="empty-title">Tu biblioteca está vacía</h2>
+    <p class="empty-text">Agrega archivos de audio a la carpeta de música y luego escanéalos desde el panel de
+        administración.</p>
+</div>
+{% else %}
+
+{% if es_favoritos %}
+<!-- VISTA CLÁSICA DE LISTA PARA FAVORITOS -->
+<div class="tracklist" id="dashboard-tracklist">
+    {% for cancion in canciones %}
+    <div class="track-item" data-cancion-id="{{ cancion.id }}"
+        data-audio="{{ url_for('servir_audio', cancion_id=cancion.id) }}"
+        data-cover="{{ url_for('servir_album_art', cancion_id=cancion.id) }}" data-titulo="{{ cancion.titulo }}"
+        data-artista="{{ cancion.artista_obj.nombre if cancion.artista_obj else 'Desconocido' }}">
+        <button class="track-play-btn" title="Reproducir"><i class="fa-solid fa-play"></i></button>
+        <span class="track-num">{{ loop.index }}</span>
+        <div class="track-cover-sm">
+            <img src="{{ url_for('servir_album_art', cancion_id=cancion.id) }}" alt="" loading="lazy"
+                onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+            <div class="cover-fallback" style="display:none"><i class="fa-solid fa-music"></i></div>
+        </div>
+        <div class="track-info">
+            <span class="track-title">{{ cancion.titulo }}</span>
+            <span class="track-artist-mobile">{{ cancion.artista_obj.nombre if cancion.artista_obj else '' }}</span>
+        </div>
+        <span class="track-artist-col">{{ cancion.artista_obj.nombre if cancion.artista_obj else '' }}</span>
+        <span class="track-duration">
+            {% if cancion.duracion %}{{ (cancion.duracion // 60) }}:{{ '%02d' % (cancion.duracion % 60) }}{% else
+            %}--:--{% endif %}
+        </span>
+        <button class="btn-add-collection" data-type="cancion" data-id="{{ cancion.id }}" title="Añadir a playlist"
+            style="background:transparent; border:none; color:var(--muted); cursor:pointer; padding:4px"><i
+                class="fa-solid fa-plus"></i></button>
     </div>
-    
-    {% if not canciones and es_favoritos %}
-    <div class="empty-state">
-        <div class="empty-icon"><i class="fa-solid fa-inbox"></i></div>
-        <h2 class="empty-title">No hay canciones guardadas</h2>
-        <p class="empty-text">Aún no has marcado ninguna canción como favorita.</p>
+    {% endfor %}
+</div>
+{% else %}
+<!-- VISTA TIPO SPOTIFY PARA HOME -->
+
+{% if daily_mixes %}
+<section class="home-shelf">
+    <div class="home-shelf-header">
+        <h2 class="home-shelf-title">Especialmente para ti</h2>
     </div>
-    {% elif not canciones and not es_favoritos and not albumes_recientes %}
-    <div class="empty-state">
-        <div class="empty-icon"><i class="fa-solid fa-inbox"></i></div>
-        <h2 class="empty-title">Tu biblioteca está vacía</h2>
-        <p class="empty-text">Agrega archivos de audio a la carpeta de música y luego escanéalos desde el panel de administración.</p>
-    </div>
-    {% else %}
-    
-        {% if es_favoritos %}
-            <!-- VISTA CLÁSICA DE LISTA PARA FAVORITOS -->
-            <div class="tracklist" id="dashboard-tracklist">
-                {% for cancion in canciones %}
-                <div class="track-item" data-cancion-id="{{ cancion.id }}"
-                     data-audio="{{ url_for('servir_audio', cancion_id=cancion.id) }}"
-                     data-cover="{{ url_for('servir_album_art', cancion_id=cancion.id) }}"
-                     data-titulo="{{ cancion.titulo }}"
-                     data-artista="{{ cancion.artista_obj.nombre if cancion.artista_obj else 'Desconocido' }}">
-                    <button class="track-play-btn" title="Reproducir"><i class="fa-solid fa-play"></i></button>
-                    <span class="track-num">{{ loop.index }}</span>
-                    <div class="track-cover-sm">
-                        <img src="{{ url_for('servir_album_art', cancion_id=cancion.id) }}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-                        <div class="cover-fallback" style="display:none"><i class="fa-solid fa-music"></i></div>
-                    </div>
-                    <div class="track-info">
-                        <span class="track-title">{{ cancion.titulo }}</span>
-                        <span class="track-artist-mobile">{{ cancion.artista_obj.nombre if cancion.artista_obj else '' }}</span>
-                    </div>
-                    <span class="track-artist-col">{{ cancion.artista_obj.nombre if cancion.artista_obj else '' }}</span>
-                    <span class="track-duration">
-                        {% if cancion.duracion %}{{ (cancion.duracion // 60) }}:{{ '%02d' % (cancion.duracion % 60) }}{% else %}--:--{% endif %}
-                    </span>
-                    <button class="btn-add-collection" data-type="cancion" data-id="{{ cancion.id }}" title="Añadir a playlist" style="background:transparent; border:none; color:var(--muted); cursor:pointer; padding:4px"><i class="fa-solid fa-plus"></i></button>
+    <div class="horizontal-scroll-grid">
+        {% for mix in daily_mixes %}
+        <a href="{{ url_for('daily_mix_detail', mix_id=mix.id) }}" class="album-card" style="text-decoration:none">
+            <div class="album-card-cover">
+                <div class="album-card-placeholder"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
+                <div class="album-card-overlay">
+                    <button class="album-card-play"><i class="fa-solid fa-play"></i></button>
                 </div>
-                {% endfor %}
             </div>
-        {% else %}
-            <!-- VISTA TIPO SPOTIFY PARA HOME -->
-            
-            {% if daily_mixes %}
-            <section class="home-shelf">
-                <div class="home-shelf-header">
-                    <h2 class="home-shelf-title">Especialmente para ti</h2>
-                </div>
-                <div class="horizontal-scroll-grid">
-                    {% for mix in daily_mixes %}
-                    <a href="{{ url_for('daily_mix_detail', mix_id=mix.id) }}" class="album-card" style="text-decoration:none">
-                        <div class="album-card-cover">
-                            <div class="album-card-placeholder"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
-                            <div class="album-card-overlay">
-                                <button class="album-card-play"><i class="fa-solid fa-play"></i></button>
-                            </div>
-                        </div>
-                        <div class="album-card-info">
-                            <div class="album-card-title">{{ mix.nombre }}</div>
-                            <div class="album-card-artist">{{ mix.fecha.strftime('%d %b %Y') }}</div>
-                        </div>
-                    </a>
-                    {% endfor %}
-                </div>
-            </section>
-            {% endif %}
+            <div class="album-card-info">
+                <div class="album-card-title">{{ mix.nombre }}</div>
+                <div class="album-card-artist">{{ mix.fecha.strftime('%d %b %Y') }}</div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
 
-            {% if albumes_recientes %}
-            <section class="home-shelf">
-                <div class="home-shelf-header">
-                    <h2 class="home-shelf-title">Añadidos recientemente</h2>
+{% if albumes_recientes %}
+<section class="home-shelf">
+    <div class="home-shelf-header">
+        <h2 class="home-shelf-title">Añadidos recientemente</h2>
+    </div>
+    <div class="horizontal-scroll-grid">
+        {% for album in albumes_recientes %}
+        <a href="{{ url_for('browse.album_detail', album_id=album.id) }}" class="album-card"
+            style="text-decoration:none">
+            <div class="album-card-cover">
+                {% set album_cover = album.portada_url %}
+                {% if not album_cover and album.canciones|length > 0 %}
+                {% set album_cover = url_for('servir_album_art', cancion_id=album.canciones[0].id) %}
+                {% endif %}
+                {% if album_cover %}
+                <img src="{{ album_cover }}" alt="{{ album.titulo }}" loading="lazy"
+                    onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                <div class="album-card-placeholder" style="display:none"><i class="fa-solid fa-compact-disc"></i></div>
+                {% else %}
+                <div class="album-card-placeholder"><i class="fa-solid fa-compact-disc"></i></div>
+                {% endif %}
+                <div class="album-card-overlay">
+                    <button class="album-card-play"><i class="fa-solid fa-play"></i></button>
                 </div>
-                <div class="horizontal-scroll-grid">
-                    {% for album in albumes_recientes %}
-                    <a href="{{ url_for('browse.album_detail', album_id=album.id) }}" class="album-card" style="text-decoration:none">
-                        <div class="album-card-cover">
-                            {% set album_cover = album.portada_url %}
-                            {% if not album_cover and album.canciones|length > 0 %}
-                                {% set album_cover = url_for('servir_album_art', cancion_id=album.canciones[0].id) %}
-                            {% endif %}
-                            {% if album_cover %}
-                            <img src="{{ album_cover }}" alt="{{ album.titulo }}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-                            <div class="album-card-placeholder" style="display:none"><i class="fa-solid fa-compact-disc"></i></div>
-                            {% else %}
-                            <div class="album-card-placeholder"><i class="fa-solid fa-compact-disc"></i></div>
-                            {% endif %}
-                            <div class="album-card-overlay">
-                                <button class="album-card-play"><i class="fa-solid fa-play"></i></button>
-                            </div>
-                        </div>
-                        <div class="album-card-info">
-                            <div class="album-card-title">{{ album.titulo }}</div>
-                            <div class="album-card-artist">{{ album.artista_obj.nombre if album.artista_obj else 'Varios' }}</div>
-                        </div>
-                    </a>
-                    {% endfor %}
-                </div>
-            </section>
-            {% endif %}
+            </div>
+            <div class="album-card-info">
+                <div class="album-card-title">{{ album.titulo }}</div>
+                <div class="album-card-artist">{{ album.artista_obj.nombre if album.artista_obj else 'Varios' }}</div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
 
-            {% if artistas_recientes %}
-            <section class="home-shelf">
-                <div class="home-shelf-header">
-                    <h2 class="home-shelf-title">Artistas que te podrían gustar</h2>
-                </div>
-                <div class="horizontal-scroll-grid">
-                    {% for artista in artistas_recientes %}
-                    <a href="{{ url_for('browse.artist_detail', artist_id=artista.id) }}" class="artist-card" style="text-decoration:none; width:160px;">
-                        <div class="artist-card-cover">
-                            {% if artista.foto_url %}
-                            <img src="{{ artista.foto_url }}" alt="{{ artista.nombre }}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-                            <div class="artist-card-placeholder" style="display:none"><i class="fa-solid fa-user"></i></div>
-                            {% else %}
-                            <div class="artist-card-placeholder"><i class="fa-solid fa-user"></i></div>
-                            {% endif %}
-                        </div>
-                        <div class="artist-card-name">{{ artista.nombre }}</div>
-                        <div class="artist-card-meta">Artista</div>
-                    </a>
-                    {% endfor %}
-                </div>
-            </section>
-            {% endif %}
+{% if artistas_recientes %}
+<section class="home-shelf">
+    <div class="home-shelf-header">
+        <h2 class="home-shelf-title">Artistas que te podrían gustar</h2>
+    </div>
+    <div class="horizontal-scroll-grid">
+        {% for artista in artistas_recientes %}
+        <a href="{{ url_for('browse.artist_detail', artist_id=artista.id) }}" class="artist-card"
+            style="text-decoration:none; width:160px;">
+            <div class="artist-card-cover">
+                {% if artista.foto_url %}
+                <img src="{{ artista.foto_url }}" alt="{{ artista.nombre }}" loading="lazy"
+                    onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                <div class="artist-card-placeholder" style="display:none"><i class="fa-solid fa-user"></i></div>
+                {% else %}
+                <div class="artist-card-placeholder"><i class="fa-solid fa-user"></i></div>
+                {% endif %}
+            </div>
+            <div class="artist-card-name">{{ artista.nombre }}</div>
+            <div class="artist-card-meta">Artista</div>
+        </a>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
 
-            {% if canciones_recientes %}
-            <section class="home-shelf">
-                <div class="home-shelf-header">
-                    <h2 class="home-shelf-title">Últimas pistas agregadas</h2>
-                </div>
-                <div class="tracklist" id="dashboard-tracklist">
-                    {% for cancion in canciones_recientes %}
-                    <div class="track-item" data-cancion-id="{{ cancion.id }}"
-                         data-audio="{{ url_for('servir_audio', cancion_id=cancion.id) }}"
-                         data-cover="{{ url_for('servir_album_art', cancion_id=cancion.id) }}"
-                         data-titulo="{{ cancion.titulo }}"
-                         data-artista="{{ cancion.artista_obj.nombre if cancion.artista_obj else 'Desconocido' }}">
-                        <button class="track-play-btn" title="Reproducir"><i class="fa-solid fa-play"></i></button>
-                        <span class="track-num">{{ loop.index }}</span>
-                        <div class="track-cover-sm">
-                            <img src="{{ url_for('servir_album_art', cancion_id=cancion.id) }}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-                            <div class="cover-fallback" style="display:none"><i class="fa-solid fa-music"></i></div>
-                        </div>
-                        <div class="track-info">
-                            <span class="track-title">{{ cancion.titulo }}</span>
-                            <span class="track-artist-mobile">{{ cancion.artista_obj.nombre if cancion.artista_obj else '' }}</span>
-                        </div>
-                        <span class="track-artist-col">{{ cancion.artista_obj.nombre if cancion.artista_obj else '' }}</span>
-                        <span class="track-duration">
-                            {% if cancion.duracion %}{{ (cancion.duracion // 60) }}:{{ '%02d' % (cancion.duracion % 60) }}{% else %}--:--{% endif %}
-                        </span>
-                        <button class="btn-add-collection" data-type="cancion" data-id="{{ cancion.id }}" title="Añadir a playlist" style="background:transparent; border:none; color:var(--muted); cursor:pointer; padding:4px"><i class="fa-solid fa-plus"></i></button>
-                    </div>
-                    {% endfor %}
-                </div>
-            </section>
-            {% endif %}
+{% if canciones_recientes %}
+<section class="home-shelf">
+    <div class="home-shelf-header">
+        <h2 class="home-shelf-title">Últimas pistas agregadas</h2>
+    </div>
+    <div class="tracklist" id="dashboard-tracklist">
+        {% for cancion in canciones_recientes %}
+        <div class="track-item" data-cancion-id="{{ cancion.id }}"
+            data-audio="{{ url_for('servir_audio', cancion_id=cancion.id) }}"
+            data-cover="{{ url_for('servir_album_art', cancion_id=cancion.id) }}" data-titulo="{{ cancion.titulo }}"
+            data-artista="{{ cancion.artista_obj.nombre if cancion.artista_obj else 'Desconocido' }}">
+            <button class="track-play-btn" title="Reproducir"><i class="fa-solid fa-play"></i></button>
+            <span class="track-num">{{ loop.index }}</span>
+            <div class="track-cover-sm">
+                <img src="{{ url_for('servir_album_art', cancion_id=cancion.id) }}" alt="" loading="lazy"
+                    onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                <div class="cover-fallback" style="display:none"><i class="fa-solid fa-music"></i></div>
+            </div>
+            <div class="track-info">
+                <span class="track-title">{{ cancion.titulo }}</span>
+                <span class="track-artist-mobile">{{ cancion.artista_obj.nombre if cancion.artista_obj else '' }}</span>
+            </div>
+            <span class="track-artist-col">{{ cancion.artista_obj.nombre if cancion.artista_obj else '' }}</span>
+            <span class="track-duration">
+                {% if cancion.duracion %}{{ (cancion.duracion // 60) }}:{{ '%02d' % (cancion.duracion % 60) }}{% else
+                %}--:--{% endif %}
+            </span>
+            <button class="btn-add-collection" data-type="cancion" data-id="{{ cancion.id }}" title="Añadir a playlist"
+                style="background:transparent; border:none; color:var(--muted); cursor:pointer; padding:4px"><i
+                    class="fa-solid fa-plus"></i></button>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
 
-        {% endif %} <!-- Fin de comprobación es_favoritos -->
-        
-    {% endif %}
+{% endif %} <!-- Fin de comprobación es_favoritos -->
+
+{% endif %}
 {% endblock %}
 
 {% block extra_js %}
 <script>
-(function() {
-    const greetingEl = document.getElementById("dynamic-greeting");
-    if (greetingEl) {
-        const hour = new Date().getHours();
-        let greeting = "Buenos días";
-        if (hour >= 12 && hour < 20) {
-            greeting = "Buenas tardes";
-        } else if (hour >= 20 || hour < 5) {
-            greeting = "Buenas noches";
+    (function () {
+        const greetingEl = document.getElementById("dynamic-greeting");
+        if (greetingEl) {
+            const hour = new Date().getHours();
+            let greeting = "Buenos días";
+            if (hour >= 12 && hour < 20) {
+                greeting = "Buenas tardes";
+            } else if (hour >= 20 || hour < 5) {
+                greeting = "Buenas noches";
+            }
+            greetingEl.textContent = greeting;
         }
-        greetingEl.textContent = greeting;
-    }
-})();
+    })();
 </script>
 {% endblock %}

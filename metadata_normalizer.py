@@ -54,18 +54,36 @@ def limpiar_nombre(nombre):
     if not nombre:
         return nombre
     n = nombre.strip()
+    
+    # Limpiar palabras extra comunes al final del nombre
+    for pattern in CLEANUP_WORDS:
+        n = re.sub(pattern, '', n)
+
     n = re.sub(r'\s{2,}', ' ', n)
     # Quitar puntos suspensivos y normalizar comillas
     n = n.replace('...', '…').replace("''", '"').replace('``', '"')
-    return n
+    return n.strip()
 
 
 def normalizar_artista(nombre):
-    """Normaliza nombre de artista"""
+    """Normaliza nombre de artista separando feats y colaboraciones"""
     if not nombre:
         return nombre
     n = limpiar_nombre(nombre)
-    # Quitar "The " al inicio si existe para ordenar, pero mantener display
+    
+    # Expresiones regulares para separar por colaboraciones o feat
+    separators = [
+        r'(?i)\s+feat\.?\s+', 
+        r'(?i)\s+ft\.?\s+', 
+        r'(?i)\s+featuring\s+', 
+        r'\s*/\s*',
+        r'\s*,\s*(?=(?:feat|ft)\.?\s)',
+    ]
+    for sep in separators:
+        partes = re.split(sep, n)
+        if len(partes) > 1:
+            n = partes[0].strip()
+            
     return n
 
 
