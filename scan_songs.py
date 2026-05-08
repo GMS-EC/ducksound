@@ -798,17 +798,14 @@ def escanear_carpeta_audio(progress_callback=None):
         albumartist = albumartist or artista
 
         artista_obj = obtener_o_crear_artista(artista)
-        if artista:
-            artista_norm = normalizar_artista(artista)
-            artista_obj = Artista.query.filter_by(nombre=artista_norm).first()
         if not artista_obj and artista:
-            artista_obj = Artista(nombre=artista_norm or artista)
+            artista_obj = Artista(nombre=artista)
             db.session.add(artista_obj)
             db.session.flush()
             # Auto-enriquecer metadatos del nuevo artista desde APIs públicas
             try:
                 enrich_artist(artista_obj, commit=False)
-                print(f"  Metadatos automaticos obtenidos para: {artista_norm or artista}")
+                print(f"  Metadatos automaticos obtenidos para: {artista}")
             except Exception as e:
                 print(f"  ⚠ No se pudieron obtener metadatos automáticos: {e}")
 
