@@ -20,10 +20,14 @@
                     <button id="btn-start-scan" class="btn" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15)" title="Recorre todos los archivos. Úsar cuando se cambien metadatos o portadas.">
                         <i class="fa-solid fa-rotate"></i> Escaneo completo
                     </button>
+                    <button id="btn-clean-metadata" class="btn" style="background:rgba(251,191,36,0.15);border:1px solid rgba(251,191,36,0.3);color:#fbbf24;" title="Agrupa artistas y álbumes repetidos por colaboraciones o ediciones.">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> Limpiar Duplicados
+                    </button>
                 </div>
                 <p style="font-size:11px;color:var(--muted);margin-top:6px">
-                    <i class="fa-solid fa-bolt" style="color:var(--accent)"></i> Rápido: solo archivos nuevos/eliminados &nbsp;·&nbsp;
-                    <i class="fa-solid fa-rotate"></i> Completo: re-analiza toda la biblioteca
+                    <i class="fa-solid fa-bolt" style="color:var(--accent)"></i> Rápido: solo archivos nuevos &nbsp;·&nbsp;
+                    <i class="fa-solid fa-rotate"></i> Completo: re-analiza todo &nbsp;·&nbsp;
+                    <i class="fa-solid fa-wand-magic-sparkles" style="color:#fbbf24"></i> Limpiar: normaliza etiquetas
                 </p>
             </div>
         </div>
@@ -489,6 +493,7 @@
     // ===== Scan logic =====
     const startBtn = document.getElementById('btn-start-scan');
     const quickBtn = document.getElementById('btn-quick-scan');
+    const cleanBtn = document.getElementById('btn-clean-metadata');
     const panel = document.getElementById('scan-progress-panel');
     const bar = document.getElementById('scan-progress-bar');
     const statusText = document.getElementById('scan-status-text');
@@ -503,13 +508,16 @@
     let currentTaskId = null;
 
     function setRunningState(running, label){
-        [startBtn, quickBtn].forEach(b => { if(b){ b.disabled = running; b.style.opacity = running ? '0.6' : '1'; } });
+        [startBtn, quickBtn, cleanBtn].forEach(b => { if(b){ b.disabled = running; b.style.opacity = running ? '0.6' : '1'; } });
         if (quickBtn) quickBtn.innerHTML = running
             ? '<i class="fa-solid fa-spinner fa-spin"></i> Escaneando...'
             : '<i class="fa-solid fa-bolt"></i> Escaneo rápido';
         if (startBtn) startBtn.innerHTML = running
             ? '<i class="fa-solid fa-spinner fa-spin"></i> Escaneando...'
             : '<i class="fa-solid fa-rotate"></i> Escaneo completo';
+        if (cleanBtn) cleanBtn.innerHTML = running
+            ? '<i class="fa-solid fa-spinner fa-spin"></i> Agrupando...'
+            : '<i class="fa-solid fa-wand-magic-sparkles"></i> Ejecutar Agrupación';
     }
 
     function renderStatus(data){
@@ -629,19 +637,7 @@
 
     startBtn.addEventListener('click', () => startScan('/admin/escanear/start', 'Iniciando escaneo completo...'));
     if (quickBtn) quickBtn.addEventListener('click', () => startScan('/admin/escanear/quick', 'Iniciando escaneo rápido...'));
-
-    // ===== Logica del Changelog Collapsible ======
-    const clToggle = document.getElementById('changelog-toggle');
-    const clCollapsible = document.getElementById('changelog-collapsible');
-    const clChevron = document.getElementById('changelog-chevron');
-    if (clToggle && clCollapsible) {
-        clToggle.addEventListener('click', () => {
-            clCollapsible.classList.toggle('open');
-            if (clChevron) {
-                clChevron.classList.toggle('open');
-            }
-        });
-    }
+    if (cleanBtn) cleanBtn.addEventListener('click', () => startScan('/admin/clean_metadata', 'Agrupando artistas y álbumes...'));
 
 })();
 </script>

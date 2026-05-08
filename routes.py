@@ -103,6 +103,97 @@ def escanear_canciones():
     return render_template('scan_result.html', error=None, resumen=resumen)
 
 
+@admin_bp.route('/admin/clean_metadata', methods=['POST'])
+def admin_clean_metadata():
+    """Agrupa artistas y álbumes duplicados sin requerir un escaneo del disco."""
+    global _active_scan_id
+    if not _is_admin_request():
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    with _scan_tasks_lock:
+        if _active_scan_id and _active_scan_id in _scan_tasks:
+            active = _scan_tasks[_active_scan_id]
+            if active['status'] in ('running', 'enriching'):
+                return jsonify({'error': 'scan_in_progress', 'task_id': _active_scan_id}), 409
+
+        task_id = str(uuid.uuid4())
+        _active_scan_id = task_id
+        _scan_tasks[task_id] = {
+            'status': 'running',
+            'message': 'Iniciando limpieza...',
+            'percent': 0,
+            'processed': 0,
+            'total': 0,
+            'summary': None
+        }
+
+    def _run_clean():
+        from models import Artista, Album, db
+        from metadata_normalizer import normalizar_artista, limpiar_nombre
+        from app import app
+        
+        with app.app_context():
+            def emit(data):
+                with _scan_tasks_lock:
+                    if task_id in _scan_tasks:
+                        _scan_tasks[task_id].update(data)
+            
+            try:
+                emit({'message': 'Buscando artistas para agrupar...', 'percent': 10})
+                artistas = Artista.query.all()
+                total = len(artistas)
+                
+                mergeados = 0
+                renombrados = 0
+                
+                for idx, artista in enumerate(artistas):
+                    emit({'percent': 10 + int((idx/total)*40), 'message': f'Artistas: {artista.nombre}', 'processed': idx, 'total': total})
+                    nombre_norm = normalizar_artista(artista.nombre)
+                    if nombre_norm != artista.nombre:
+                        artista_existente = Artista.query.filter_by(nombre=nombre_norm).first()
+                        if artista_existente and artista_existente.id != artista.id:
+                            for cancion in artista.canciones:
+                                cancion.artista_id = artista_existente.id
+                            for album in artista.albums:
+                                album.artista_id = artista_existente.id
+                            db.session.delete(artista)
+                            mergeados += 1
+                        else:
+                            artista.nombre = nombre_norm
+                            renombrados += 1
+                db.session.commit()
+                
+                emit({'message': 'Buscando álbumes para unificar...', 'percent': 50})
+                albumes = Album.query.all()
+                total_al = len(albumes)
+                for idx, album in enumerate(albumes):
+                    emit({'percent': 50 + int((idx/total_al)*40), 'message': f'Álbumes: {album.titulo}', 'processed': idx, 'total': total_al})
+                    titulo_norm = limpiar_nombre(album.titulo)
+                    if titulo_norm != album.titulo:
+                        album_existente = Album.query.filter_by(titulo=titulo_norm, artista_id=album.artista_id).first()
+                        if album_existente and album_existente.id != album.id:
+                            for cancion in album.canciones:
+                                cancion.album_id = album_existente.id
+                            db.session.delete(album)
+                        else:
+                            album.titulo = titulo_norm
+                db.session.commit()
+                
+                emit({
+                    'status': 'done',
+                    'percent': 100,
+                    'message': 'Limpieza terminada con éxito.',
+                    'summary': {'agregadas': 0, 'actualizadas': renombrados, 'omitidas': mergeados, 'procesadas': total + total_al}
+                })
+            except Exception as e:
+                emit({'status': 'error', 'message': str(e), 'percent': 100})
+
+    import threading
+    t = threading.Thread(target=_run_clean)
+    t.start()
+    return jsonify({'message': 'started', 'task_id': task_id})
+
+
 @admin_bp.route('/admin/escanear/start', methods=['POST'])
 def admin_scan_start():
     """Inicia un escaneo en segundo plano y devuelve task_id para polling."""
