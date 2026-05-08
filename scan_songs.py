@@ -593,6 +593,217 @@ def escanear_carpeta_audio(progress_callback=None):
         'summary': resumen
     })
     return resumen
+
+
+def escaneo_rapido(progress_callback=None):
+    """
+    Escaneo inteligente e incremental.
+    - Solo procesa archivos que NO están ya en la base de datos.
+    - Detecta archivos eliminados del disco y los marca.
+    - Hasta 10x más rápido que el escaneo completo en bibliotecas grandes.
+    """
+    def emit_progress(payload):
+        if not progress_callback:
+            return
+        try:
+            progress_callback(payload)
+        except Exception:
+            pass
+
+    print("=" * 60)
+    print("⚡ ESCANEO RÁPIDO (INCREMENTAL)")
+    print("=" * 60)
+
+    carpeta_audio = Config.AUDIO_FOLDER
+    carpeta_lyrics = Config.LYRICS_FOLDER
+
+    if not carpeta_audio.exists():
+        emit_progress({'stage': 'error', 'message': f'La carpeta de audio no existe: {carpeta_audio}', 'percent': 100})
+        return {'agregadas': 0, 'actualizadas': 0, 'omitidas': 0, 'procesadas': 0, 'eliminadas': 0}
+
+    emit_progress({'stage': 'processing', 'message': 'Comparando biblioteca con disco...', 'percent': 2, 'processed': 0, 'total': 0})
+
+    # 1. Obtener todas las rutas del disco en un set (operación de disco, rápida)
+    archivos_disco = {
+        str(archivo)
+        for archivo in carpeta_audio.rglob('*')
+        if archivo.is_file() and archivo.suffix.lower() in AUDIO_EXTENSIONS
+    }
+
+    # 2. Obtener todas las rutas registradas en la BD en un set (una sola query)
+    rutas_bd = {row.ruta_archivo_audio for row in Cancion.query.with_entities(Cancion.ruta_archivo_audio).all()}
+
+    # 3. Calcular diferencias mediante operaciones de conjuntos (O(n), instantáneo)
+    archivos_nuevos = archivos_disco - rutas_bd          # en disco pero no en BD → agregar
+    archivos_eliminados = rutas_bd - archivos_disco       # en BD pero no en disco → marcar/eliminar
+
+    print(f"📊 En disco: {len(archivos_disco)} | En BD: {len(rutas_bd)}")
+    print(f"✨ Nuevos: {len(archivos_nuevos)} | 🗑 Eliminados: {len(archivos_eliminados)}")
+
+    canciones_agregadas = 0
+    canciones_eliminadas = 0
+    errores = 0
+
+    # 4. Marcar canciones eliminadas (no las borramos de BD para no perder historial)
+    if archivos_eliminados:
+        emit_progress({
+            'stage': 'processing',
+            'message': f'Detectando {len(archivos_eliminados)} archivos eliminados...',
+            'percent': 5, 'processed': 0, 'total': len(archivos_nuevos)
+        })
+        for ruta_eliminada in archivos_eliminados:
+            cancion = Cancion.query.filter_by(ruta_archivo_audio=ruta_eliminada).first()
+            if cancion:
+                # Marcamos con un prefijo para indicar que el archivo ya no existe
+                if not cancion.ruta_archivo_audio.startswith('[ELIMINADO]'):
+                    cancion.ruta_archivo_audio = '[ELIMINADO] ' + cancion.ruta_archivo_audio
+                    db.session.add(cancion)
+                    canciones_eliminadas += 1
+                    print(f"  🗑 Marcada como eliminada: {Path(ruta_eliminada).name}")
+        db.session.commit()
+
+    if not archivos_nuevos:
+        emit_progress({
+            'stage': 'done',
+            'message': f'Sin cambios — biblioteca al día. ({canciones_eliminadas} eliminadas)',
+            'percent': 100, 'processed': 0, 'total': 0,
+            'summary': {'agregadas': 0, 'actualizadas': 0, 'omitidas': len(rutas_bd),
+                        'procesadas': 0, 'eliminadas': canciones_eliminadas,
+                        'meta_artistas': 0, 'meta_albumes': 0}
+        })
+        return {'agregadas': 0, 'actualizadas': 0, 'omitidas': len(rutas_bd),
+                'procesadas': 0, 'eliminadas': canciones_eliminadas, 'meta_artistas': 0, 'meta_albumes': 0}
+
+    # 5. Procesar solo los archivos nuevos (misma lógica que el escaneo completo)
+    archivos_nuevos_lista = [Path(p) for p in sorted(archivos_nuevos)]
+    total = len(archivos_nuevos_lista)
+
+    for idx, archivo in enumerate(archivos_nuevos_lista, start=1):
+        emit_progress({
+            'stage': 'processing',
+            'message': f'Nuevo: {archivo.name}',
+            'current_file': archivo.name,
+            'processed': idx - 1,
+            'total': total,
+            'percent': int(5 + ((idx - 1) / total) * 90)
+        })
+
+        try:
+            metadatos = extraer_metadatos(archivo)
+
+            if metadatos:
+                titulo = metadatos.get('titulo')
+                artista = metadatos.get('artista')
+                album = metadatos.get('album')
+                duracion = metadatos.get('duracion')
+            else:
+                titulo, artista = limpiar_nombre_archivo(archivo.name)
+                album = None
+                duracion = None
+
+            if not artista or not album:
+                artista_carpeta, album_carpeta = inferir_metadatos_desde_ruta(archivo, carpeta_audio)
+                if artista_carpeta and not artista:
+                    artista = artista_carpeta
+                if album_carpeta and not album:
+                    album = album_carpeta
+
+            artista_obj = None
+            if artista:
+                from metadata_normalizer import normalizar_artista
+                artista_norm = normalizar_artista(artista)
+                artista_obj = Artista.query.filter_by(nombre=artista_norm).first()
+                if not artista_obj:
+                    artista_obj = Artista(nombre=artista_norm or artista)
+                    db.session.add(artista_obj)
+                    db.session.flush()
+                    try:
+                        enrich_artist(artista_obj, commit=False)
+                    except Exception:
+                        pass
+
+            album_obj = None
+            from metadata_normalizer import detectar_version, limpiar_nombre
+            album_base, _ = detectar_version(album)
+            album_final = limpiar_nombre(album_base or album)
+            if album_final and artista_obj:
+                album_obj = Album.query.filter_by(titulo=album_final, artista_id=artista_obj.id).first()
+                if not album_obj:
+                    album_obj = Album(titulo=album_final, artista_id=artista_obj.id)
+                    db.session.add(album_obj)
+                    db.session.flush()
+
+            ruta_lrc = buscar_archivo_lrc(archivo, carpeta_lyrics)
+            if not ruta_lrc:
+                nombre_base = Path(archivo).stem
+                ruta_lrc_destino = carpeta_lyrics / f"{nombre_base}.lrc"
+                if descargar_letra_lrc(titulo or archivo.stem, artista or 'Desconocido', str(ruta_lrc_destino)):
+                    ruta_lrc = str(ruta_lrc_destino)
+
+            aa = (metadatos or {}).get('audio_analysis', {})
+            nueva_cancion = Cancion(
+                titulo=titulo or archivo.stem,
+                artista_id=artista_obj.id if artista_obj else None,
+                album_id=album_obj.id if album_obj else None,
+                duracion=duracion or aa.get('duration'),
+                ruta_archivo_audio=str(archivo),
+                ruta_archivo_lrc=ruta_lrc,
+                ruta_imagen_album=metadatos.get('ruta_imagen') if metadatos else None,
+                numero_pista=(metadatos or {}).get('numero_pista'),
+                genero=(metadatos or {}).get('genero') or aa.get('genero'),
+                sample_rate=aa.get('sample_rate'),
+                bit_depth=aa.get('bit_depth'),
+                channels=aa.get('channels'),
+                nyquist_freq=aa.get('nyquist_freq'),
+                dynamic_range=aa.get('dynamic_range'),
+                peak_level=aa.get('peak_level'),
+                rms_level=aa.get('rms_level'),
+                total_samples=aa.get('total_samples'),
+                bit_rate=aa.get('bit_rate')
+            )
+            db.session.add(nueva_cancion)
+            canciones_agregadas += 1
+            print(f"  ✅ Agregada: {archivo.name}")
+        except Exception as ex:
+            errores += 1
+            print(f"  ❌ Error procesando {archivo.name}: {ex}")
+
+    db.session.commit()
+
+    # 6. Enriquecer solo artistas y álbumes sin foto/bio (los ya enriquecidos se omiten)
+    emit_progress({
+        'stage': 'enriching',
+        'message': 'Enriqueciendo metadatos de artistas/álbumes nuevos...',
+        'processed': total, 'total': total, 'percent': 97
+    })
+    try:
+        res_meta = enrich_all(commit=True)
+        meta_artistas = res_meta['artistas'][0]
+        meta_albumes = res_meta['albumes'][0]
+    except Exception as e:
+        print(f"  ⚠ Error enriquecimiento: {e}")
+        meta_artistas = 0
+        meta_albumes = 0
+
+    resumen = {
+        'agregadas': canciones_agregadas,
+        'actualizadas': 0,
+        'omitidas': len(rutas_bd) - canciones_eliminadas,
+        'procesadas': canciones_agregadas,
+        'eliminadas': canciones_eliminadas,
+        'meta_artistas': meta_artistas,
+        'meta_albumes': meta_albumes,
+    }
+    emit_progress({
+        'stage': 'done',
+        'message': f'Escaneo rápido finalizado — {canciones_agregadas} nuevas, {canciones_eliminadas} eliminadas',
+        'percent': 100,
+        'processed': total,
+        'total': total,
+        'summary': resumen
+    })
+    return resumen
+
 if __name__ == '__main__':
     try:
         # Importar la app localmente para evitar importaciones circulares
