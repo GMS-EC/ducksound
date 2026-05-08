@@ -12,16 +12,17 @@ from mutagen import File
 from mutagen.mp3 import MP3
 from mutagen.flac import FLAC
 from mutagen.wave import WAVE
+from tinytag import TinyTag
 from config import Config
 from models import db, Artista, Album, Cancion
 from datetime import datetime
 from metadata_fetcher import enrich_artist, enrich_all
-from metadata_normalizer import normalizar_artista, normalizar_titulo, normalizar_album, detectar_version, limpiar_nombre
+from metadata_normalizer import normalizar_artista, normalizar_titulo, normalizar_album, detectar_version, limpiar_nombre, obtener_album_base_fuzz
 
 # Extensiones de audio soportadas
 AUDIO_EXTENSIONS = {'.mp3', '.flac', '.wav', '.m4a', '.ogg'}
 
-def extraer_metadatos(ruta_archivo):
+def _extraer_metadatos_mutagen_legacy(ruta_archivo):
     """
     Extrae metadatos del archivo de audio usando mutagen.
     Retorna un diccionario con titulo, artista, album, duracion, genero y ruta_imagen.
@@ -133,6 +134,145 @@ def extraer_metadatos(ruta_archivo):
     except Exception as e:
         print(f"  ⚠ Error al leer metadatos: {e}")
         return None
+
+def extraer_metadatos(ruta_archivo):
+    """
+    Extrae metadatos del archivo de audio usando TinyTag como fuente principal.
+    Mutagen se conserva solamente para recuperar portadas embebidas.
+    """
+    from audio_analyzer import analyze_audio
+
+    try:
+        tag = TinyTag.get(str(ruta_archivo), image=False)
+        if tag is None:
+            return None
+
+        def parse_track_num(val):
+            if not val:
+                return None
+            try:
+                return int(str(val).split('/')[0])
+            except Exception:
+                return None
+
+        def extra_tag(*keys):
+            extra = getattr(tag, 'extra', None) or {}
+            for key in keys:
+                valor = extra.get(key)
+                if isinstance(valor, (list, tuple)):
+                    valor = valor[0] if valor else None
+                if valor:
+                    return valor
+            return None
+
+        artista = getattr(tag, 'artist', None) or extra_tag('artist', 'ARTIST')
+        albumartist = (
+            getattr(tag, 'albumartist', None)
+            or extra_tag('albumartist', 'album artist', 'album_artist', 'ALBUMARTIST', 'ALBUM ARTIST', 'TPE2')
+            or artista
+        )
+
+        metadatos = {
+            'titulo': getattr(tag, 'title', None) or extra_tag('title', 'TITLE'),
+            'artista': artista,
+            'albumartist': albumartist,
+            'album': getattr(tag, 'album', None) or extra_tag('album', 'ALBUM'),
+            'duracion': int(tag.duration) if getattr(tag, 'duration', None) else None,
+            'ruta_imagen': None,
+            'genero': getattr(tag, 'genre', None) or extra_tag('genre', 'GENRE'),
+            'numero_pista': parse_track_num(getattr(tag, 'track', None) or extra_tag('tracknumber', 'TRACKNUMBER', 'TRCK')),
+        }
+
+        try:
+            analisis = analyze_audio(ruta_archivo)
+            if analisis:
+                if analisis.get('duration'):
+                    metadatos['duracion'] = int(analisis['duration'])
+                if analisis.get('genero') and not metadatos['genero']:
+                    metadatos['genero'] = analisis['genero']
+                metadatos['audio_analysis'] = analisis
+        except Exception as e:
+            print(f"  âš  Error en anÃ¡lisis de audio: {e}")
+
+        try:
+            audio_file = File(ruta_archivo)
+            if audio_file is not None:
+                apic_tags = [
+                    picture for key, picture in getattr(audio_file, 'tags', {}).items()
+                    if str(key).startswith('APIC')
+                ]
+                if apic_tags:
+                    metadatos['ruta_imagen'] = guardar_imagen_album(apic_tags[0], ruta_archivo)
+                elif getattr(audio_file, 'pictures', None):
+                    metadatos['ruta_imagen'] = guardar_imagen_album(audio_file.pictures[0], ruta_archivo)
+        except Exception as e:
+            print(f"  âš  Error al extraer portada embebida: {e}")
+
+        if not metadatos.get('ruta_imagen'):
+            titulo_b = metadatos.get('titulo') or Path(ruta_archivo).stem
+            artista_b = metadatos.get('albumartist') or metadatos.get('artista') or ''
+            album_b = metadatos.get('album') or ''
+            if titulo_b and artista_b:
+                print(f"  ðŸ” Buscando portada en internet para: {titulo_b}")
+                cover_url = fetch_cover_from_itunes(artista_b, album_b, titulo_b)
+                if cover_url:
+                    ruta_img = descargar_y_guardar_portada(cover_url, ruta_archivo)
+                    if ruta_img:
+                        metadatos['ruta_imagen'] = ruta_img
+                        print(f"  âœ… Portada descargada desde internet.")
+
+        return metadatos
+    except Exception as e:
+        print(f"  âš  Error al leer metadatos: {e}")
+        return None
+
+
+def obtener_o_crear_artista(nombre, enriquecer=True):
+    if not nombre:
+        return None
+
+    nombre_norm = normalizar_artista(nombre)
+    artista_obj = Artista.query.filter_by(nombre=nombre_norm).first()
+    if artista_obj:
+        return artista_obj
+
+    artista_obj = Artista(nombre=nombre_norm or nombre)
+    db.session.add(artista_obj)
+    db.session.flush()
+
+    if enriquecer:
+        try:
+            enrich_artist(artista_obj, commit=False)
+            print(f"  ðŸŒ Metadatos automÃ¡ticos obtenidos para: {nombre_norm or nombre}")
+        except Exception as e:
+            print(f"  âš  No se pudieron obtener metadatos automÃ¡ticos: {e}")
+
+    return artista_obj
+
+
+def obtener_o_crear_album(album, albumartist):
+    if not album or not albumartist:
+        return None
+
+    album_artista_obj = obtener_o_crear_artista(albumartist)
+    if not album_artista_obj:
+        return None
+
+    album_base, _ = detectar_version(album)
+    album_final = normalizar_album(album_base or album)
+    if not album_final:
+        return None
+
+    albumes_artista = Album.query.filter_by(artista_id=album_artista_obj.id).all()
+    album_obj = obtener_album_base_fuzz(album_final, albumes_artista)
+    if album_obj:
+        return album_obj
+
+    album_obj = Album(titulo=album_final, artista_id=album_artista_obj.id)
+    db.session.add(album_obj)
+    db.session.flush()
+    return album_obj
+
 
 def guardar_imagen_album(picture, ruta_audio):
     """
@@ -455,6 +595,7 @@ def escanear_carpeta_audio(progress_callback=None):
         if metadatos:
             titulo = metadatos['titulo']
             artista = metadatos['artista']
+            albumartist = metadatos.get('albumartist') or artista
             album = metadatos['album']
             duracion = metadatos['duracion']
 
@@ -466,6 +607,7 @@ def escanear_carpeta_audio(progress_callback=None):
         else:
             # Usar nombre del archivo como fallback
             titulo, artista = limpiar_nombre_archivo(archivo.name)
+            albumartist = artista
             album = None
             duracion = None
 
@@ -478,12 +620,15 @@ def escanear_carpeta_audio(progress_callback=None):
             artista_carpeta, album_carpeta = inferir_metadatos_desde_ruta(archivo, carpeta_audio)
             if artista_carpeta and not artista:
                 artista = artista_carpeta
+                albumartist = albumartist or artista_carpeta
                 print(f"  📁 Artista inferido desde carpeta: {artista}")
             if album_carpeta and not album:
                 album = album_carpeta
                 print(f"  📁 Álbum inferido desde carpeta: {album}")
 
-        artista_obj = None
+        albumartist = albumartist or artista
+
+        artista_obj = obtener_o_crear_artista(artista)
         if artista:
             artista_norm = normalizar_artista(artista)
             artista_obj = Artista.query.filter_by(nombre=artista_norm).first()
@@ -503,10 +648,11 @@ def escanear_carpeta_audio(progress_callback=None):
         album_final = normalizar_album(album_base or album)
         if album_final and artista_obj:
             album_obj = Album.query.filter_by(titulo=album_final, artista_id=artista_obj.id).first()
-        if not album_obj and album_final and artista_obj:
+        if not album_obj and album_final and artista_obj and albumartist is None:
             album_obj = Album(titulo=album_final, artista_id=artista_obj.id)
             db.session.add(album_obj)
             db.session.flush()
+        album_obj = obtener_o_crear_album(album, albumartist)
 
         # Buscar archivo LRC correspondiente
         ruta_lrc = buscar_archivo_lrc(archivo, carpeta_lyrics)
@@ -730,10 +876,12 @@ def escaneo_rapido(progress_callback=None):
             if metadatos:
                 titulo = metadatos.get('titulo')
                 artista = metadatos.get('artista')
+                albumartist = metadatos.get('albumartist') or artista
                 album = metadatos.get('album')
                 duracion = metadatos.get('duracion')
             else:
                 titulo, artista = limpiar_nombre_archivo(archivo.name)
+                albumartist = artista
                 album = None
                 duracion = None
 
@@ -741,33 +889,13 @@ def escaneo_rapido(progress_callback=None):
                 artista_carpeta, album_carpeta = inferir_metadatos_desde_ruta(archivo, carpeta_audio)
                 if artista_carpeta and not artista:
                     artista = artista_carpeta
+                    albumartist = albumartist or artista_carpeta
                 if album_carpeta and not album:
                     album = album_carpeta
+            albumartist = albumartist or artista
 
-            artista_obj = None
-            if artista:
-                from metadata_normalizer import normalizar_artista
-                artista_norm = normalizar_artista(artista)
-                artista_obj = Artista.query.filter_by(nombre=artista_norm).first()
-                if not artista_obj:
-                    artista_obj = Artista(nombre=artista_norm or artista)
-                    db.session.add(artista_obj)
-                    db.session.flush()
-                    try:
-                        enrich_artist(artista_obj, commit=False)
-                    except Exception:
-                        pass
-
-            album_obj = None
-            from metadata_normalizer import detectar_version, normalizar_album
-            album_base, _ = detectar_version(album)
-            album_final = normalizar_album(album_base or album)
-            if album_final and artista_obj:
-                album_obj = Album.query.filter_by(titulo=album_final, artista_id=artista_obj.id).first()
-                if not album_obj:
-                    album_obj = Album(titulo=album_final, artista_id=artista_obj.id)
-                    db.session.add(album_obj)
-                    db.session.flush()
+            artista_obj = obtener_o_crear_artista(artista)
+            album_obj = obtener_o_crear_album(album, albumartist)
 
             ruta_lrc = buscar_archivo_lrc(archivo, carpeta_lyrics)
             if not ruta_lrc:

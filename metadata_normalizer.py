@@ -1,5 +1,8 @@
 import re
 
+from rapidfuzz import fuzz
+from unidecode import unidecode
+
 # Patrones para detectar versiones de álbumes
 VERSION_PATTERNS = [
     (r'(?i)\b(deluxe|deluxe edition)\b', 'Deluxe Edition'),
@@ -74,18 +77,20 @@ def normalizar_artista(nombre):
     n = limpiar_nombre(nombre)
     
     # Expresiones regulares para separar por colaboraciones o feat
-    separators = [
-        r'(?i)\s+feat\.?\s+', 
-        r'(?i)\s+ft\.?\s+', 
-        r'(?i)\s+featuring\s+', 
-        r'\s*/\s*',
-        r'\s*,\s+',             # Split by any comma to take the first artist
-        r'\s+x\s+(?=[A-Z])',    # Sometimes 'x' is used as separator (e.g. Artist x Artist)
-    ]
-    for sep in separators:
-        partes = re.split(sep, n)
-        if len(partes) > 1:
-            n = partes[0].strip()
+    separadores = (
+        r'(?i:\s+feat\.?\s+)'
+        r'|(?i:\s+ft\.?\s+)'
+        r'|(?i:\s+featuring\s+)'
+        r'|\s*/\s*'
+        r'|\s*,\s+'
+        r'|\s*&\s*'
+        r'|(?i:\s+and\s+)'
+        r'|\s+y\s+(?=[A-ZÁÉÍÓÚÑ])'
+        r'|\s+x\s+(?=[A-ZÁÉÍÓÚÑ])'
+    )
+    partes = re.split(separadores, n, maxsplit=1)
+    if len(partes) > 1:
+        n = partes[0].strip()
             
     # Casos ultra-específicos que suelen repetirse:
     n = re.sub(r'(?i)\s+B\.C\.$', '', n)  # Ghost B.C. -> Ghost
@@ -137,3 +142,36 @@ def agrupar_albumes_por_base(albumes):
             grupos[base] = []
         grupos[base].append((album, version))
     return grupos
+
+
+def _texto_fuzzy_album(titulo):
+    """Normaliza texto de album para comparaciones fuzzy."""
+    if not titulo:
+        return ''
+    n = normalizar_album(titulo)
+    n = unidecode(n).lower()
+    n = re.sub(r'[^a-z0-9]+', ' ', n)
+    return re.sub(r'\s{2,}', ' ', n).strip()
+
+
+def obtener_album_base_fuzz(titulo_escaneado, albumes_existentes, umbral=85):
+    """
+    Busca el album existente mas parecido al titulo escaneado.
+    Retorna el objeto Album con mayor puntaje si supera el umbral, o None.
+    """
+    titulo_limpio = _texto_fuzzy_album(titulo_escaneado)
+    if not titulo_limpio:
+        return None
+
+    mejor_album = None
+    mejor_puntaje = 0
+    for album in albumes_existentes or []:
+        titulo_album = _texto_fuzzy_album(getattr(album, 'titulo', None))
+        if not titulo_album:
+            continue
+        puntaje = fuzz.token_set_ratio(titulo_limpio, titulo_album)
+        if puntaje > mejor_puntaje:
+            mejor_album = album
+            mejor_puntaje = puntaje
+
+    return mejor_album if mejor_puntaje >= umbral else None
