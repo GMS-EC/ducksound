@@ -149,18 +149,18 @@ def admin_clean_metadata():
                 for idx, artista in enumerate(artistas):
                     emit({'percent': 10 + int((idx/total)*40), 'message': f'Artistas: {artista.nombre}', 'processed': idx, 'total': total})
                     nombre_norm = normalizar_artista(artista.nombre)
-                    if nombre_norm != artista.nombre:
-                        artista_existente = Artista.query.filter_by(nombre=nombre_norm).first()
-                        if artista_existente and artista_existente.id != artista.id:
-                            for cancion in artista.canciones:
-                                cancion.artista_id = artista_existente.id
-                            for album in artista.albums:
-                                album.artista_id = artista_existente.id
-                            db.session.delete(artista)
-                            mergeados += 1
-                        else:
-                            artista.nombre = nombre_norm
-                            renombrados += 1
+                    
+                    artista_existente = Artista.query.filter(Artista.nombre == nombre_norm, Artista.id < artista.id).first()
+                    if artista_existente:
+                        for cancion in artista.canciones:
+                            cancion.artista_id = artista_existente.id
+                        for album in artista.albums:
+                            album.artista_id = artista_existente.id
+                        db.session.delete(artista)
+                        mergeados += 1
+                    elif nombre_norm != artista.nombre:
+                        artista.nombre = nombre_norm
+                        renombrados += 1
                 db.session.commit()
                 
                 emit({'message': 'Buscando álbumes para unificar...', 'percent': 50})
@@ -169,14 +169,14 @@ def admin_clean_metadata():
                 for idx, album in enumerate(albumes):
                     emit({'percent': 50 + int((idx/total_al)*40), 'message': f'Álbumes: {album.titulo}', 'processed': idx, 'total': total_al})
                     titulo_norm = limpiar_nombre(album.titulo)
-                    if titulo_norm != album.titulo:
-                        album_existente = Album.query.filter_by(titulo=titulo_norm, artista_id=album.artista_id).first()
-                        if album_existente and album_existente.id != album.id:
-                            for cancion in album.canciones:
-                                cancion.album_id = album_existente.id
-                            db.session.delete(album)
-                        else:
-                            album.titulo = titulo_norm
+                    
+                    album_existente = Album.query.filter(Album.titulo == titulo_norm, Album.artista_id == album.artista_id, Album.id < album.id).first()
+                    if album_existente:
+                        for cancion in album.canciones:
+                            cancion.album_id = album_existente.id
+                        db.session.delete(album)
+                    elif titulo_norm != album.titulo:
+                        album.titulo = titulo_norm
                 db.session.commit()
                 
                 emit({

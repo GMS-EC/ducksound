@@ -7,21 +7,17 @@ with app.app_context():
     artistas = Artista.query.all()
     for artista in artistas:
         nombre_norm = normalizar_artista(artista.nombre)
-        if nombre_norm != artista.nombre:
-            # Buscar si ya existe el artista normalizado
-            artista_existente = Artista.query.filter_by(nombre=nombre_norm).first()
-            if artista_existente and artista_existente.id != artista.id:
-                print(f"Combinando '{artista.nombre}' con '{artista_existente.nombre}'...")
-                # Mover canciones
-                for cancion in artista.canciones:
-                    cancion.artista_id = artista_existente.id
-                # Mover álbumes
-                for album in artista.albums:
-                    album.artista_id = artista_existente.id
-                db.session.delete(artista)
-            else:
-                print(f"Renombrando '{artista.nombre}' a '{nombre_norm}'...")
-                artista.nombre = nombre_norm
+        artista_existente = Artista.query.filter(Artista.nombre == nombre_norm, Artista.id < artista.id).first()
+        if artista_existente:
+            print(f"Combinando '{artista.nombre}' con '{artista_existente.nombre}'...")
+            for cancion in artista.canciones:
+                cancion.artista_id = artista_existente.id
+            for album in artista.albums:
+                album.artista_id = artista_existente.id
+            db.session.delete(artista)
+        elif nombre_norm != artista.nombre:
+            print(f"Renombrando '{artista.nombre}' a '{nombre_norm}'...")
+            artista.nombre = nombre_norm
     
     db.session.commit()
 
@@ -29,16 +25,15 @@ with app.app_context():
     albumes = Album.query.all()
     for album in albumes:
         titulo_norm = limpiar_nombre(album.titulo)
-        if titulo_norm != album.titulo:
-            album_existente = Album.query.filter_by(titulo=titulo_norm, artista_id=album.artista_id).first()
-            if album_existente and album_existente.id != album.id:
-                print(f"Combinando álbum '{album.titulo}' con '{album_existente.titulo}'...")
-                for cancion in album.canciones:
-                    cancion.album_id = album_existente.id
-                db.session.delete(album)
-            else:
-                print(f"Renombrando álbum '{album.titulo}' a '{titulo_norm}'...")
-                album.titulo = titulo_norm
+        album_existente = Album.query.filter(Album.titulo == titulo_norm, Album.artista_id == album.artista_id, Album.id < album.id).first()
+        if album_existente:
+            print(f"Combinando álbum '{album.titulo}' con '{album_existente.titulo}'...")
+            for cancion in album.canciones:
+                cancion.album_id = album_existente.id
+            db.session.delete(album)
+        elif titulo_norm != album.titulo:
+            print(f"Renombrando álbum '{album.titulo}' a '{titulo_norm}'...")
+            album.titulo = titulo_norm
 
     db.session.commit()
     print("¡Listo!")
