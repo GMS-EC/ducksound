@@ -53,6 +53,7 @@
     let nextGain = gainNode2;
 
     let playlist = [];
+    let queuedSongs = [];
     let currentIndex = -1;
     let isPlaying = false;
     let isShuffled = false;
@@ -81,8 +82,33 @@
         return normalized;
     }
 
-    function getNextIndex(){
+    function persistQueue(){
+        try{ localStorage.setItem('player_queue', JSON.stringify(queuedSongs)); }catch(e){}
+    }
+
+    function placeQueuedSongAfterCurrent(song){
+        const queued = normalizeSong(song);
+        if (!queued || !queued.id) return currentIndex;
+
+        const existingIdx = playlist.findIndex(s => s && s.id === queued.id);
+        if (existingIdx === currentIndex) return currentIndex;
+        if (existingIdx !== -1) {
+            playlist.splice(existingIdx, 1);
+            if (existingIdx < currentIndex) currentIndex -= 1;
+        }
+
+        const insertAt = Math.max(0, currentIndex + 1);
+        playlist.splice(insertAt, 0, queued);
+        return insertAt;
+    }
+
+    function getNextIndex(options = {}){
         if (repeatMode === 'one') return currentIndex;
+        if (queuedSongs.length > 0){
+            const nextQueued = options.consumeQueue ? queuedSongs.shift() : queuedSongs[0];
+            if (options.consumeQueue) persistQueue();
+            return placeQueuedSongAfterCurrent(nextQueued);
+        }
         if (isShuffled){
             let idx;
             do { idx = Math.floor(Math.random() * playlist.length); } while (idx === currentIndex && playlist.length > 1);
@@ -191,10 +217,19 @@
     function postState(){
         const nextSongs = [];
         try{
+            const queuedIds = new Set();
+            queuedSongs.forEach(song => {
+                const s = normalizeSong(song);
+                if (!s || !s.id || queuedIds.has(s.id)) return;
+                queuedIds.add(s.id);
+                nextSongs.push({id: s.id, titulo: s.titulo, artista: s.artista, cover: s.cover, queued: true});
+            });
             for(let i=1;i<=6;i++){
                 const s = normalizeSong(playlist[currentIndex + i]);
                 if (!s) break;
+                if (queuedIds.has(s.id)) continue;
                 nextSongs.push({id: s.id, titulo: s.titulo, artista: s.artista, cover: s.cover});
+                if (nextSongs.length >= 6) break;
             }
         }catch(e){}
         const currentSong = normalizeSong(playlist[currentIndex] || null);
@@ -208,7 +243,7 @@
         else { activeAudio.play().catch(()=>{}); isPlaying=true; btnPlay.textContent='⏸'; }
         postState();
     });
-    btnNext.addEventListener('click', ()=>{ if (playlist.length) playIndex(getNextIndex()); });
+    btnNext.addEventListener('click', ()=>{ if (playlist.length || queuedSongs.length) playIndex(getNextIndex({consumeQueue: true})); });
     btnPrev.addEventListener('click', ()=>{ if (playlist.length) playIndex(currentIndex<=0?playlist.length-1:currentIndex-1); });
 
     function bindAudioEvents(aud) {
@@ -226,7 +261,7 @@
                 return;
             }
             if (playlist.length && !crossfadeTriggered) {
-                playIndex(getNextIndex());
+                playIndex(getNextIndex({consumeQueue: true}));
             }
         });
 
@@ -240,7 +275,7 @@
                 if (crossfadeEnabled && d > 0 && !crossfadeTriggered && (d - t) <= crossfadeDuration) {
                     crossfadeTriggered = true;
                     if (playlist.length && repeatMode !== 'one') {
-                        playIndex(getNextIndex(), true); // True = isCrossfading
+                        playIndex(getNextIndex({consumeQueue: true}), true); // True = isCrossfading
                     }
                 }
                 
@@ -268,16 +303,31 @@
             const idx = playlist.findIndex(s=>s.id===song.id);
             if (idx === -1){ playlist.unshift(song); playIndex(0); }
             else { playIndex(idx); }
-            try{ localStorage.setItem('player_playlist', JSON.stringify(playlist)); localStorage.setItem('player_state', JSON.stringify({currentIndex, isPlaying:true})); }catch(e){}
+            queuedSongs = queuedSongs.filter(s => s && s.id !== song.id);
+            try{
+                localStorage.setItem('player_playlist', JSON.stringify(playlist));
+                localStorage.setItem('player_queue', JSON.stringify(queuedSongs));
+                localStorage.setItem('player_state', JSON.stringify({currentIndex, isPlaying:true}));
+            }catch(e){}
         } else if (msg.type === 'setPlaylist'){
             playlist = (msg.playlist || []).map(normalizeSong);
             try{ localStorage.setItem('player_playlist', JSON.stringify(playlist)); }catch(e){}
+        } else if (msg.type === 'queueSong'){
+            const song = normalizeSong(msg.song);
+            if (song && song.id) {
+                queuedSongs = queuedSongs.filter(s => s && s.id !== song.id);
+                if (msg.position === 'next') queuedSongs.unshift(song);
+                else queuedSongs.push(song);
+                nextSongPrepared = false;
+                try{ localStorage.setItem('player_queue', JSON.stringify(queuedSongs)); }catch(e){}
+                postState();
+            }
         } else if (msg.type === 'command'){
             const cmd = msg.cmd;
             if (cmd === 'toggle'){
                 btnPlay.click();
             } else if (cmd === 'next'){
-                if (playlist.length) playIndex(getNextIndex());
+                if (playlist.length || queuedSongs.length) playIndex(getNextIndex({consumeQueue: true}));
             } else if (cmd === 'prev'){
                 if (playlist.length) playIndex(currentIndex<=0?playlist.length-1:currentIndex-1);
             } else if (cmd === 'seek'){
@@ -332,6 +382,8 @@
     try{
         const raw = localStorage.getItem('player_playlist');
         if (raw) playlist = (JSON.parse(raw) || []).map(normalizeSong);
+        const rawQueue = localStorage.getItem('player_queue');
+        if (rawQueue) queuedSongs = (JSON.parse(rawQueue) || []).map(normalizeSong);
         const st = JSON.parse(localStorage.getItem('player_state')||'null');
         if (st && typeof st.currentIndex==='number'){
             currentIndex = st.currentIndex;

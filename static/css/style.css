@@ -817,6 +817,56 @@ body {
   font-size: 12px;
 }
 
+.song-context-menu {
+  position: fixed;
+  z-index: 10050;
+  min-width: 230px;
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(37, 37, 40, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  transform: scale(0.98);
+  transform-origin: top left;
+  pointer-events: none;
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.song-context-menu.visible {
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
+
+.song-context-menu button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.song-context-menu button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-bright);
+}
+
+.song-context-menu i {
+  width: 16px;
+  color: var(--muted);
+  text-align: center;
+}
+
 /* LYRICS IN RIGHT PANEL */
 #lyrics-content-panel {
   padding: 0;

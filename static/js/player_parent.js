@@ -35,8 +35,124 @@
         iframe.contentWindow.postMessage(msg, window.location.origin);
     }
 
+    function songFromCard(card){
+        if (!card) return null;
+        const id = parseInt(card.dataset.cancionId, 10);
+        if (!id) return null;
+        return {
+            id: id,
+            titulo: card.dataset.titulo || 'Sin titulo',
+            artista: card.dataset.artista || '',
+            audio: card.dataset.audio || `/audio/${id}`,
+            cover: card.dataset.cover || `/album-art/${id}`,
+            lyrics: card.dataset.lyrics || `/lyrics/${id}`
+        };
+    }
+
+    function ensureContextMenu(){
+        let menu = document.getElementById('song-context-menu');
+        if (menu) return menu;
+
+        menu = document.createElement('div');
+        menu.id = 'song-context-menu';
+        menu.className = 'song-context-menu';
+        menu.innerHTML = `
+            <button type="button" data-action="play-next"><i class="fa-solid fa-forward-step"></i><span>Reproducir a continuación</span></button>
+            <button type="button" data-action="add-queue"><i class="fa-solid fa-list-ul"></i><span>Añadir a la cola</span></button>
+            <button type="button" data-action="add-playlist"><i class="fa-solid fa-plus"></i><span>Añadir a playlist</span></button>
+            <button type="button" data-action="go-album" class="context-album"><i class="fa-regular fa-circle-dot"></i><span>Ir al álbum</span></button>
+            <button type="button" data-action="go-artist" class="context-artist"><i class="fa-regular fa-user"></i><span>Ir al artista</span></button>
+        `;
+        document.body.appendChild(menu);
+
+        menu.addEventListener('click', (event) => {
+            const button = event.target.closest('button[data-action]');
+            if (!button || !menu._targetCard) return;
+            const card = menu._targetCard;
+            const song = songFromCard(card);
+            const action = button.dataset.action;
+            hideContextMenu();
+
+            if (!song) return;
+            if (action === 'play-next') {
+                sendToPlayer({type: 'queueSong', song, position: 'next'});
+                selectRightTab('upnext');
+            } else if (action === 'add-queue') {
+                sendToPlayer({type: 'queueSong', song, position: 'end'});
+                selectRightTab('upnext');
+            } else if (action === 'add-playlist') {
+                if (window.openCollectionModal) window.openCollectionModal('cancion', song.id);
+            } else if (action === 'go-album' && card.dataset.albumId) {
+                window.location.href = `/album/${card.dataset.albumId}`;
+            } else if (action === 'go-artist' && card.dataset.artistId) {
+                window.location.href = `/artist/${card.dataset.artistId}`;
+            }
+        });
+
+        document.addEventListener('click', hideContextMenu);
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') hideContextMenu();
+        });
+        window.addEventListener('scroll', hideContextMenu, true);
+        window.addEventListener('resize', hideContextMenu);
+        return menu;
+    }
+
+    function hideContextMenu(){
+        const menu = document.getElementById('song-context-menu');
+        if (!menu) return;
+        menu.classList.remove('visible');
+        menu._targetCard = null;
+    }
+
+    function showContextMenu(event, card){
+        const menu = ensureContextMenu();
+        menu._targetCard = card;
+        menu.querySelector('.context-album').style.display = (card.dataset.context === 'album' && card.dataset.albumId) ? '' : 'none';
+        menu.querySelector('.context-artist').style.display = (card.dataset.context === 'artist' && card.dataset.artistId) ? '' : 'none';
+
+        menu.style.left = '0px';
+        menu.style.top = '0px';
+        menu.classList.add('visible');
+        const rect = menu.getBoundingClientRect();
+        const x = Math.min(event.clientX, window.innerWidth - rect.width - 10);
+        const y = Math.min(event.clientY, window.innerHeight - rect.height - 10);
+        menu.style.left = Math.max(10, x) + 'px';
+        menu.style.top = Math.max(10, y) + 'px';
+    }
+
+    function renderUpNextList(container, items){
+        if (!container) return;
+        if (!items || items.length === 0) {
+            container.innerHTML = '<p class="muted">No hay canciones en cola</p>';
+            return;
+        }
+        container.innerHTML = items.map(it => {
+            const cover = it.cover || `/album-art/${it.id}`;
+            const badge = it.queued ? '<span style="font-size:10px;color:var(--accent);font-weight:700;text-transform:uppercase;letter-spacing:.3px">Cola</span>' : '';
+            return `<div class="upnext-item" data-id="${it.id}">
+                <div class="cover"><img src="${escapeHtml(cover)}" alt=""></div>
+                <div class="meta">
+                    <strong>${escapeHtml(it.titulo || 'Sin titulo')}</strong>
+                    <div class="muted">${escapeHtml(it.artista || '')}</div>
+                    ${badge}
+                </div>
+            </div>`;
+        }).join('');
+    }
+
     function bindSongCards(){
         document.querySelectorAll('.song-card, .track-item').forEach(card => {
+            if (!card.dataset.contextMenuBound) {
+                card.dataset.contextMenuBound = '1';
+                card.addEventListener('contextmenu', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    showContextMenu(e, card);
+                });
+            }
+            if (card.dataset.playerClickBound) return;
+            card.dataset.playerClickBound = '1';
             card.addEventListener('click', (e) => {
                 // Ensure audio is unlocked by user gesture (fix autoplay blocking)
                 tryUnlockAudio();
@@ -45,14 +161,7 @@
                     e.stopPropagation();
                 }
                 const id = parseInt(card.dataset.cancionId);
-                const song = {
-                    id: id,
-                    titulo: card.dataset.titulo,
-                    artista: card.dataset.artista,
-                    audio: card.dataset.audio,
-                    cover: card.dataset.cover || null,
-                    lyrics: card.dataset.lyrics || null
-                };
+                const song = songFromCard(card);
                 
                 // Check if song has a context (artist or album)
                 const context = card.dataset.context;
@@ -253,14 +362,14 @@
             const upnextDiv = document.getElementById('upnext-content');
             if (upnextDiv){
                 const items = (st.upnext || []);
-                const upnextStr = JSON.stringify(items.map(it=>it.id));
+                const upnextStr = JSON.stringify(items.map(it=>[it.id, !!it.queued]));
                 if (window._lastUpNextStr !== upnextStr) {
                     window._lastUpNextStr = upnextStr;
                     window._currentUpNext = items; // Save for restoration after SPA nav
                     if (items.length === 0) {
                         upnextDiv.innerHTML = '<p class="muted">No hay canciones en cola</p>';
                     } else {
-                        upnextDiv.innerHTML = items.map(it=>`<div class="upnext-item" data-id="${it.id}" style="padding:8px;border-radius:4px;background:rgba(255,255,255,0.02);margin-bottom:6px;cursor:pointer;transition:all 0.2s ease;border:1px solid transparent"><strong style="font-size:12px">${escapeHtml(it.titulo)}</strong> <div class="muted" style="font-size:11px;color:rgba(232,234,237,0.5)">${escapeHtml(it.artista||'')}</div></div>`).join('');
+                        renderUpNextList(upnextDiv, items);
                         // Add click listeners to upnext items
                         upnextDiv.querySelectorAll('.upnext-item').forEach(item => {
                             item.addEventListener('click', ()=>{
@@ -595,7 +704,7 @@
             if (items.length === 0) {
                 upnextDiv.innerHTML = '<p class="muted">No hay canciones en cola</p>';
             } else {
-                upnextDiv.innerHTML = items.map(it=>`<div class="upnext-item" data-id="${it.id}" style="padding:8px;border-radius:4px;background:rgba(255,255,255,0.02);margin-bottom:6px;cursor:pointer;transition:all 0.2s ease;border:1px solid transparent"><strong style="font-size:12px">${escapeHtml(it.titulo)}</strong> <div class="muted" style="font-size:11px;color:rgba(232,234,237,0.5)">${escapeHtml(it.artista||'')}</div></div>`).join('');
+                renderUpNextList(upnextDiv, items);
                 // Add click listeners to upnext items
                 upnextDiv.querySelectorAll('.upnext-item').forEach(item => {
                     item.addEventListener('click', ()=>{
