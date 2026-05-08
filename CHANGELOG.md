@@ -3,6 +3,13 @@
 Todos los cambios notables de DuckSound serán documentados en este archivo.
 El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/).
 
+## [1.0.1] - 2026-05-08
+
+### Funcionalidad / Fixes
+- **Organización de Artistas y Álbumes:** Se mejoró la lógica de agrupación y normalización. Las colaboraciones (feats, st, /, etc.) ahora se asocian al artista principal.
+- **Normalización de Álbumes:** Ahora se aplican patrones de limpieza regulares (`Original Motion Picture Soundtrack`, etc.) que reducen duplicados al clasificar álbumes.
+- **Panel de Administración:** Se corrigió el renderizado del listado de versiones en `CHANGELOG.md` integrándolo al colapsable general para que ahora sea visible correctamente.
+
 ## [1.0.0] - 2026-05-07
 
 ### 🎉 Lanzamiento Inicial — "First Flight"

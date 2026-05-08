@@ -630,6 +630,19 @@
     startBtn.addEventListener('click', () => startScan('/admin/escanear/start', 'Iniciando escaneo completo...'));
     if (quickBtn) quickBtn.addEventListener('click', () => startScan('/admin/escanear/quick', 'Iniciando escaneo rápido...'));
 
+    // ===== Logica del Changelog Collapsible ======
+    const clToggle = document.getElementById('changelog-toggle');
+    const clCollapsible = document.getElementById('changelog-collapsible');
+    const clChevron = document.getElementById('changelog-chevron');
+    if (clToggle && clCollapsible) {
+        clToggle.addEventListener('click', () => {
+            clCollapsible.classList.toggle('open');
+            if (clChevron) {
+                clChevron.classList.toggle('open');
+            }
+        });
+    }
+
 })();
 </script>
 {% endblock %}

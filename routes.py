@@ -319,7 +319,8 @@ def admin_panel():
 
     # Parsear CHANGELOG.md para mostrarlo en el admin
     import re as _re
-    changelog_path = os.path.join(current_app.root_path, 'CHANGELOG.md')
+    from config import Config
+    changelog_path = os.path.join(Config.BASE_DIR, 'CHANGELOG.md')
     versions = []
     try:
         with open(changelog_path, 'r', encoding='utf-8') as f:
@@ -367,7 +368,9 @@ def admin_panel():
                 'sections': sections
             })
     except FileNotFoundError:
-        pass
+        print(f"Error: No se encontró el changelog en {changelog_path}")
+    except Exception as e:
+        print(f"Error leyendo changelog: {e}")
 
     return render_template('admin.html', changelog_versions=versions)
 

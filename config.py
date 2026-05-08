@@ -4,7 +4,7 @@ from pathlib import Path
 # Configuración base de la aplicación
 class Config:
     # Versión de la aplicación
-    APP_VERSION = '1.0.0'
+    APP_VERSION = '1.0.1'
 
     # Secret key para sesiones y CSRF
     _secret = os.environ.get('SECRET_KEY')
