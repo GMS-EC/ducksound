@@ -1,0 +1,365 @@
+{% extends "base.html" %}
+
+{% block title %}Gestionar Usuarios - DuckSound{% endblock %}
+
+{% block content %}
+<div class="admin-container">
+    <div class="admin-header">
+        <h1><i class="fa-solid fa-users" style="color:var(--accent);margin-right:8px"></i> Gestionar Usuarios</h1>
+        <p class="admin-subtitle">Crea, edita y gestiona cuentas de usuario</p>
+    </div>
+
+    <!-- Sección de Crear Usuario -->
+    <div class="admin-section">
+        <h2 class="section-title"><i class="fa-regular fa-square-plus" style="margin-right:6px"></i> Crear Nuevo Usuario</h2>
+        <form id="createUserForm" class="admin-form">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label for="nombre_usuario" class="form-label">Nombre de Usuario</label>
+                    <input type="text" id="nombre_usuario" name="nombre_usuario" class="form-input" required minlength="3" placeholder="ej: usuario123">
+                </div>
+
+                <div class="form-group">
+                    <label for="password" class="form-label">Contraseña</label>
+                    <input type="password" id="password" name="password" class="form-input" required minlength="6" placeholder="Mínimo 6 caracteres">
+                </div>
+
+                <div class="form-group">
+                    <label for="role" class="form-label">Rol</label>
+                    <select id="role" name="role" class="form-input">
+                        <option value="user">Usuario Normal</option>
+                        <option value="admin">Administrador</option>
+                    </select>
+                </div>
+
+                <button type="submit" class="btn btn-primary">+ Crear Usuario</button>
+            </div>
+            <div id="createMessage" class="message-container"></div>
+        </form>
+    </div>
+
+    <!-- Sección de Usuarios Registrados -->
+    <div class="admin-section">
+        <h2 class="section-title"><i class="fa-solid fa-list" style="margin-right:6px"></i> Usuarios Registrados</h2>
+        <div class="users-table-container">
+            {% if usuarios %}
+            <table class="users-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Nombre de Usuario</th>
+                        <th>Rol</th>
+                        <th>Fecha de Creación</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for usuario in usuarios %}
+                    <tr class="user-row">
+                        <td>{{ usuario.id }}</td>
+                        <td class="username-cell"><strong>{{ usuario.nombre_usuario }}</strong></td>
+                        <td>
+                            <span class="role-badge {% if usuario.role == 'admin' %}role-admin{% else %}role-user{% endif %}">
+                                {{ 'Administrador' if usuario.role == 'admin' else 'Usuario' }}
+                            </span>
+                        </td>
+                        <td>{{ usuario.fecha_creacion.strftime('%d/%m/%Y %H:%M') if usuario.fecha_creacion else 'N/A' }}</td>
+                        <td class="actions-cell">
+                            <button class="btn-delete" onclick="deleteUser({{ usuario.id }}, '{{ usuario.nombre_usuario }}')"><i class="fa-regular fa-trash-can"></i> Eliminar</button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="empty-state">No hay usuarios registrados aún</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <a href="{{ url_for('admin.admin_panel') }}" class="admin-back">← Volver al panel de administración</a>
+</div>
+
+<style>
+.admin-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 40px 20px;
+}
+
+.admin-header {
+    margin-bottom: 40px;
+}
+
+.admin-header h1 {
+    font-size: 32px;
+    margin-bottom: 8px;
+    color: var(--text-bright);
+}
+
+.admin-subtitle {
+    color: var(--muted);
+    font-size: 14px;
+}
+
+.admin-section {
+    background: var(--surface);
+    border: 1px solid var(--surface-3);
+    border-radius: 12px;
+    padding: 32px;
+    margin-bottom: 32px;
+}
+
+.section-title {
+    font-size: 20px;
+    margin-bottom: 24px;
+    color: var(--text-bright);
+    font-weight: 600;
+}
+
+.admin-form {
+    display: flex;
+    flex-direction: column;
+}
+
+.form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.form-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-bright);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.form-input,
+select.form-input {
+    padding: 12px 16px;
+    background: var(--surface-2);
+    border: 1px solid var(--surface-3);
+    border-radius: 8px;
+    color: var(--text-bright);
+    font-size: 14px;
+    transition: all var(--transition);
+    font-family: inherit;
+}
+
+.form-input:focus,
+select.form-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    background: var(--surface-3);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.message-container {
+    margin-top: 16px;
+    padding: 12px 16px;
+    border-radius: 8px;
+    display: none;
+}
+
+.message-container.show {
+    display: block;
+}
+
+.message-container.success {
+    background: rgba(76, 175, 80, 0.1);
+    color: #4caf50;
+    border-left: 4px solid #4caf50;
+}
+
+.message-container.error {
+    background: rgba(255, 64, 64, 0.1);
+    color: #ff6b6b;
+    border-left: 4px solid var(--accent);
+}
+
+.users-table-container {
+    overflow-x: auto;
+}
+
+.users-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.users-table thead {
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--surface-3);
+}
+
+.users-table th {
+    padding: 16px;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--muted);
+}
+
+.users-table tbody tr {
+    border-bottom: 1px solid var(--surface-3);
+    transition: background var(--transition);
+}
+
+.users-table tbody tr:hover {
+    background: var(--surface-2);
+}
+
+.users-table td {
+    padding: 16px;
+    font-size: 14px;
+    color: var(--text);
+}
+
+.username-cell {
+    color: var(--text-bright);
+}
+
+.role-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.role-admin {
+    background: rgba(255, 64, 64, 0.15);
+    color: var(--accent);
+}
+
+.role-user {
+    background: rgba(100, 150, 255, 0.15);
+    color: #6496ff;
+}
+
+.actions-cell {
+    text-align: right;
+}
+
+.btn-delete {
+    padding: 8px 12px;
+    background: rgba(255, 64, 64, 0.1);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all var(--transition);
+    font-weight: 600;
+}
+
+.btn-delete:hover {
+    background: var(--accent);
+    color: white;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 40px;
+    color: var(--muted);
+    font-style: italic;
+}
+
+.admin-back {
+    display: inline-block;
+    margin-top: 20px;
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 600;
+    transition: all var(--transition);
+}
+
+.admin-back:hover {
+    color: #ff5555;
+}
+
+@media (max-width: 768px) {
+    .admin-container {
+        padding: 20px;
+    }
+
+    .form-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .users-table {
+        font-size: 12px;
+    }
+
+    .users-table th,
+    .users-table td {
+        padding: 12px;
+    }
+}
+</style>
+
+<script>
+const ADMIN_TOKEN = '{{ request.headers.get("X-Admin-Token") or request.headers.get("Authorization", "").replace("Bearer ", "") }}';
+
+document.getElementById('createUserForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const nombre_usuario = document.getElementById('nombre_usuario').value.trim();
+    const password = document.getElementById('password').value.trim();
+    const role = document.getElementById('role').value;
+    const messageDiv = document.getElementById('createMessage');
+
+    if (!nombre_usuario || !password) {
+        showMessage(messageDiv, 'Por favor completa todos los campos', 'error');
+        return;
+    }
+
+    try {
+        const response = await fetch('{{ url_for("admin.admin_crear_usuario") }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Admin-Token': ADMIN_TOKEN
+            },
+            body: JSON.stringify({ nombre_usuario, password, role })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            showMessage(messageDiv, `✓ Usuario "${nombre_usuario}" creado exitosamente. Recargando...`, 'success');
+            document.getElementById('createUserForm').reset();
+            setTimeout(() => location.reload(), 2000);
+        } else {
+            showMessage(messageDiv, `✗ Error: ${data.error || 'No se pudo crear el usuario'}`, 'error');
+        }
+    } catch (error) {
+        showMessage(messageDiv, `✗ Error de conexión: ${error.message}`, 'error');
+    }
+});
+
+function showMessage(container, message, type) {
+    container.textContent = message;
+    container.className = `message-container show ${type}`;
+}
+
+function deleteUser(userId, username) {
+    if (confirm(`¿Estás seguro de que deseas eliminar al usuario "${username}"?`)) {
+        // TODO: Implementar endpoint para eliminar usuario
+        alert('Funcionalidad de eliminación pendiente');
+    }
+}
+</script>
+{% endblock %}

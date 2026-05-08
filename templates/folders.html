@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Carpetas - DuckSound{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title"><i class="fa-solid fa-folder-tree" style="color:var(--accent);margin-right:8px"></i> Vista de Carpetas</h1>
+    <p class="page-subtitle">Navega por tu biblioteca siguiendo la estructura de archivos</p>
+</div>
+
+<div class="folder-browser">
+    {% macro render_tree(items) %}
+    <ul class="folder-list">
+        {% for item in items %}
+        <li class="folder-item">
+            {% if item.type == 'folder' %}
+            <div class="folder-item-header" onclick="this.nextElementSibling.classList.toggle('collapsed');this.querySelector('.toggle-icon').classList.toggle('fa-chevron-down');this.querySelector('.toggle-icon').classList.toggle('fa-chevron-right')">
+                <i class="fa-solid fa-chevron-right toggle-icon" style="font-size:10px;color:var(--muted);margin-right:6px;transition:transform .2s"></i>
+                <i class="fa-solid fa-folder" style="color:var(--accent);margin-right:8px"></i>
+                <span class="folder-name">{{ item.name }}</span>
+                {% if item.song_count > 0 %}
+                <span class="folder-count">{{ item.song_count }} canciones</span>
+                {% endif %}
+            </div>
+            {% if item.children %}
+            <div class="folder-children collapsed">{{ render_tree(item.children) }}</div>
+            {% endif %}
+            {% else %}
+            <div class="folder-file">
+                <i class="fa-solid fa-music" style="color:var(--muted);margin-right:8px;font-size:12px"></i>
+                <span class="folder-file-name">{{ item.name }}</span>
+            </div>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+    {% endmacro %}
+
+    {% if tree %}
+    <div class="folder-tree-container">{{ render_tree(tree) }}</div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-icon"><i class="fa-solid fa-folder-open"></i></div>
+        <h2 class="empty-title">No hay archivos</h2>
+        <p class="empty-text">La carpeta de música está vacía o no existe</p>
+    </div>
+    {% endif %}
+</div>
+
+<style>
+.folder-browser { max-width: 800px; }
+.folder-list { list-style:none; padding:0; margin:0; }
+.folder-item { margin:0; }
+.folder-item-header {
+    display:flex; align-items:center; gap:4px; padding:8px 12px;
+    border-radius:var(--radius); cursor:pointer;
+    transition:background var(--transition);
+    font-size:14px; color:var(--text-bright);
+}
+.folder-item-header:hover { background:var(--surface-2); }
+.folder-name { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.folder-count { font-size:11px; color:var(--muted); margin-left:8px; }
+.folder-children { padding-left:24px; }
+.folder-children.collapsed { display:none; }
+.folder-file {
+    display:flex; align-items:center; padding:6px 12px 6px 42px;
+    font-size:13px; color:var(--muted); border-radius:var(--radius-sm);
+}
+.folder-file:hover { background:var(--surface-2); color:var(--text); }
+.folder-file-name { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.folder-tree-container { background:var(--surface-2); border-radius:var(--radius-lg); padding:12px; border:1px solid var(--border-color); }
+</style>
+{% endblock %}

@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}Artistas - DuckSound{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">Artistas</h1>
+    <p class="page-subtitle">{{ artists_data|length }} artistas en tu biblioteca</p>
+</div>
+
+<div class="artist-grid">
+    {% for item in artists_data %}
+    <a class="artist-card" href="{{ url_for('browse.artist_detail', artist_id=item.artist.id) }}">
+        <div class="artist-card-cover">
+            {% if item.artist.foto_url %}
+            <img src="{{ item.artist.foto_url }}" alt="{{ item.artist.nombre }}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+            <div class="artist-card-placeholder" style="display:none">{{ item.artist.nombre[:1] }}</div>
+            {% elif item.cover_url %}
+            <img src="{{ item.cover_url }}" alt="{{ item.artist.nombre }}" loading="lazy">
+            {% else %}
+            <div class="artist-card-placeholder">{{ item.artist.nombre[:1] }}</div>
+            {% endif %}
+        </div>
+        <div class="artist-card-info">
+            <h3 class="artist-card-name">{{ item.artist.nombre }}</h3>
+            <p class="artist-card-meta">{{ item.album_count }} álbumes · {{ item.song_count }} canciones</p>
+        </div>
+    </a>
+    {% else %}
+    <div class="empty-state" style="grid-column:1/-1">
+        <div class="empty-icon"><i class="fa-solid fa-users"></i></div>
+        <h2 class="empty-title">No hay artistas</h2>
+        <p class="empty-text">Escanea tu biblioteca de música para ver artistas aquí</p>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

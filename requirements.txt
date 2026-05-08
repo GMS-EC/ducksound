@@ -1,0 +1,13 @@
+Flask==3.0.0
+Flask-SQLAlchemy==3.1.1
+Werkzeug==3.0.1
+mutagen==1.47.0
+requests==2.31.0
+
+# Requeridas para análisis acústico
+numpy>=1.24
+soundfile>=0.12
+
+# Servidores WSGI
+gunicorn>=21.2.0
+waitress>=2.1.0

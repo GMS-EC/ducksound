@@ -1,0 +1,17 @@
+services:
+  web:
+    build: .
+    container_name: ducksound_web
+    working_dir: /app
+    command: python /app/app.py
+    volumes:
+      - ${MUSIC_PATH}:/music:ro
+      - ducksound_data:/data
+    environment:
+      - ADMIN_SECRET_TOKEN=${ADMIN_SECRET_TOKEN}
+    ports:
+      - '5000:5000'
+
+volumes:
+  ducksound_data:
+    driver: local

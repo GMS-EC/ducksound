@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+
+{% block title %}{{ album.titulo }} - DuckSound{% endblock %}
+
+{% block content %}
+<div class="album-detail">
+    <!-- HEADER -->
+    <div class="album-header">
+        <div class="album-header-cover">
+            {% if cover_url %}
+            <img src="{{ cover_url }}" alt="{{ album.titulo }}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+            <div class="album-header-placeholder" style="display:none"><i class="fa-solid fa-compact-disc"></i></div>
+            {% else %}
+            <div class="album-header-placeholder"><i class="fa-solid fa-compact-disc"></i></div>
+            {% endif %}
+        </div>
+        <div class="album-header-info">
+            <span class="album-header-label">ÁLBUM</span>
+            <h1 class="album-header-title">{{ album.titulo }}</h1>
+            <p class="album-header-artist">
+                <a href="{{ url_for('browse.artist_detail', artist_id=album.artista.id) }}">{{ album.artista.nombre if album.artista else 'Desconocido' }}</a>
+                {% if album.anio %} · {{ album.anio }}{% endif %}
+                · {{ track_count }} {% if track_count == 1 %}canción{% else %}canciones{% endif %}
+                · {{ (total_duration // 3600) }} hr {{ (total_duration % 3600) // 60 }} min
+            </p>
+            <div class="album-header-actions">
+                <button class="btn-play-all" id="btn-play-album" data-album-id="{{ album.id }}"><i class="fa-solid fa-play"></i> Reproducir</button>
+                <button class="btn-shuffle" id="btn-shuffle-album" data-album-id="{{ album.id }}"><i class="fa-solid fa-shuffle"></i> Aleatorio</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TRACK LIST -->
+    <div class="tracklist-header">
+        <span></span>
+        <span class="tracklist-col-num">#</span>
+        <span class="tracklist-col-title">Título</span>
+        <span class="tracklist-col-artist">Artista</span>
+        <span class="tracklist-col-duration">Duración</span>
+    </div>
+
+    <div class="tracklist" id="album-tracklist">
+        {% for s in songs %}
+        <div class="track-item" data-cancion-id="{{ s.id }}" 
+             data-audio="{{ url_for('servir_audio', cancion_id=s.id) }}"
+             data-lyrics="{{ url_for('servir_lyrics', cancion_id=s.id) }}"
+             data-cover="{{ cover_url if cover_url else url_for('servir_album_art', cancion_id=s.id) }}"
+             data-titulo="{{ s.titulo }}"
+             data-artista="{{ s.artista_obj.nombre if s.artista_obj else 'Desconocido' }}"
+             data-context="album" data-album-id="{{ album.id }}">
+            <button class="track-play-btn" title="Reproducir"><i class="fa-solid fa-play"></i></button>
+            <span class="track-num">{{ loop.index }}</span>
+            <div class="track-cover-sm">
+                {% if cover_url %}
+                <img src="{{ cover_url }}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                <div class="cover-fallback" style="display:none"><i class="fa-solid fa-music"></i></div>
+                {% else %}
+                <div class="cover-fallback"><i class="fa-solid fa-music"></i></div>
+                {% endif %}
+            </div>
+            <div class="track-info">
+                <span class="track-title">{{ s.titulo }}</span>
+                <span class="track-artist-mobile">{{ s.artista_obj.nombre if s.artista_obj else 'Desconocido' }}</span>
+            </div>
+            <span class="track-artist-col">{{ s.artista_obj.nombre if s.artista_obj else 'Desconocido' }}</span>
+            <span class="track-duration">
+                {% if s.duracion %}
+                {{ (s.duracion // 60) }}:{{ '%02d' % (s.duracion % 60) }}
+                {% else %}
+                --:--
+                {% endif %}
+            </span>
+            <button class="btn-add-collection" data-type="cancion" data-id="{{ s.id }}" title="Añadir a colección" style="background:transparent; border:none; color:var(--muted); cursor:pointer; padding:4px"><i class="fa-solid fa-plus"></i></button>
+        </div>
+        {% else %}
+        <div class="empty-state" style="grid-column:1/-1">
+            <div class="empty-icon"><i class="fa-solid fa-inbox"></i></div>
+            <h2 class="empty-title">Sin canciones</h2>
+            <p class="empty-text">Este álbum no tiene canciones todavía</p>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function(){
+    // Play all button
+    const playBtn = document.getElementById('btn-play-album');
+    if (playBtn) {
+        playBtn.addEventListener('click', function() {
+            const firstTrack = document.querySelector('.track-item');
+            if (firstTrack) firstTrack.click();
+        });
+    }
+    // Shuffle button
+    const shuffleBtn = document.getElementById('btn-shuffle-album');
+    if (shuffleBtn) {
+        shuffleBtn.addEventListener('click', function() {
+            const tracks = Array.from(document.querySelectorAll('.track-item'));
+            if (tracks.length === 0) return;
+            const randomTrack = tracks[Math.floor(Math.random() * tracks.length)];
+            randomTrack.click();
+        });
+    }
+    // Track click to play
+    document.querySelectorAll('.track-item').forEach(function(item) {
+        item.addEventListener('click', function(e) {
+            if (e.target.closest('.btn-add-collection')) return;
+            // Build playlist from all tracks
+            const allTracks = Array.from(document.querySelectorAll('.track-item'));
+            const playlist = allTracks.map(t => ({
+                id: parseInt(t.dataset.cancionId),
+                titulo: t.dataset.titulo,
+                artista: t.dataset.artista,
+                audio: t.dataset.audio,
+                cover: t.dataset.cover || null,
+                lyrics: t.dataset.lyrics || null
+            }));
+            const songId = parseInt(item.dataset.cancionId);
+            // Send playlist and play
+            const iframe = document.getElementById('player-frame');
+            if (iframe && iframe.contentWindow) {
+                iframe.contentWindow.postMessage({type: 'setPlaylist', playlist: playlist}, window.location.origin);
+                const song = playlist.find(s => s.id === songId);
+                if (song) {
+                    setTimeout(function() {
+                        iframe.contentWindow.postMessage({type: 'playSong', song: song}, window.location.origin);
+                    }, 100);
+                }
+            }
+            // Highlight
+            document.querySelectorAll('.track-item').forEach(t => t.classList.remove('playing'));
+            item.classList.add('playing');
+        });
+    });
+})();
+</script>
+{% endblock %}

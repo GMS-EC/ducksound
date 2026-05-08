@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}Explorar - DuckSound{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">Explorar</h1>
+    <p class="page-subtitle">Descubre nueva música en tu biblioteca</p>
+</div>
+
+<!-- ARTISTAS -->
+<section class="explore-section">
+    <div class="section-header">
+        <h2 class="section-title">Artistas</h2>
+        <a href="{{ url_for('browse.artists_list') }}" class="section-link">Ver todo</a>
+    </div>
+    <div class="artist-grid">
+        {% for a in artists[:12] %}
+        <a class="artist-card" href="{{ url_for('browse.artist_detail', artist_id=a.id) }}">
+            <div class="artist-card-cover">
+                {% if a.foto_url %}
+                <img src="{{ a.foto_url }}" alt="{{ a.nombre }}" loading="lazy">
+                {% else %}
+                {% set found = false %}
+                {% for album in a.albums[:1] %}
+                    {% if album.canciones %}
+                    <img src="{{ url_for('servir_album_art', cancion_id=album.canciones[0].id) }}" alt="{{ a.nombre }}" loading="lazy">
+                    {% set found = true %}
+                    {% endif %}
+                {% endfor %}
+                {% if not found %}
+                <div class="artist-card-placeholder">{{ a.nombre[:1] }}</div>
+                {% endif %}
+                {% endif %}
+            </div>
+            <div class="artist-card-info">
+                <h3 class="artist-card-name">{{ a.nombre }}</h3>
+            </div>
+        </a>
+        {% else %}
+        <p class="empty-text" style="grid-column:1/-1">No hay artistas todavía</p>
+        {% endfor %}
+    </div>
+</section>
+
+<!-- ÁLBUMES -->
+<section class="explore-section">
+    <div class="section-header">
+        <h2 class="section-title">Álbumes recientes</h2>
+        <a href="{{ url_for('browse.albums_list') }}" class="section-link">Ver todo</a>
+    </div>
+    <div class="album-grid">
+        {% for item in albums_data[:20] %}
+        <a class="album-card" href="{{ url_for('browse.album_detail', album_id=item.album.id) }}">
+            <div class="album-card-cover">
+                {% if item.cover_url %}
+                <img src="{{ item.cover_url }}" alt="{{ item.album.titulo }}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                <div class="album-card-placeholder" style="display:none"><i class="fa-solid fa-compact-disc"></i></div>
+                {% else %}
+                <div class="album-card-placeholder"><i class="fa-solid fa-compact-disc"></i></div>
+                {% endif %}
+                <div class="album-card-overlay">
+                    <span class="album-card-play"><i class="fa-solid fa-play"></i></span>
+                </div>
+            </div>
+            <div class="album-card-info">
+                <h3 class="album-card-title">{{ item.album.titulo }}</h3>
+                <p class="album-card-artist">{{ item.album.artista.nombre if item.album.artista else 'Desconocido' }}</p>
+                <p class="album-card-meta">{{ item.track_count }} canciones</p>
+            </div>
+        </a>
+        {% else %}
+        <p class="empty-text" style="grid-column:1/-1">No hay álbumes todavía</p>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

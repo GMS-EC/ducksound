@@ -1,0 +1,584 @@
+{% extends "base.html" %}
+
+{% block title %}Panel de Administración - DuckSound{% endblock %}
+
+{% block content %}
+<div class="admin-container">
+    <h1><i class="fa-solid fa-gear" style="color:var(--accent);margin-right:8px"></i> Panel de Administración</h1>
+    <p class="admin-subtitle">Gestiona tu plataforma de música desde aquí</p>
+
+    <div class="admin-actions">
+        <div class="admin-action-card" style="cursor:default">
+            <div class="admin-action-icon"><i class="fa-solid fa-magnifying-glass"></i></div>
+            <div class="admin-action-info" style="flex:1">
+                <h3>Escanear y enriquecer</h3>
+                <p>Busca nuevos archivos, detecta artistas/álbumes desde subcarpetas y obtiene portadas, fotos y biografías automáticamente</p>
+                <button id="btn-start-scan" class="btn btn-accent" style="margin-top:10px"><i class="fa-solid fa-play"></i> Iniciar escaneo completo</button>
+            </div>
+        </div>
+        
+        <a href="{{ url_for('admin.admin_usuarios_list') }}" class="admin-action-card">
+            <div class="admin-action-icon"><i class="fa-solid fa-users"></i></div>
+            <div class="admin-action-info">
+                <h3>Gestionar usuarios</h3>
+                <p>Administra las cuentas de usuario registradas</p>
+            </div>
+        </a>
+        
+        <a href="{{ url_for('admin.admin_estadisticas') }}" class="admin-action-card">
+            <div class="admin-action-icon"><i class="fa-solid fa-chart-bar"></i></div>
+            <div class="admin-action-info">
+                <h3>Estadísticas</h3>
+                <p>Visualiza las estadísticas de uso de la plataforma</p>
+            </div>
+        </a>
+    </div>
+
+    <div id="scan-progress-panel" style="display:none;margin-top:20px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">
+            <strong style="font-size:14px">Progreso del escaneo</strong>
+            <span id="scan-status-text" style="font-size:12px;color:rgba(232,234,237,0.75)">Iniciando...</span>
+        </div>
+        <div style="height:10px;background:rgba(255,255,255,0.08);border-radius:999px;overflow:hidden">
+            <div id="scan-progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg, rgba(255,64,64,1) 0%, rgba(255,85,85,1) 100%);transition:width .25s ease"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:12px;color:rgba(232,234,237,0.65)">
+            <span id="scan-message">Esperando inicio...</span>
+            <span id="scan-counter">0/0</span>
+        </div>
+        <div id="scan-current-file" style="margin-top:8px;font-size:12px;color:rgba(232,234,237,0.8)"></div>
+        <div id="scan-summary" style="display:none;margin-top:10px;padding:10px;border-radius:8px;background:rgba(0,0,0,0.2)"></div>
+    </div>
+
+    <!-- ===== VERSIÓN Y ACTUALIZACIONES ===== -->
+    <div class="version-section">
+        <h2 class="version-section-title"><i class="fa-solid fa-code-branch"></i> Versión y Actualizaciones</h2>
+        
+        <div class="version-card" id="version-card">
+            <div class="version-current">
+                <div class="version-icon-wrapper">
+                    <i class="fa-solid fa-cube"></i>
+                </div>
+                <div class="version-info">
+                    <div class="version-label">Versión instalada</div>
+                    <div class="version-number">v{{ app_version }}</div>
+                </div>
+                <div class="version-status" id="version-status">
+                    <i class="fa-solid fa-spinner fa-spin"></i>
+                    <span>Comprobando...</span>
+                </div>
+            </div>
+            <div id="update-banner" style="display:none"></div>
+        </div>
+
+        <!-- Changelog -->
+        <div class="changelog-wrapper">
+            <button class="changelog-toggle" id="changelog-toggle" type="button">
+                <span><i class="fa-solid fa-clock-rotate-left" style="margin-right:8px"></i> Changelog</span>
+                <i class="fa-solid fa-chevron-down changelog-chevron" id="changelog-chevron"></i>
+            </button>
+            <div class="changelog-collapsible" id="changelog-collapsible">
+                {% if changelog_versions %}
+                {% for version in changelog_versions %}
+                <div class="cl-version {% if loop.first %}cl-latest{% endif %}">
+                    <div class="cl-version-header">
+                        <span class="cl-tag"><i class="fa-solid fa-tag"></i> v{{ version.number }}</span>
+                        <span class="cl-date"><i class="fa-regular fa-calendar"></i> {{ version.date }}</span>
+                        {% if loop.first %}
+                        <span class="cl-badge-current">Actual</span>
+                        {% endif %}
+                    </div>
+                    {% if version.title %}
+                    <h3 class="cl-title">{{ version.title }}</h3>
+                    {% endif %}
+                    {% for section in version.sections %}
+                    <div class="cl-section">
+                        <h4 class="cl-section-title">{{ section.title }}</h4>
+                        <ul class="cl-list">
+                            {% for item in section.entries %}
+                            <li>{{ item | safe }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endfor %}
+                {% else %}
+                <div style="padding:20px;text-align:center;color:var(--muted);font-size:14px">
+                    <i class="fa-solid fa-file-lines" style="font-size:24px;margin-bottom:8px;display:block;opacity:0.5"></i>
+                    No se encontró el archivo CHANGELOG.md
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <a href="{{ url_for('dashboard') }}" class="admin-back">← Volver al dashboard</a>
+</div>
+
+<style>
+/* ===== VERSION SECTION ===== */
+.version-section {
+    margin-top: 32px;
+}
+.version-section-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-bright);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.version-section-title i {
+    color: var(--accent);
+    font-size: 16px;
+}
+
+.version-card {
+    background: var(--surface-2);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    transition: all var(--transition);
+}
+.version-card:hover {
+    border-color: var(--border-hover);
+}
+
+.version-current {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 20px 24px;
+}
+.version-icon-wrapper {
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius);
+    background: var(--accent-soft);
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    flex-shrink: 0;
+}
+.version-info {
+    flex: 1;
+    min-width: 0;
+}
+.version-label {
+    font-size: 12px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+}
+.version-number {
+    font-size: 24px;
+    font-weight: 800;
+    color: var(--text-bright);
+    letter-spacing: -0.5px;
+}
+.version-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--muted);
+    flex-shrink: 0;
+    padding: 8px 16px;
+    border-radius: 999px;
+    background: var(--surface-3);
+}
+
+.version-status.up-to-date {
+    background: rgba(74, 222, 128, 0.08);
+    color: #4ade80;
+}
+.version-status.update-available {
+    background: rgba(251, 191, 36, 0.1);
+    color: #fbbf24;
+}
+.version-status.error {
+    background: rgba(255, 100, 100, 0.08);
+    color: #ff8a8a;
+}
+
+/* Update banner */
+#update-banner {
+    padding: 16px 24px;
+    border-top: 1px solid var(--border-light);
+    background: rgba(251, 191, 36, 0.04);
+}
+.update-banner-content {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+.update-banner-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(251, 191, 36, 0.12);
+    color: #fbbf24;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+    animation: bounce-soft 2s infinite;
+}
+@keyframes bounce-soft {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
+}
+.update-banner-text {
+    flex: 1;
+    min-width: 0;
+}
+.update-banner-text strong {
+    display: block;
+    font-size: 14px;
+    color: var(--text-bright);
+    margin-bottom: 2px;
+}
+.update-banner-text span {
+    font-size: 12px;
+    color: var(--muted);
+}
+.btn-update-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 18px;
+    border-radius: 999px;
+    background: rgba(251, 191, 36, 0.15);
+    color: #fbbf24;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 13px;
+    transition: all var(--transition);
+    border: 1px solid rgba(251, 191, 36, 0.2);
+    flex-shrink: 0;
+}
+.btn-update-link:hover {
+    background: rgba(251, 191, 36, 0.25);
+    transform: translateY(-1px);
+}
+
+/* ===== CHANGELOG ===== */
+.changelog-wrapper {
+    margin-top: 16px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+}
+
+.changelog-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 24px;
+    background: transparent;
+    border: none;
+    color: var(--text-bright);
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition);
+    font-family: inherit;
+}
+.changelog-toggle:hover {
+    background: var(--surface-3);
+}
+.changelog-chevron {
+    transition: transform 0.3s ease;
+    color: var(--muted);
+    font-size: 13px;
+}
+.changelog-chevron.open {
+    transform: rotate(180deg);
+}
+
+.changelog-collapsible {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.changelog-collapsible.open {
+    max-height: 3000px;
+}
+
+.cl-version {
+    padding: 20px 24px;
+    border-top: 1px solid var(--border-light);
+}
+.cl-latest {
+    background: rgba(217, 88, 64, 0.02);
+}
+
+.cl-version-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+.cl-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    padding: 4px 14px;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 14px;
+}
+.cl-date {
+    font-size: 12px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+.cl-badge-current {
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, var(--accent) 0%, #ff8e53 100%);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.cl-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-bright);
+    margin-bottom: 14px;
+}
+.cl-section {
+    margin-bottom: 14px;
+}
+.cl-section:last-child {
+    margin-bottom: 0;
+}
+.cl-section-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-bright);
+    margin-bottom: 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border-light);
+}
+.cl-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.cl-list li {
+    font-size: 13px;
+    color: var(--text);
+    line-height: 1.5;
+    padding-left: 18px;
+    position: relative;
+}
+.cl-list li::before {
+    content: '';
+    position: absolute;
+    left: 3px;
+    top: 8px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--accent);
+    opacity: 0.6;
+}
+.cl-list li strong {
+    color: var(--text-bright);
+    font-weight: 600;
+}
+</style>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+@keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function(){
+    // ===== Changelog toggle =====
+    const toggle = document.getElementById('changelog-toggle');
+    const collapsible = document.getElementById('changelog-collapsible');
+    const chevron = document.getElementById('changelog-chevron');
+    
+    if (toggle && collapsible) {
+        toggle.addEventListener('click', function() {
+            collapsible.classList.toggle('open');
+            chevron.classList.toggle('open');
+        });
+    }
+
+    // ===== Version update check =====
+    const statusEl = document.getElementById('version-status');
+    const updateBanner = document.getElementById('update-banner');
+
+    fetch('/admin/check-update')
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                statusEl.className = 'version-status error';
+                statusEl.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i><span>No se pudo verificar</span>';
+                return;
+            }
+            if (data.update_available) {
+                statusEl.className = 'version-status update-available';
+                statusEl.innerHTML = '<i class="fa-solid fa-arrow-up"></i><span>Actualización disponible</span>';
+                updateBanner.style.display = 'block';
+                updateBanner.innerHTML = 
+                    '<div class="update-banner-content">' +
+                        '<div class="update-banner-icon"><i class="fa-solid fa-arrow-up"></i></div>' +
+                        '<div class="update-banner-text">' +
+                            '<strong>Nueva versión v' + escHtml(data.latest) + ' disponible</strong>' +
+                            '<span>' + (data.name ? escHtml(data.name) : 'Hay una nueva versión disponible en GitHub') + '</span>' +
+                        '</div>' +
+                        '<a href="' + escHtml(data.url) + '" target="_blank" rel="noopener" class="btn-update-link">' +
+                            '<i class="fa-brands fa-github"></i> Ver release' +
+                        '</a>' +
+                    '</div>';
+            } else {
+                statusEl.className = 'version-status up-to-date';
+                statusEl.innerHTML = '<i class="fa-solid fa-circle-check"></i><span>Al día</span>';
+                if (data.message) {
+                    statusEl.querySelector('span').textContent = data.message;
+                }
+            }
+        })
+        .catch(() => {
+            statusEl.className = 'version-status error';
+            statusEl.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i><span>Sin conexión</span>';
+        });
+
+    function escHtml(t) {
+        return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    // ===== Scan logic =====
+    const startBtn = document.getElementById('btn-start-scan');
+    const panel = document.getElementById('scan-progress-panel');
+    const bar = document.getElementById('scan-progress-bar');
+    const statusText = document.getElementById('scan-status-text');
+    const msg = document.getElementById('scan-message');
+    const counter = document.getElementById('scan-counter');
+    const currentFile = document.getElementById('scan-current-file');
+    const summary = document.getElementById('scan-summary');
+
+    if (!startBtn || !panel) return;
+
+    let pollTimer = null;
+
+    function setRunningState(running){
+        startBtn.disabled = running;
+        startBtn.style.opacity = running ? '0.7' : '1';
+        startBtn.innerHTML = running ? '<i class="fa-solid fa-spinner fa-spin"></i> Escaneando...' : '<i class="fa-solid fa-play"></i> Iniciar escaneo';
+    }
+
+    function renderStatus(data){
+        const pct = Number(data.percent || 0);
+        bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+        const statusLabel = data.status === 'enriching' ? 'ENRIQUECIENDO' : (data.status || 'running').toUpperCase();
+        statusText.textContent = statusLabel;
+        bar.style.background = data.status === 'enriching'
+            ? 'linear-gradient(90deg, var(--accent) 0%, #f0a050 50%, var(--accent) 100%)'
+            : 'linear-gradient(90deg, var(--accent) 0%, var(--accent-hover) 100%)';
+        bar.style.backgroundSize = data.status === 'enriching' ? '200% 100%' : '';
+        bar.style.animation = data.status === 'enriching' ? 'shimmer 1.5s ease-in-out infinite' : '';
+        msg.textContent = data.message || 'Procesando...';
+        const processed = Number(data.processed || 0);
+        const total = Number(data.total || 0);
+        counter.textContent = total > 0 ? (processed + '/' + total) : '0/0';
+        currentFile.textContent = data.current_file ? ('Archivo actual: ' + data.current_file) : '';
+
+        if (data.status === 'done'){
+            setRunningState(false);
+            if (pollTimer){ clearInterval(pollTimer); pollTimer = null; }
+            const s = data.summary || {};
+            summary.style.display = 'block';
+            let html = '<div style="font-weight:600;margin-bottom:6px"><i class="fa-regular fa-circle-check" style="color:#4ade80;margin-right:6px"></i>Escaneo finalizado</div>' +
+                '<div><i class="fa-solid fa-music" style="margin-right:6px"></i>Canciones agregadas: <strong>' + (s.agregadas ?? 0) + '</strong></div>' +
+                '<div><i class="fa-solid fa-rotate" style="margin-right:6px"></i>Rutas actualizadas: <strong>' + (s.actualizadas ?? 0) + '</strong></div>' +
+                '<div><i class="fa-solid fa-forward-step" style="margin-right:6px"></i>Omitidas: <strong>' + (s.omitidas ?? 0) + '</strong></div>' +
+                '<div><i class="fa-solid fa-folder" style="margin-right:6px"></i>Total procesadas: <strong>' + (s.procesadas ?? 0) + '</strong></div>';
+            if (s.meta_artistas || s.meta_albumes) {
+                html += '<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.06)">' +
+                    '<div style="font-weight:600;margin-bottom:4px"><i class="fa-solid fa-globe" style="margin-right:6px"></i>Metadatos enriquecidos</div>' +
+                    '<div><i class="fa-solid fa-user" style="margin-right:6px"></i>Artistas: <strong>' + (s.meta_artistas ?? 0) + '</strong></div>' +
+                    '<div><i class="fa-solid fa-compact-disc" style="margin-right:6px"></i>Álbumes: <strong>' + (s.meta_albumes ?? 0) + '</strong></div></div>';
+            }
+            summary.innerHTML = html;
+        } else if (data.status === 'error'){
+            setRunningState(false);
+            if (pollTimer){ clearInterval(pollTimer); pollTimer = null; }
+            summary.style.display = 'block';
+            summary.innerHTML = '<div style="color:#ff8a8a;font-weight:600">Error durante el escaneo</div><div>' + (data.error || data.message || 'Error desconocido') + '</div>';
+        }
+    }
+
+    async function pollStatus(taskId){
+        try{
+            const res = await fetch('/admin/escanear/status/' + encodeURIComponent(taskId));
+            if (!res.ok) throw new Error('No se pudo consultar estado');
+            const data = await res.json();
+            renderStatus(data);
+        }catch(err){
+            statusText.textContent = 'ERROR';
+            msg.textContent = 'No se pudo obtener el progreso';
+            currentFile.textContent = String(err);
+            setRunningState(false);
+            if (pollTimer){ clearInterval(pollTimer); pollTimer = null; }
+        }
+    }
+
+    startBtn.addEventListener('click', async function(){
+        panel.style.display = 'block';
+        summary.style.display = 'none';
+        summary.innerHTML = '';
+        bar.style.width = '0%';
+        statusText.textContent = 'INICIANDO';
+        msg.textContent = 'Preparando escaneo...';
+        counter.textContent = '0/0';
+        currentFile.textContent = '';
+        setRunningState(true);
+
+        try{
+            const res = await fetch('/admin/escanear/start', {method: 'POST'});
+            if (!res.ok) throw new Error('No se pudo iniciar el escaneo');
+            const data = await res.json();
+            const taskId = data.task_id;
+            if (!taskId) throw new Error('Respuesta sin task_id');
+
+            await pollStatus(taskId);
+            pollTimer = setInterval(function(){ pollStatus(taskId); }, 1200);
+        }catch(err){
+            statusText.textContent = 'ERROR';
+            msg.textContent = 'No se pudo iniciar el escaneo';
+            currentFile.textContent = String(err);
+            setRunningState(false);
+        }
+    });
+
+})();
+</script>
+{% endblock %}

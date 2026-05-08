@@ -1,0 +1,362 @@
+{% extends "base.html" %}
+{% block title %}Mi Perfil - DuckSound{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title"><i class="fa-solid fa-user-gear" style="color:var(--accent);margin-right:8px"></i> Mi Perfil</h1>
+    <p class="page-subtitle">Administra tu cuenta y mira tus estadísticas de escucha</p>
+</div>
+
+<div class="profile-dashboard">
+    <!-- COLUMNA IZQUIERDA: Ajustes y Cuenta -->
+    <div class="profile-settings-col">
+        <!-- Info del usuario -->
+        <div style="display:flex;align-items:center;gap:18px;padding:20px 24px;background:var(--surface-2);border-radius:var(--radius-lg);border:1px solid var(--border-color);margin-bottom:24px">
+            <div style="width:56px;height:56px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0">
+                <i class="fa-solid fa-user"></i>
+            </div>
+            <div>
+                <div style="font-size:18px;font-weight:700;color:var(--text-bright)">{{ usuario.display_name() }}</div>
+                <div style="font-size:13px;color:var(--muted)">@{{ usuario.nombre_usuario }} · 
+                    <span class="role-badge" style="display:inline-block;padding:2px 10px;border-radius:999px;font-size:11px;font-weight:600;background:{% if is_admin %}var(--accent-soft){% else %}var(--surface-3){% endif %};color:{% if is_admin %}var(--accent){% else %}var(--muted){% endif %}">
+                        {{ 'Administrador' if is_admin else 'Usuario' }}
+                    </span>
+                </div>
+                <div style="font-size:12px;color:var(--muted);margin-top:4px">
+                    <i class="fa-regular fa-calendar"></i> Miembro desde {{ usuario.fecha_creacion.strftime('%d/%m/%Y') if usuario.fecha_creacion else '—' }}
+                </div>
+            </div>
+        </div>
+
+        <!-- Formulario -->
+        <form id="profile-form" style="display:flex;flex-direction:column;gap:20px">
+            <!-- Nombre público -->
+            <div class="form-group">
+                <label class="form-label"><i class="fa-regular fa-id-card" style="margin-right:6px"></i> Nombre público</label>
+                <input type="text" class="form-input" name="nombre_publico" value="{{ usuario.nombre_publico or '' }}" placeholder="Cómo quieres aparecer">
+                <small style="color:var(--muted);font-size:12px">Si lo dejas vacío, se usará tu nombre de usuario</small>
+            </div>
+
+            <!-- Cambiar contraseña -->
+            <div class="form-group">
+                <label class="form-label"><i class="fa-solid fa-lock" style="margin-right:6px"></i> Nueva contraseña</label>
+                <input type="password" class="form-input" name="password" placeholder="Dejar vacío para mantener actual" autocomplete="new-password">
+            </div>
+
+            <hr style="border:none;border-top:1px solid var(--border-color);margin:4px 0">
+
+            <!-- Preferencias -->
+            <div style="font-size:13px;font-weight:700;color:var(--text-bright);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">
+                <i class="fa-solid fa-sliders" style="margin-right:6px"></i> Preferencias
+            </div>
+
+            <!-- Idioma preferido -->
+            <div class="form-group">
+                <label class="form-label"><i class="fa-solid fa-language" style="margin-right:6px"></i> Idioma para traducciones</label>
+                <select class="form-input" name="idioma_preferido" style="cursor:pointer">
+                    <option value="es" {% if usuario.idioma_preferido == 'es' %}selected{% endif %}>Español</option>
+                    <option value="en" {% if usuario.idioma_preferido == 'en' %}selected{% endif %}>Inglés</option>
+                    <option value="fr" {% if usuario.idioma_preferido == 'fr' %}selected{% endif %}>Francés</option>
+                    <option value="de" {% if usuario.idioma_preferido == 'de' %}selected{% endif %}>Alemán</option>
+                    <option value="it" {% if usuario.idioma_preferido == 'it' %}selected{% endif %}>Italiano</option>
+                    <option value="pt" {% if usuario.idioma_preferido == 'pt' %}selected{% endif %}>Portugués</option>
+                    <option value="ja" {% if usuario.idioma_preferido == 'ja' %}selected{% endif %}>Japonés</option>
+                </select>
+            </div>
+
+            <!-- Crossfade toggle -->
+            <label class="toggle-row" style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--surface-2);border-radius:var(--radius);border:1px solid var(--border-light);cursor:pointer;transition:all var(--transition)">
+                <div style="width:36px;height:36px;border-radius:var(--radius-sm);background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                    <i class="fa-solid fa-wave-square"></i>
+                </div>
+                <div style="flex:1;min-width:0">
+                    <div style="font-weight:600;font-size:14px;color:var(--text-bright)">Crossfade</div>
+                    <div style="font-size:12px;color:var(--muted)">Transición suave entre canciones</div>
+                </div>
+                <div class="toggle-switch" style="position:relative;width:44px;height:24px;flex-shrink:0">
+                    <input type="checkbox" name="crossfade_enabled" {% if usuario.crossfade_enabled %}checked{% endif %} style="opacity:0;width:0;height:0;position:absolute">
+                    <span class="toggle-slider" style="position:absolute;inset:0;background:{% if usuario.crossfade_enabled %}var(--accent){% else %}var(--surface-3){% endif %};border-radius:999px;transition:all .25s;cursor:pointer"></span>
+                    <span class="toggle-knob" style="position:absolute;top:2px;left:{% if usuario.crossfade_enabled %}22px{% else %}2px{% endif %};width:20px;height:20px;background:#fff;border-radius:50%;transition:all .25s"></span>
+                </div>
+            </label>
+
+            <!-- Activity tracking toggle -->
+            <label class="toggle-row" style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--surface-2);border-radius:var(--radius);border:1px solid var(--border-light);cursor:pointer;transition:all var(--transition)">
+                <div style="width:36px;height:36px;border-radius:var(--radius-sm);background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                    <i class="fa-solid fa-chart-line"></i>
+                </div>
+                <div style="flex:1;min-width:0">
+                    <div style="font-weight:600;font-size:14px;color:var(--text-bright)">Actividad</div>
+                    <div style="font-size:12px;color:var(--muted)">Registrar mi historial de reproducciones</div>
+                </div>
+                <div class="toggle-switch" style="position:relative;width:44px;height:24px;flex-shrink:0">
+                    <input type="checkbox" name="activity_tracking" {% if usuario.activity_tracking %}checked{% endif %} style="opacity:0;width:0;height:0;position:absolute">
+                    <span class="toggle-slider" style="position:absolute;inset:0;background:{% if usuario.activity_tracking %}var(--accent){% else %}var(--surface-3){% endif %};border-radius:999px;transition:all .25s;cursor:pointer"></span>
+                    <span class="toggle-knob" style="position:absolute;top:2px;left:{% if usuario.activity_tracking %}22px{% else %}2px{% endif %};width:20px;height:20px;background:#fff;border-radius:50%;transition:all .25s"></span>
+                </div>
+            </label>
+
+            <!-- Acciones -->
+            <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px">
+                <button type="submit" class="btn btn-accent"><i class="fa-solid fa-floppy-disk"></i> Guardar</button>
+                {% if is_admin %}
+                <a href="{{ url_for('admin.admin_panel') }}" class="btn"><i class="fa-solid fa-gear"></i> Admin</a>
+                <a href="https://app.takenos.com/pay/b6515307-a660-446d-8117-3214a4a89a80" target="_blank" rel="noopener noreferrer" class="btn btn-donation">
+                    <i class="fa-solid fa-heart"></i> Apoyar
+                </a>
+                {% endif %}
+                <a href="{{ url_for('logout') }}" class="btn" style="margin-left:auto;color:var(--accent);border-color:rgba(217,88,64,0.3)"><i class="fa-solid fa-right-from-bracket"></i> Salir</a>
+            </div>
+            
+            <div id="profile-msg" style="display:none;padding:12px 16px;border-radius:var(--radius);font-size:14px"></div>
+        </form>
+    </div>
+
+    <!-- COLUMNA DERECHA: Estadísticas -->
+    <div class="profile-stats-col">
+        <h2 style="font-size:18px;margin-top:0;margin-bottom:16px;color:var(--text-bright);display:flex;align-items:center;gap:8px">
+            <i class="fa-solid fa-chart-simple" style="color:var(--accent)"></i> Estadísticas
+        </h2>
+
+        <!-- Stats top cards -->
+        <div class="stats-cards-row">
+            <div class="stat-card">
+                <div class="stat-icon"><i class="fa-solid fa-headphones"></i></div>
+                <div class="stat-value">{{ total_plays }}</div>
+                <div class="stat-label">Total Plays</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon"><i class="fa-regular fa-clock"></i></div>
+                <div class="stat-value">{{ total_hours }}h</div>
+                <div class="stat-label">Listening Time</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon"><i class="fa-solid fa-bolt"></i></div>
+                <div class="stat-value">{{ last_24h }}</div>
+                <div class="stat-label">Last 24h</div>
+            </div>
+        </div>
+
+        <div class="stats-lists-row">
+            <!-- Top Canciones -->
+            <section class="stats-section">
+                <h3 class="stats-section-title"><i class="fa-solid fa-arrow-trend-up"></i> Top Canciones</h3>
+                {% if top_songs %}
+                <div class="tracklist mini-tracklist">
+                    {% for cancion, plays in top_songs %}
+                    <div class="track-item" style="grid-template-columns:24px minmax(0,1fr) 50px;padding:8px;font-size:13px">
+                        <span class="track-num" style="font-size:12px">{{ loop.index }}</span>
+                        <div class="track-info">
+                            <span class="track-title">{{ cancion.titulo }}</span>
+                            <span class="track-artist-mobile" style="display:block;font-size:11px">{{ cancion.artista_obj.nombre if cancion.artista_obj else '' }}</span>
+                        </div>
+                        <span class="track-duration" style="text-align:right;font-size:11px">{{ plays }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="muted" style="font-size:13px;padding:12px">Aún no hay datos</p>
+                {% endif %}
+            </section>
+
+            <!-- Top Artistas -->
+            <section class="stats-section">
+                <h3 class="stats-section-title"><i class="fa-solid fa-user-group"></i> Top Artistas</h3>
+                {% if top_artists %}
+                <div class="tracklist mini-tracklist">
+                    {% for row in top_artists %}
+                    <div class="track-item" style="grid-template-columns:24px minmax(0,1fr) 50px;padding:8px;font-size:13px">
+                        <span class="track-num" style="font-size:12px">{{ loop.index }}</span>
+                        <div class="track-info">
+                            <span class="track-title">{{ row[0] }}</span>
+                        </div>
+                        <span class="track-duration" style="text-align:right;font-size:11px">{{ row[2] }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="muted" style="font-size:13px;padding:12px">Aún no hay datos</p>
+                {% endif %}
+            </section>
+        </div>
+    </div>
+</div>
+
+<style>
+/* Dashboard Layout */
+.profile-dashboard {
+    display: grid;
+    grid-template-columns: 1fr 1.2fr;
+    gap: 40px;
+    align-items: start;
+    max-width: 1200px;
+}
+
+/* Stats Styles */
+.stats-cards-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+.stat-card {
+    background: var(--surface-2);
+    padding: 20px 16px;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-light);
+    text-align: center;
+    box-shadow: var(--shadow);
+    transition: transform var(--transition);
+}
+.stat-card:hover {
+    transform: translateY(-4px);
+}
+.stat-icon {
+    font-size: 24px;
+    color: var(--accent);
+    margin-bottom: 12px;
+}
+.stat-value {
+    font-size: 24px;
+    font-weight: 800;
+    color: var(--text-bright);
+    line-height: 1.1;
+}
+.stat-label {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 6px;
+}
+.stats-lists-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+}
+.stats-section-title {
+    margin-top: 0;
+    margin-bottom: 12px;
+    font-size: 15px;
+    color: var(--text-bright);
+}
+.stats-section-title i {
+    color: var(--muted);
+}
+.mini-tracklist .track-item {
+    border-radius: var(--radius-sm);
+    margin-bottom: 2px;
+}
+
+/* Extras */
+.btn-donation {
+    background: linear-gradient(135deg, var(--accent) 0%, #ff8e53 100%);
+    color: white !important;
+    border: none;
+    box-shadow: 0 4px 15px var(--accent-soft);
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+.btn-donation:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(255, 142, 83, 0.4);
+    filter: brightness(1.1);
+}
+.btn-donation i {
+    animation: pulse-heart 2s infinite;
+    margin-right: 6px;
+}
+@keyframes pulse-heart {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.15); }
+    100% { transform: scale(1); }
+}
+
+/* Responsiveness */
+@media (max-width: 900px) {
+    .profile-dashboard {
+        grid-template-columns: 1fr;
+        gap: 32px;
+    }
+    .stats-lists-row {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+
+<script>
+(function(){
+    const form = document.getElementById('profile-form');
+    const msg = document.getElementById('profile-msg');
+
+    // Toggle switches visual
+    document.querySelectorAll('.toggle-row').forEach(row => {
+        const cb = row.querySelector('input[type=checkbox]');
+        const slider = row.querySelector('.toggle-slider');
+        const knob = row.querySelector('.toggle-knob');
+        row.addEventListener('click', function(e) {
+            if (e.target.closest('.toggle-switch') || e.target.tagName === 'INPUT') return;
+            cb.checked = !cb.checked;
+            updateToggle(cb, slider, knob);
+        });
+        cb.addEventListener('change', function() {
+            updateToggle(cb, slider, knob);
+        });
+    });
+
+    function updateToggle(cb, slider, knob) {
+        slider.style.background = cb.checked ? 'var(--accent)' : 'var(--surface-3)';
+        knob.style.left = cb.checked ? '22px' : '2px';
+    }
+
+    form.addEventListener('submit', function(e){
+        e.preventDefault();
+        const data = {
+            nombre_publico: form.nombre_publico.value,
+            password: form.password.value,
+            crossfade_enabled: form.crossfade_enabled.checked,
+            activity_tracking: form.activity_tracking.checked,
+            idioma_preferido: form.idioma_preferido.value
+        };
+
+        fetch('/api/profile/update', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        })
+        .then(r => r.json())
+        .then(d => {
+            if (d.ok) {
+                msg.style.display = 'block';
+                msg.style.background = 'rgba(74,222,128,0.1)';
+                msg.style.border = '1px solid rgba(74,222,128,0.2)';
+                msg.style.color = '#4ade80';
+                msg.innerHTML = '<i class="fa-regular fa-circle-check"></i> Cambios guardados correctamente';
+                form.password.value = '';
+                setTimeout(() => msg.style.display = 'none', 3000);
+                // Notificar al reproductor del cambio de crossfade
+                const pf = document.getElementById('player-frame');
+                if (pf && pf.contentWindow) {
+                    pf.contentWindow.postMessage({
+                        type: 'settings',
+                        crossfade_enabled: d.crossfade_enabled
+                    }, window.location.origin);
+                }
+            } else {
+                msg.style.display = 'block';
+                msg.style.background = 'rgba(255,80,80,0.1)';
+                msg.style.border = '1px solid rgba(255,80,80,0.2)';
+                msg.style.color = '#ff6b6b';
+                msg.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Error: ' + (d.error || 'desconocido');
+            }
+        })
+        .catch(() => {
+            msg.style.display = 'block';
+            msg.style.background = 'rgba(255,80,80,0.1)';
+            msg.style.border = '1px solid rgba(255,80,80,0.2)';
+            msg.style.color = '#ff6b6b';
+            msg.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Error de conexión';
+        });
+    });
+})();
+</script>
+{% endblock %}
