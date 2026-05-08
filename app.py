@@ -48,7 +48,7 @@ with app.app_context():
             nombre_usuario='ducksound',
             role='admin'
         )
-        admin_user.set_password('admin123')  # Contraseña por defecto
+        admin_user.set_password('ducksound')  # Contraseña por defecto
         db.session.add(admin_user)
         db.session.commit()
         print("Usuario administrador creado: ducksound / admin123")
