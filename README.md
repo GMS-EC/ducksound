@@ -345,4 +345,8 @@ python app.py
 
 ## 📄 Licencia
 
-Este proyecto es de uso personal. Consulta el archivo LICENSE para más detalles.
+Este proyecto está licenciado bajo la **GNU Affero General Public License v3.0 (AGPLv3)**.
+
+Esto significa que DuckSound es de código abierto y completamente libre. Eres libre de usarlo, modificarlo y compartirlo. Sin embargo, si modificas el código y lo ofreces como un servicio a través de una red (por ejemplo, alojándolo públicamente), **estás obligado a compartir el código fuente de tus modificaciones** bajo la misma licencia. 
+
+Consulta el archivo [LICENSE](LICENSE) para más detalles.
