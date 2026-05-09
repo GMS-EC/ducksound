@@ -2113,11 +2113,46 @@ body {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  min-width: 40px;
+  min-width: 44px;
+  position: relative;
 }
 
 .track-item.playing .btn-add-collection {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Circular Progress Indicator */
+.track-progress-indicator {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 32px;
+  height: 32px;
   display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.track-item.playing .track-progress-indicator {
+  display: flex;
+}
+
+.progress-ring {
+  position: absolute;
+  transform: rotate(-90deg);
+}
+
+.progress-ring__circle {
+  transition: stroke-dashoffset 0.35s;
+  transform-origin: 50% 50%;
+  stroke: var(--accent);
+  stroke-linecap: round;
+}
+
+.progress-ring__background {
+  stroke: var(--border-color);
 }
 
 .btn-add-collection {
@@ -2130,6 +2165,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  z-index: 1;
 }
 
 .btn-add-collection:hover {

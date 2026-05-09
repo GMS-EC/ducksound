@@ -79,7 +79,13 @@
                 {% endif %}
             </span>
             <div class="track-action-end">
-                <div class="playing-eq"><span></span><span></span><span></span></div>
+                <div class="track-progress-indicator">
+                    <svg class="progress-ring" width="32" height="32">
+                        <circle class="progress-ring__background" stroke-width="2" fill="transparent" r="14" cx="16" cy="16"/>
+                        <circle class="progress-ring__circle" stroke-width="2" stroke-dasharray="88 88" stroke-dashoffset="88" fill="transparent" r="14" cx="16" cy="16"/>
+                    </svg>
+                    <div class="playing-eq"><span></span><span></span><span></span></div>
+                </div>
                 <button class="btn-add-collection" data-type="cancion" data-id="{{ s.id }}" title="Añadir a colección"><i class="fa-solid fa-plus"></i></button>
             </div>
         </div>

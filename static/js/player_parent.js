@@ -483,6 +483,17 @@
         if (bar) bar.style.width = (dur > 0 ? (cur/dur)*100 : 0) + '%';
         if (tCur) tCur.textContent = formatTime(cur);
         if (tDur) tDur.textContent = formatTime(dur);
+
+        // Update circular progress for active track item
+        const activeTrack = document.querySelector('.track-item.playing');
+        if (activeTrack) {
+            const circle = activeTrack.querySelector('.progress-ring__circle');
+            if (circle) {
+                const circumference = 2 * Math.PI * 14; // r=14
+                const offset = circumference - (dur > 0 ? (cur / dur) : 0) * circumference;
+                circle.style.strokeDashoffset = offset;
+            }
+        }
     }
 
     function seekViaProgressBar(e){
