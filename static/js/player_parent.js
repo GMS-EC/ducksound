@@ -35,6 +35,24 @@
         iframe.contentWindow.postMessage(msg, window.location.origin);
     }
 
+    function updateLikeButton(song){
+        if (!song || !song.id) return;
+        
+        fetch('/api/favoritos')
+            .then(r => r.json())
+            .then(favIds => {
+                const btnLike = document.getElementById('btn-like');
+                if (btnLike) {
+                    const icon = btnLike.querySelector('i');
+                    const liked = favIds.includes(song.id);
+                    icon.className = liked ? 'fa-solid fa-heart' : 'fa-regular fa-heart';
+                    btnLike.style.color = liked ? 'var(--accent)' : '';
+                    icon.style.color = liked ? 'var(--accent)' : '';
+                }
+            })
+            .catch(() => {});
+    }
+
     function songFromCard(card){
         if (!card) return null;
         const id = parseInt(card.dataset.cancionId, 10);

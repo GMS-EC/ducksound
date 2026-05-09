@@ -626,37 +626,114 @@ def api_albums_by_artist(artist_id):
 
 @api_bp.route('/api/artist/<int:artist_id>/canciones', methods=['GET'])
 def api_songs_by_artist(artist_id):
-    """Devuelve todas las canciones de un artista en JSON"""
+    """Devuelve todas las canciones de un artista en JSON ordenadas por álbum, disco y pista"""
     artista = Artista.query.get_or_404(artist_id)
-    canciones = Cancion.query.filter_by(artista_id=artista.id).order_by(Cancion.album_id, Cancion.ruta_archivo_audio).all()
+    songs = Cancion.query.filter_by(artista_id=artista.id).all()
+    
+    # Primero agrupar por álbum
+    albums_dict = {}
+    for s in songs:
+        album_id = s.album_id if s.album_id is not None else 0
+        if album_id not in albums_dict:
+            albums_dict[album_id] = {
+                'album': s.album_obj,
+                'songs': []
+            }
+        albums_dict[album_id]['songs'].append(s)
+    
+    # Ordenar álbumes por año (o por ID si no hay año)
+    def sort_album_key(item):
+        album = item[1]['album']
+        if album and hasattr(album, 'anio') and album.anio:
+            return (album.anio, album.id or 0)
+        return (9999, item[0])
+    
+    albums_ordenados = sorted(albums_dict.items(), key=sort_album_key)
+    
+    # Para cada álbum, ordenar por disco y pista
+    def get_track_num(c):
+        if hasattr(c, 'numero_pista') and c.numero_pista is not None:
+            return c.numero_pista
+        filename = c.ruta_archivo_audio.replace('\\', '/').split('/')[-1]
+        import re
+        m = re.match(r'^\s*(\d+)', filename)
+        return int(m.group(1)) if m else 9999
+    
     result = []
-    for c in canciones:
-        result.append({
-            'id': c.id,
-            'titulo': c.titulo,
-            'artista': artista.nombre,
-            'audio': f'/audio/{c.id}',
-            'cover': f'/album-art/{c.id}',
-            'lyrics': f'/lyrics/{c.id}'
-        })
+    for album_id, album_data in albums_ordenados:
+        album = album_data['album']
+        album_songs = album_data['songs']
+        
+        # Agrupar por número de disco dentro del álbum
+        discos_dict = {}
+        for s in album_songs:
+            disc_num = s.numero_disco if s.numero_disco is not None else 1
+            if disc_num not in discos_dict:
+                discos_dict[disc_num] = []
+            discos_dict[disc_num].append(s)
+        
+        # Ordenar discos y luego canciones por pista
+        discos_ordenados = sorted(discos_dict.items())
+        for disc_num, canciones_disco in discos_ordenados:
+            canciones_ordenadas = sorted(canciones_disco, key=get_track_num)
+            for c in canciones_ordenadas:
+                result.append({
+                    'id': c.id,
+                    'titulo': c.titulo,
+                    'artista': artista.nombre,
+                    'album': album.titulo if album else 'Desconocido',
+                    'audio': f'/audio/{c.id}',
+                    'cover': f'/album-art/{c.id}',
+                    'lyrics': f'/lyrics/{c.id}',
+                    'numero_pista': c.numero_pista,
+                    'numero_disco': c.numero_disco
+                })
+    
     return jsonify(result)
 
 
 @api_bp.route('/api/album/<int:album_id>/canciones', methods=['GET'])
 def api_songs_by_album(album_id):
-    """Devuelve todas las canciones de un álbum en JSON"""
+    """Devuelve todas las canciones de un álbum en JSON ordenadas por disco y pista"""
     album = Album.query.get_or_404(album_id)
-    canciones = Cancion.query.filter_by(album_id=album.id).order_by(Cancion.ruta_archivo_audio).all()
+    songs = Cancion.query.filter_by(album_id=album.id).all()
+    
+    # Agrupar por número de disco
+    discos_dict = {}
+    for s in songs:
+        disc_num = s.numero_disco if s.numero_disco is not None else 1
+        if disc_num not in discos_dict:
+            discos_dict[disc_num] = []
+        discos_dict[disc_num].append(s)
+    
+    # Ordenar discos numéricamente
+    discos_ordenados = sorted(discos_dict.items())
+    
+    # Dentro de cada disco, ordenar por número de pista
+    def get_track_num(c):
+        if hasattr(c, 'numero_pista') and c.numero_pista is not None:
+            return c.numero_pista
+        filename = c.ruta_archivo_audio.replace('\\', '/').split('/')[-1]
+        import re
+        m = re.match(r'^\s*(\d+)', filename)
+        return int(m.group(1)) if m else 9999
+    
+    # Construir resultado final ordenado
     result = []
-    for c in canciones:
-        result.append({
-            'id': c.id,
-            'titulo': c.titulo,
-            'artista': c.artista_obj.nombre if c.artista_obj else 'Desconocido',
-            'audio': f'/audio/{c.id}',
-            'cover': f'/album-art/{c.id}',
-            'lyrics': f'/lyrics/{c.id}'
-        })
+    for disc_num, canciones_disco in discos_ordenados:
+        canciones_ordenadas = sorted(canciones_disco, key=get_track_num)
+        for c in canciones_ordenadas:
+            result.append({
+                'id': c.id,
+                'titulo': c.titulo,
+                'artista': c.artista_obj.nombre if c.artista_obj else 'Desconocido',
+                'audio': f'/audio/{c.id}',
+                'cover': f'/album-art/{c.id}',
+                'lyrics': f'/lyrics/{c.id}',
+                'numero_pista': c.numero_pista,
+                'numero_disco': c.numero_disco
+            })
+    
     return jsonify(result)
 
 

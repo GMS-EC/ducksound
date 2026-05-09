@@ -10,7 +10,7 @@ DEEZER_ARTIST_URL = 'https://api.deezer.com/artist/{}'
 DEEZER_SEARCH_ALBUM_URL = 'https://api.deezer.com/search/album'
 DEEZER_ALBUM_URL = 'https://api.deezer.com/album/{}'
 REQUEST_TIMEOUT = 10
-RATE_LIMIT_DELAY = 0.3  # segundos entre requests para no saturar la API
+RATE_LIMIT_DELAY = 1.0  # segundos entre requests para no saturar la API
 
 
 def buscar_artista_deezer(nombre_artista):

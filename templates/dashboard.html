@@ -72,7 +72,7 @@
             <div class="album-card-cover">
                 <div class="album-card-placeholder"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
                 <div class="album-card-overlay">
-                    <button class="album-card-play"><i class="fa-solid fa-play"></i></button>
+                    <button class="album-card-play" data-mix-id="{{ mix.id }}"><i class="fa-solid fa-play"></i></button>
                 </div>
             </div>
             <div class="album-card-info">
@@ -107,7 +107,7 @@
                 <div class="album-card-placeholder"><i class="fa-solid fa-compact-disc"></i></div>
                 {% endif %}
                 <div class="album-card-overlay">
-                    <button class="album-card-play"><i class="fa-solid fa-play"></i></button>
+                    <button class="album-card-play" data-album-id="{{ album.id }}"><i class="fa-solid fa-play"></i></button>
                 </div>
             </div>
             <div class="album-card-info">

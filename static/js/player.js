@@ -292,14 +292,49 @@ function renderUpNext() {
     const upnextEl = document.getElementById('upnext-content');
     if (!upnextEl || !playlist || playlist.length === 0) return;
     upnextEl.innerHTML = '';
-    const start = (currentSongIndex + 1) % Math.max(1, playlist.length);
+    
+    // Mostrar todas las canciones de la playlist, marcando la actual
     for (let i = 0; i < playlist.length; i++) {
-        const idx = (start + i) % playlist.length;
-        const item = playlist[idx];
+        const item = playlist[i];
         const div = document.createElement('div');
-        div.className = 'upnext-item';
-        div.innerHTML = `<div class="cover"><img src="${item.cover}" style="width:100%;height:100%;object-fit:cover" alt="${item.titulo}"></div><div class="meta"><strong>${item.titulo}</strong><div class="muted">${item.artista}</div></div>`;
-        div.addEventListener('click', () => playSong(idx));
+        
+        // Determinar si esta es la canción actual
+        const isCurrentSong = (i === currentSongIndex);
+        const isPlaying = isCurrentSong && isPlaying;
+        
+        // Clases CSS según estado
+        let classes = 'upnext-item';
+        if (isCurrentSong) {
+            classes += ' current-song';
+        }
+        if (isPlaying) {
+            classes += ' playing';
+        }
+        
+        div.className = classes;
+        
+        // Icono de estado
+        let statusIcon = '';
+        if (isCurrentSong && isPlaying) {
+            statusIcon = '<div class="playing-indicator">🎵</div>';
+        } else if (isCurrentSong && !isPlaying) {
+            statusIcon = '<div class="current-indicator">⏸</div>';
+        } else {
+            statusIcon = '<div class="track-number">' + (i + 1) + '</div>';
+        }
+        
+        div.innerHTML = `
+            <div class="track-status">${statusIcon}</div>
+            <div class="cover">
+                <img src="${item.cover}" style="width:100%;height:100%;object-fit:cover" alt="${item.titulo}">
+            </div>
+            <div class="meta">
+                <strong class="song-title ${isCurrentSong ? 'current-title' : ''}">${item.titulo}</strong>
+                <div class="muted">${item.artista}</div>
+            </div>
+        `;
+        
+        div.addEventListener('click', () => playSong(i));
         upnextEl.appendChild(div);
     }
 }
@@ -470,8 +505,8 @@ window.addEventListener('DOMContentLoaded', () => {
         });
 
         audioPlayer.addEventListener('ended', playNext);
-        audioPlayer.addEventListener('play', () => { isPlaying = true; updatePlayButton(); });
-        audioPlayer.addEventListener('pause', () => { isPlaying = false; updatePlayButton(); });
+        audioPlayer.addEventListener('play', () => { isPlaying = true; updatePlayButton(); renderUpNext(); });
+        audioPlayer.addEventListener('pause', () => { isPlaying = false; updatePlayButton(); renderUpNext(); });
     }
 
     // Integración con el dashboard: enlazar clicks a tarjetas de canciones
