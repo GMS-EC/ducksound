@@ -78,7 +78,10 @@
                 --:--
                 {% endif %}
             </span>
-            <button class="btn-add-collection" data-type="cancion" data-id="{{ s.id }}" title="Añadir a colección" style="background:transparent; border:none; color:var(--muted); cursor:pointer; padding:4px"><i class="fa-solid fa-plus"></i></button>
+            <div class="track-action-end">
+                <div class="playing-eq"><span></span><span></span><span></span></div>
+                <button class="btn-add-collection" data-type="cancion" data-id="{{ s.id }}" title="Añadir a colección"><i class="fa-solid fa-plus"></i></button>
+            </div>
         </div>
         {% endfor %}
         {% else %}
