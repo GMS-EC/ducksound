@@ -6,7 +6,6 @@ function playAlbum(albumId) {
         .then(r => r.json())
         .then(songs => {
             if (songs && songs.length > 0) {
-                // Send playlist to player
                 const iframe = document.getElementById('player-frame');
                 if (iframe && iframe.contentWindow) {
                     iframe.contentWindow.postMessage({
@@ -14,7 +13,6 @@ function playAlbum(albumId) {
                         playlist: songs
                     }, window.location.origin);
                     
-                    // Play first song
                     setTimeout(() => {
                         iframe.contentWindow.postMessage({
                             type: 'command', 
@@ -33,7 +31,6 @@ function playDailyMix(mixId) {
         .then(r => r.json())
         .then(songs => {
             if (songs && songs.length > 0) {
-                // Send playlist to player
                 const iframe = document.getElementById('player-frame');
                 if (iframe && iframe.contentWindow) {
                     iframe.contentWindow.postMessage({
@@ -41,7 +38,6 @@ function playDailyMix(mixId) {
                         playlist: songs
                     }, window.location.origin);
                     
-                    // Play first song
                     setTimeout(() => {
                         iframe.contentWindow.postMessage({
                             type: 'command', 
@@ -55,33 +51,31 @@ function playDailyMix(mixId) {
         .catch(err => console.error('Error playing daily mix:', err));
 }
 
-function setupAlbumCardPlayButtons() {
-    document.querySelectorAll('.album-card-play').forEach(button => {
-        button.addEventListener('click', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            
-            const albumId = this.dataset.albumId;
-            const mixId = this.dataset.mixId;
-            
-            if (albumId) {
-                playAlbum(albumId);
-            } else if (mixId) {
-                playDailyMix(mixId);
-            }
-        });
-    });
+// Delegación de eventos a nivel documento para botones de play
+function handleCardPlayClick(e) {
+    const btn = e.target.closest('.album-card-play');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    
+    const albumId = btn.dataset.albumId;
+    const mixId = btn.dataset.mixId;
+    
+    if (albumId) {
+        playAlbum(albumId);
+    } else if (mixId) {
+        playDailyMix(mixId);
+    }
 }
 
-// Inicializar cuando el DOM esté listo
-document.addEventListener('DOMContentLoaded', () => {
-    setupAlbumCardPlayButtons();
-});
+// Registrar delegación (solo una vez)
+function setupAlbumCardPlayButtons() {
+    document.removeEventListener('click', handleCardPlayClick);
+    document.addEventListener('click', handleCardPlayClick);
+}
 
-// También inicializar después de navegación SPA
-window.addEventListener('load', () => {
-    setTimeout(setupAlbumCardPlayButtons, 500);
-});
+// Inicializar
+setupAlbumCardPlayButtons();
 
 // Re-bind after SPA navigation
 if (typeof window.initPageBindings === 'function') {

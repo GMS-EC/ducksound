@@ -895,6 +895,8 @@
         window.initPageBindings = function(){ 
             bindSongCards(); 
             initRightPanel();
+            // Solicitar estado actual al reproductor para refrescar indicadores
+            sendToPlayer({type:'command', cmd:'getState'});
         };
     });
 })();

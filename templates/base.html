@@ -277,6 +277,8 @@
         }
 
         document.addEventListener('click', function(e){
+            // Si el clic fue en un botón de reproducción, no interceptar
+            if (e.target.closest('.album-card-play, .track-play-btn, .btn-play-all, .btn-shuffle')) return;
             const a = e.target.closest('a');
             if (!a) return;
             if (a.target && a.target !== '' && a.target !== '_self') return;

@@ -401,6 +401,8 @@
                 if (typeof msg.crossfade_enabled !== 'undefined') {
                     crossfadeEnabled = msg.crossfade_enabled === true;
                 }
+            } else if (cmd === 'getState'){
+                postState();
             }
         }
     });

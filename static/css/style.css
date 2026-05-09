@@ -2001,9 +2001,47 @@ body {
   background: var(--accent-soft);
   border-color: var(--accent-glow);
   box-shadow: 0 0 0 1px var(--accent-glow);
+  animation: trackPulse 2s ease-in-out infinite;
 }
 
-.track-item.playing .track-num,
+@keyframes trackPulse {
+  0%, 100% { box-shadow: 0 0 0 1px var(--accent-glow); }
+  50% { box-shadow: 0 0 0 2px var(--accent-glow), 0 0 20px rgba(255,64,64,0.1); }
+}
+
+.track-item.playing .track-num {
+  color: var(--accent);
+  font-size: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.track-item.playing .track-num::before {
+  content: '';
+  display: inline-block;
+  width: 3px;
+  height: 10px;
+  background: var(--accent);
+  border-radius: 2px;
+  animation: eqBar 0.6s ease-in-out infinite alternate;
+}
+
+.track-item.playing .track-num::after {
+  content: '';
+  display: inline-block;
+  width: 3px;
+  height: 16px;
+  background: var(--accent);
+  border-radius: 2px;
+  animation: eqBar 0.4s ease-in-out infinite alternate-reverse;
+}
+
+@keyframes eqBar {
+  0% { transform: scaleY(0.4); }
+  100% { transform: scaleY(1); }
+}
+
 .track-item.playing .track-title {
   color: var(--accent);
 }
