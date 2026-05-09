@@ -57,7 +57,10 @@
              data-artista="{{ s.artista_obj.nombre if s.artista_obj else 'Desconocido' }}"
              data-context="album" data-album-id="{{ album.id }}">
             <button class="track-play-btn" title="Reproducir"><i class="fa-solid fa-play"></i></button>
-            <span class="track-num">{{ s.numero_pista if s.numero_pista else loop.index }}</span>
+            <span class="track-num">
+                <span class="num-text">{{ s.numero_pista if s.numero_pista else loop.index }}</span>
+                <div class="playing-eq"><span></span><span></span><span></span><span></span></div>
+            </span>
             <div class="track-cover-sm">
                 {% if cover_url %}
                 <img src="{{ cover_url }}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
@@ -77,7 +80,6 @@
                         <circle class="progress-ring__background" stroke-width="2" fill="transparent" r="12" cx="14" cy="14" />
                         <circle class="progress-ring__circle" stroke-width="2" stroke-dasharray="75 75" stroke-dashoffset="75" fill="transparent" r="12" cx="14" cy="14" />
                     </svg>
-                    <div class="playing-eq"><span></span><span></span><span></span></div>
                 </div>
                 <span class="duration-text">
                     {% if s.duracion %}
