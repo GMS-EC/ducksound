@@ -329,10 +329,13 @@
                         fetch(song.lyrics).then(r=>{
                             if (!r.ok) throw new Error('no lyrics');
                             return r.text();
-                        }).then(txt=>{
+                        })                        .then(txt=>{
                             const cues = parseLRC(txt);
                             renderLyrics(cues, song.id);
-                            selectRightTab('lyrics');
+                            // Solo cambiar a pestaña Letra si el usuario no está en "A continuación"
+                            if (window._activeRightTab !== 'upnext') {
+                                selectRightTab('lyrics');
+                            }
                         }).catch(()=>{
                             lyricsPanel.innerHTML = '<p class="no-lyrics"><span class="no-lyrics-icon"><i class="fa-solid fa-music"></i></span>Letra no encontrada</p>';
                         });
@@ -390,13 +393,13 @@
 
                 // Reset progress bar for new song
                 updateProgressBar(0, 0);
-                
-                // Update now-playing highlight on track items
-                document.querySelectorAll('.track-item.playing, .song-card.playing').forEach(el => el.classList.remove('playing'));
-                if (newSongId) {
-                    const playingItem = document.querySelector(`.track-item[data-cancion-id="${newSongId}"], .song-card[data-cancion-id="${newSongId}"]`);
-                    if (playingItem) playingItem.classList.add('playing');
-                }
+            }
+
+            // Siempre actualizar highlight en tracklist (incluso si la canción no cambió)
+            document.querySelectorAll('.track-item.playing, .song-card.playing').forEach(el => el.classList.remove('playing'));
+            if (newSongId) {
+                const playingItem = document.querySelector(`.track-item[data-cancion-id="${newSongId}"], .song-card[data-cancion-id="${newSongId}"]`);
+                if (playingItem) playingItem.classList.add('playing');
             }
 
             // Update upnext
@@ -616,17 +619,19 @@
             relatedDiv.innerHTML = '<p class="muted">No hay similares disponibles</p>';
             return;
         }
-        const html = similares.map(s=>`<div class="similar-item" data-cancion-id="${s.id}" data-titulo="${escapeHtml(s.titulo)}" data-artista="${escapeHtml(s.artista||'')}" style="padding:8px;border-radius:4px;background:rgba(255,255,255,0.02);margin-bottom:6px;cursor:pointer;transition:all 0.2s ease;border:1px solid transparent; display:flex; justify-content:space-between; align-items:center; gap: 10px;">
-            ${s.cover ? `<img src="${s.cover}" style="width:36px;height:36px;border-radius:4px;object-fit:cover;flex-shrink:0;">` : `<div style="width:36px;height:36px;border-radius:4px;background:rgba(255,255,255,0.05);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="fa-solid fa-music" style="font-size:14px;color:rgba(255,255,255,0.3)"></i></div>`}
-            <div style="min-width:0;flex:1;">
-                <strong style="font-size:12px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:rgba(255,255,255,0.95);">${escapeHtml(s.titulo)}</strong>
-                <div class="muted" style="font-size:11px;color:rgba(232,234,237,0.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(s.artista||'Desconocido')}</div>
-            </div>
-            <div style="font-size:10px;color:rgba(255,255,255,0.8);background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:10px;font-weight:600;flex-shrink:0;">${(s.similarity*100).toFixed(0)}%</div>
-        </div>`).join('');
-        relatedDiv.innerHTML = html;
+        relatedDiv.innerHTML = similares.map(s=>{
+            const cover = s.cover || `/album-art/${s.id}`;
+            const pct = (s.similarity * 100).toFixed(0);
+            return `<div class="similar-item" data-cancion-id="${s.id}" data-titulo="${escapeHtml(s.titulo)}" data-artista="${escapeHtml(s.artista||'')}">
+                <div class="cover"><img src="${escapeHtml(cover)}" alt=""></div>
+                <div class="meta">
+                    <strong>${escapeHtml(s.titulo || 'Sin titulo')}</strong>
+                    <div class="muted">${escapeHtml(s.artista || 'Desconocido')}</div>
+                </div>
+                <span class="similarity-badge">${pct}%</span>
+            </div>`;
+        }).join('');
         
-        // Add click listeners to similar items
         relatedDiv.querySelectorAll('.similar-item').forEach(item => {
             item.addEventListener('click', ()=>{
                 const id = parseInt(item.dataset.cancionId);
@@ -640,8 +645,6 @@
                 };
                 sendToPlayer({type:'playSong', song});
             });
-            item.addEventListener('mouseenter', ()=> item.style.background = 'rgba(255,64,64,0.1)');
-            item.addEventListener('mouseleave', ()=> item.style.background = 'rgba(255,255,255,0.03)');
         });
     }
 
@@ -895,6 +898,13 @@
         window.initPageBindings = function(){ 
             bindSongCards(); 
             initRightPanel();
+            // Re-aplicar highlight a la canción actual si existe
+            var savedId = window._currentSongId;
+            if (savedId) {
+                document.querySelectorAll('.track-item.playing, .song-card.playing').forEach(function(el){ el.classList.remove('playing'); });
+                var item = document.querySelector('.track-item[data-cancion-id="' + savedId + '"], .song-card[data-cancion-id="' + savedId + '"]');
+                if (item) item.classList.add('playing');
+            }
             // Solicitar estado actual al reproductor para refrescar indicadores
             sendToPlayer({type:'command', cmd:'getState'});
         };

@@ -9,7 +9,6 @@
             style="color:var(--accent);margin-right:8px"></i>
         {% if es_favoritos %}Tus Favoritos{% else %}<span id="dynamic-greeting">Buenos días</span>{% endif %}
     </h1>
-    <!--<p class="dashboard-subtitle">Hola, {{ usuario }}</p>-->
     <p class="dashboard-subtitle">Hola, {{ nombre_usuario }}</p>
 </div>
 
@@ -107,7 +106,8 @@
                 <div class="album-card-placeholder"><i class="fa-solid fa-compact-disc"></i></div>
                 {% endif %}
                 <div class="album-card-overlay">
-                    <button class="album-card-play" data-album-id="{{ album.id }}"><i class="fa-solid fa-play"></i></button>
+                    <button class="album-card-play" data-album-id="{{ album.id }}"><i
+                            class="fa-solid fa-play"></i></button>
                 </div>
             </div>
             <div class="album-card-info">
