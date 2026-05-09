@@ -2168,9 +2168,20 @@ body {
   z-index: 1;
 }
 
-.btn-add-collection:hover {
-  color: var(--text-bright);
-  transform: scale(1.15);
+.track-duration {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 80px;
+}
+
+.track-item.playing .duration-text {
+  color: var(--accent);
+  font-weight: 600;
 }
 
 .track-num {

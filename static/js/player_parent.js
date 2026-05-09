@@ -346,6 +346,8 @@
 
             // Sync playback indicators (EQ animation and active highlights)
             document.querySelectorAll('.track-item.playing, .song-card.playing').forEach(el => {
+                const dText = el.querySelector('.duration-text');
+                if (dText && el.dataset.originalDuration) dText.textContent = el.dataset.originalDuration;
                 el.classList.remove('playing');
                 el.classList.remove('paused');
             });
@@ -354,6 +356,8 @@
                 items.forEach(item => {
                     item.classList.add('playing');
                     if (!st.isPlaying) item.classList.add('paused');
+                    const dText = item.querySelector('.duration-text');
+                    if (dText && !item.dataset.originalDuration) item.dataset.originalDuration = dText.textContent.trim();
                     if (songChanged && item.classList.contains('track-item')) {
                         item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                     }
@@ -489,9 +493,14 @@
         if (activeTrack) {
             const circle = activeTrack.querySelector('.progress-ring__circle');
             if (circle) {
-                const circumference = 2 * Math.PI * 14; // r=14
+                const circumference = 2 * Math.PI * 12; // r=12
                 const offset = circumference - (dur > 0 ? (cur / dur) : 0) * circumference;
                 circle.style.strokeDashoffset = offset;
+            }
+            // Update time text next to animation
+            const timeText = activeTrack.querySelector('.duration-text');
+            if (timeText) {
+                timeText.textContent = formatTime(cur) + ' / ' + formatTime(dur);
             }
         }
     }

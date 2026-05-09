@@ -48,21 +48,17 @@
         </div>
         <span class="track-artist-col">{{ cancion.artista_obj.nombre if cancion.artista_obj else '' }}</span>
         <span class="track-duration">
-            {% if cancion.duracion %}{{ (cancion.duracion // 60) }}:{{ '%02d' % (cancion.duracion % 60) }}{% else
-            %}--:--{% endif %}
-        </span>
-        <div class="track-action-end">
             <div class="track-progress-indicator">
-                <svg class="progress-ring" width="32" height="32">
-                    <circle class="progress-ring__background" stroke-width="2" fill="transparent" r="14" cx="16" cy="16" />
-                    <circle class="progress-ring__circle" stroke-width="2" stroke-dasharray="88 88" stroke-dashoffset="88" fill="transparent" r="14" cx="16" cy="16" />
+                <svg class="progress-ring" width="28" height="28">
+                    <circle class="progress-ring__background" stroke-width="2" fill="transparent" r="12" cx="14" cy="14" />
+                    <circle class="progress-ring__circle" stroke-width="2" stroke-dasharray="75 75" stroke-dashoffset="75" fill="transparent" r="12" cx="14" cy="14" />
                 </svg>
                 <div class="playing-eq"><span></span><span></span><span></span></div>
             </div>
-            <button class="btn-add-collection" data-type="cancion" data-id="{{ cancion.id }}" title="Añadir a playlist">
-                <i class="fa-solid fa-plus"></i>
-            </button>
-        </div>
+            <span class="duration-text">
+                {% if cancion.duracion %}{{ (cancion.duracion // 60) }}:{{ '%02d' % (cancion.duracion % 60) }}{% else %}--:--{% endif %}
+            </span>
+        </span>
     </div>
     {% endfor %}
 </div>
