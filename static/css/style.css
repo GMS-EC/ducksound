@@ -2084,34 +2084,36 @@ body {
   gap: 2px;
   width: 16px;
   height: 16px;
+  margin: 0 auto;
 }
 
 .track-item.playing .playing-eq {
-  display: flex;
+  display: flex !important;
 }
 
 .track-item.playing .num-text {
-  display: none;
+  display: none !important;
 }
 
 .playing-eq span {
   width: 3px;
-  background: var(--accent);
+  background-color: var(--accent, #1db954); /* Spotify Green as fallback */
   border-radius: 1px;
   animation: eqBar 0.8s ease-in-out infinite alternate;
+  min-height: 4px;
 }
 
-.playing-eq span:nth-child(1) { animation-duration: 0.4s; height: 40%; }
-.playing-eq span:nth-child(2) { animation-duration: 0.7s; height: 100%; }
-.playing-eq span:nth-child(3) { animation-duration: 0.5s; height: 60%; }
-.playing-eq span:nth-child(4) { animation-duration: 0.6s; height: 80%; }
+.playing-eq span:nth-child(1) { animation-duration: 0.4s; }
+.playing-eq span:nth-child(2) { animation-duration: 0.7s; }
+.playing-eq span:nth-child(3) { animation-duration: 0.5s; }
+.playing-eq span:nth-child(4) { animation-duration: 0.6s; }
 
 .track-item.playing.paused .playing-eq span {
   animation-play-state: paused;
 }
 
 @keyframes eqBar {
-  0% { height: 20%; }
+  0% { height: 25%; }
   100% { height: 100%; }
 }
 
