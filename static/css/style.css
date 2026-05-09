@@ -2890,3 +2890,51 @@ body {
 
 /* Empty state */
 .spotify-tracklist .empty-state { grid-column: 1 / -1; }
+
+/* ==========================================
+   LYRICS TOOLBAR
+   ========================================== */
+.lyrics-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-color);
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+.lyrics-translate-btn {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--muted);
+  font-size: 11px;
+  padding: 5px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+.lyrics-translate-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.lyrics-auto-translate {
+  font-size: 11px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  margin-left: auto;
+  user-select: none;
+}
+.lyrics-auto-translate input {
+  accent-color: var(--accent);
+}
+.lyrics-content-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}

@@ -84,7 +84,15 @@
                 <!-- Contenido dinámico -->
                 <div id="upnext-content" class="tab-content"></div>
                 <div id="lyrics-content-panel" class="tab-content active">
-                    <p class="no-lyrics"><span class="no-lyrics-icon"><i class="fa-solid fa-music"></i></span>Selecciona una canción para ver la letra</p>
+                    <div class="lyrics-toolbar">
+                        <button id="btn-translate-lyrics" class="lyrics-translate-btn"><i class="fa-solid fa-language"></i> Traducir</button>
+                        <label class="lyrics-auto-translate" title="Traducir automáticamente al cambiar de canción">
+                            <input type="checkbox" id="chk-auto-translate"> Auto
+                        </label>
+                    </div>
+                    <div class="lyrics-content-scroll">
+                        <p class="no-lyrics"><span class="no-lyrics-icon"><i class="fa-solid fa-music"></i></span>Selecciona una canción para ver la letra</p>
+                    </div>
                 </div>
                 <div id="related-content" class="tab-content"></div>
             </div>
@@ -107,7 +115,6 @@
             </div>
             <div class="player-track-actions">
                 <button id="btn-like" title="Me gusta" class="player-extra-btn"><i class="fa-regular fa-heart"></i></button>
-                <button id="btn-queue" title="Cola" class="player-extra-btn"><i class="fa-regular fa-clock"></i></button>
             </div>
         </div>
 

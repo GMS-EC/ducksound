@@ -290,19 +290,20 @@
 
                 // Update lyrics
                 const lyricsPanel = document.getElementById('lyrics-content-panel');
-                if (lyricsPanel){
+                const lyricsScroll = lyricsPanel ? lyricsPanel.querySelector('.lyrics-content-scroll') : null;
+                if (lyricsPanel && lyricsScroll){
                     if (song && song.lyrics){
                         fetch(song.lyrics).then(r=> r.ok ? r.text() : Promise.reject())
                         .then(txt=>{
                             const cues = parseLRC(txt);
                             renderLyrics(cues, song.id);
                             if (window._activeRightTab !== 'upnext') selectRightTab('lyrics');
-                        })                        .catch(()=>{
-                            lyricsPanel.innerHTML = '<p class="no-lyrics"><span class="no-lyrics-icon"><i class="fa-solid fa-music"></i></span>Letra no encontrada</p>';
+                        }).catch(()=>{
+                            lyricsScroll.innerHTML = '<p class="no-lyrics"><span class="no-lyrics-icon"><i class="fa-solid fa-music"></i></span>Letra no encontrada</p>';
                             window._currentLyrics = null;
                         });
                     } else {
-                        lyricsPanel.innerHTML = '<p class="no-lyrics"><span class="no-lyrics-icon"><i class="fa-solid fa-music"></i></span>Selecciona una canción</p>';
+                        lyricsScroll.innerHTML = '<p class="no-lyrics"><span class="no-lyrics-icon"><i class="fa-solid fa-music"></i></span>Selecciona una canción</p>';
                     }
                 }
 
@@ -427,30 +428,42 @@
     function renderLyrics(cues, songId){
         const lyricsPanel = document.getElementById('lyrics-content-panel');
         if (!lyricsPanel) return;
-        if (!cues || cues.length===0){ lyricsPanel.innerHTML = '<p class="muted">Sin letra</p>'; return; }
+        const scrollDiv = lyricsPanel.querySelector('.lyrics-content-scroll');
+        if (!scrollDiv) return;
+        
+        if (!cues || cues.length===0){
+            scrollDiv.innerHTML = '<p class="no-lyrics"><span class="no-lyrics-icon"><i class="fa-solid fa-music"></i></span>Letra no encontrada</p>';
+            window._currentLyrics = null;
+            return;
+        }
         const html = cues.map((c, i)=>`<div class="lyric-line" data-start="${c.start}" data-index="${i}">${escapeHtml(c.text)}</div>`).join('');
-        lyricsPanel.innerHTML = '<div class="lyrics-toolbar" style="padding:10px;border-bottom:1px solid var(--border-color);margin-bottom:8px"><button id="btn-translate-lyrics" class="lyrics-translate-btn" style="background:transparent;border:1px solid var(--border-color);color:var(--muted);font-size:11px;padding:4px 10px;border-radius:4px;cursor:pointer"><i class="fa-solid fa-language"></i> Traducir</button></div><div class="lyrics-lines">' + html + '</div>';
+        scrollDiv.innerHTML = '<div class="lyrics-lines">' + html + '</div>';
         window._currentLyrics = {songId: songId, cues: cues, index: -1};
-        const btn = document.getElementById('btn-translate-lyrics');
-        if (btn) btn.addEventListener('click', () => translateLyrics(cues));
+        
+        // Auto-traducir si está marcado
+        const chkAuto = document.getElementById('chk-auto-translate');
+        if (chkAuto && chkAuto.checked) {
+            setTimeout(() => translateLyrics(cues), 300);
+        }
     }
 
     function translateLyrics(cues){
         const btn = document.getElementById('btn-translate-lyrics');
-        if (btn) btn.textContent = 'Traduciendo...';
+        if (btn) { btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; btn.disabled = true; }
         fetch('/api/profile').then(r=>r.json()).then(p=>{
             const target = p.idioma_preferido || 'es';
-            const text = cues.map(c=>c.text).join('\n---\n');
+            if (!cues || !Array.isArray(cues)) throw new Error('no cues');
+            const text = cues.map(c=>c.text || '').join('\n---\n');
             return fetch('/api/translate', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({text, target}) });
         }).then(r=>r.json()).then(data=>{
-            if (!data.translated) return;
+            if (!data.translated) throw new Error('no translation');
             const lines = data.translated.split('\n---\n');
             const linesDiv = document.querySelector('.lyrics-lines');
             if (linesDiv) {
                 linesDiv.innerHTML = cues.map((c,i)=> `<div class="lyric-line" data-start="${c.start}" data-index="${i}"><div class="lyric-main-text">${escapeHtml(c.text)}</div><div class="lyric-subline">${escapeHtml(lines[i]||'')}</div></div>`).join('');
-                if (btn) btn.textContent = 'Traducción lista';
+                if (btn) { btn.innerHTML = '<i class="fa-solid fa-language"></i> Traducido'; btn.disabled = false; }
             }
-        }).catch(()=> { if (btn) btn.textContent = 'Error'; });
+        }).catch(()=> { if (btn) { btn.innerHTML = '<i class="fa-solid fa-language"></i> Error'; btn.disabled = false; } });
     }
 
     function renderSimilar(similares){
@@ -540,8 +553,17 @@
 
     function updateShuffleRepeatUI(s, r){
         const bS = document.getElementById('mini-shuffle'), bR = document.getElementById('mini-repeat');
-        if (bS) bS.style.color = s ? 'var(--accent)' : '';
-        if (bR) { const colors = {'none':'', 'one':'var(--accent)', 'all':'var(--accent)'}; bR.style.color = colors[r] || ''; }
+        if (bS) {
+            bS.style.color = s ? 'var(--accent)' : '';
+            bS.querySelector('i').className = s ? 'fa-solid fa-shuffle' : 'fa-solid fa-shuffle';
+        }
+        if (bR) {
+            const colors = {'none':'', 'one':'var(--accent)', 'all':'var(--accent)'};
+            bR.style.color = colors[r] || '';
+            // Icono diferente para repeat-one vs repeat-all
+            if (r === 'one') bR.querySelector('i').className = 'fa-solid fa-repeat-1';
+            else bR.querySelector('i').className = 'fa-solid fa-repeat';
+        }
     }
 
     function updateVolumeIcon(v){
@@ -573,6 +595,15 @@
                 this.style.color = d.liked ? 'var(--accent)' : '';
             });
         });
+
+        // Botón de traducir letras (permanente)
+        const btnTrans = document.getElementById('btn-translate-lyrics');
+        if (btnTrans) {
+            btnTrans.addEventListener('click', function(){
+                const L = window._currentLyrics;
+                if (L && L.cues) translateLyrics(L.cues);
+            });
+        }
 
         window.initPageBindings = function(){
             bindSongCards(); initRightPanel();
