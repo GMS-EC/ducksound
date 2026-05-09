@@ -59,7 +59,7 @@
             <button class="track-play-btn" title="Reproducir"><i class="fa-solid fa-play"></i></button>
             <span class="track-num">
                 <span class="num-text">{{ s.numero_pista if s.numero_pista else loop.index }}</span>
-                <div class="playing-eq"><span></span><span></span><span></span><span></span></div>
+                <span class="playing-eq"><span></span><span></span><span></span></span>
             </span>
             <div class="track-cover-sm">
                 {% if cover_url %}
@@ -75,12 +75,6 @@
             </div>
             <span class="track-artist-col">{{ s.artista_obj.nombre if s.artista_obj else 'Desconocido' }}</span>
             <span class="track-duration">
-                <div class="track-progress-indicator">
-                    <svg class="progress-ring" width="28" height="28">
-                        <circle class="progress-ring__background" stroke-width="2" fill="transparent" r="12" cx="14" cy="14" />
-                        <circle class="progress-ring__circle" stroke-width="2" stroke-dasharray="75 75" stroke-dashoffset="75" fill="transparent" r="12" cx="14" cy="14" />
-                    </svg>
-                </div>
                 <span class="duration-text">
                     {% if s.duracion %}
                     {{ (s.duracion // 60) }}:{{ '%02d' % (s.duracion % 60) }}
@@ -104,26 +98,199 @@
 
 {% block extra_css %}
 <style>
-.disc-separator {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    padding: 20px 0;
-    grid-column: 1 / -1;
+/* ==========================================
+   SPOTIFY SONG LIST — ALBUM TRACKLIST
+   ========================================== */
+
+/* HEADER */
+.album-detail .tracklist-header {
+  display: grid;
+  grid-template-columns: 40px 40px 1fr 1fr 60px;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 16px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  user-select: none;
 }
-.disc-line {
-    flex: 1;
-    height: 1px;
-    background: var(--border-color);
+.album-detail .tracklist-header .tracklist-col-duration { text-align: right; }
+
+/* TRACKLIST CONTAINER */
+.album-detail #album-tracklist {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
-.disc-label {
-    font-size: 12px;
-    font-weight: 700;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    white-space: nowrap;
+
+/* ROW */
+.album-detail .track-item {
+  display: grid;
+  grid-template-columns: 40px 40px 1fr 1fr 60px;
+  gap: 12px;
+  align-items: center;
+  padding: 6px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  border: none;
+  background: transparent;
+  min-width: 0;
 }
+.album-detail .track-item:hover {
+  background: rgba(255,255,255,0.05);
+}
+
+/* PLAY BUTTON */
+.album-detail .track-play-btn {
+  grid-column: 1;
+  grid-row: 1;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--text-bright);
+  cursor: pointer;
+  border-radius: 50%;
+  font-size: 13px;
+  z-index: 1;
+}
+.album-detail .track-item:hover .track-play-btn { display: inline-flex; }
+.album-detail .track-item.playing .track-play-btn { display: none; }
+
+/* TRACK NUMBER */
+.album-detail .track-num {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  font-size: 14px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.album-detail .track-item:hover .track-num { display: none; }
+.album-detail .track-item.playing .track-num { display: flex; }
+.album-detail .track-item.playing .num-text { display: none; }
+.album-detail .track-item.playing .playing-eq { display: flex; }
+
+/* EQUALIZER */
+.album-detail .playing-eq {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  height: 16px;
+}
+.album-detail .playing-eq span {
+  display: block;
+  width: 3px;
+  background: #1DB954;
+  border-radius: 2px;
+  animation: eqAnim 0.6s ease-in-out infinite alternate;
+}
+.album-detail .playing-eq span:nth-child(1) { height: 8px;  animation-duration: 0.45s; }
+.album-detail .playing-eq span:nth-child(2) { height: 14px; animation-duration: 0.70s; }
+.album-detail .playing-eq span:nth-child(3) { height: 10px; animation-duration: 0.55s; }
+@keyframes eqAnim {
+  0%   { transform: scaleY(0.4); }
+  100% { transform: scaleY(1); }
+}
+
+/* COVER */
+.album-detail .track-cover-sm {
+  width: 40px;
+  height: 40px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: rgba(255,255,255,0.04);
+}
+.album-detail .track-cover-sm img {
+  width: 100%; height: 100%; object-fit: cover;
+}
+.album-detail .track-cover-sm .cover-fallback {
+  width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--muted); font-size: 14px;
+}
+
+/* TITLE + ARTIST MOBILE */
+.album-detail .track-info {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.album-detail .track-title {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-bright);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.15s;
+}
+.album-detail .track-item:hover .track-title { color: #fff; }
+.album-detail .track-item.playing .track-title { color: #1DB954; }
+.album-detail .track-artist-mobile {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ARTIST COLUMN */
+.album-detail .track-artist-col {
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* DURATION */
+.album-detail .track-duration {
+  text-align: right;
+  font-size: 13px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.album-detail .track-duration .duration-text {
+  display: inline;
+}
+
+/* DISC SEPARATOR */
+.album-detail .disc-separator {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 0 8px;
+  grid-column: 1 / -1;
+}
+.album-detail .disc-separator .disc-line {
+  flex: 1;
+  height: 1px;
+  background: rgba(255,255,255,0.08);
+}
+.album-detail .disc-separator .disc-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+
+/* EMPTY STATE */
+.album-detail .empty-state { grid-column: 1 / -1; }
 </style>
 {% endblock %}
 
