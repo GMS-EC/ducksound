@@ -556,10 +556,6 @@ body {
   border-color: var(--border-color);
 }
 
-.song-card.playing {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent-glow), var(--shadow-md);
-}
 
 .song-cover {
   width: 100%;
@@ -2060,18 +2056,6 @@ body {
 .track-item:hover {
   background: var(--surface-2);
   border-color: var(--border-color);
-}
-
-.track-item.playing {
-  background: var(--accent-soft);
-  border-color: var(--accent-glow);
-  box-shadow: 0 0 0 1px var(--accent-glow);
-  animation: trackPulse 2s ease-in-out infinite;
-}
-
-@keyframes trackPulse {
-  0%, 100% { box-shadow: 0 0 0 1px var(--accent-glow); }
-  50% { box-shadow: 0 0 0 2px var(--accent-glow), 0 0 20px rgba(255,64,64,0.1); }
 }
 
 .track-item.playing .track-num {
