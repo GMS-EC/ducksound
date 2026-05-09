@@ -147,8 +147,18 @@
         }
         container.innerHTML = items.map(it => {
             const cover = it.cover || `/album-art/${it.id}`;
-            const badge = it.queued ? '<span style="font-size:10px;color:var(--accent);font-weight:700;text-transform:uppercase;letter-spacing:.3px">Cola</span>' : '';
-            return `<div class="upnext-item" data-id="${it.id}">
+            let badge = '';
+            let extraClass = '';
+            
+            if (it.current) {
+                badge = '<span style="font-size:10px;color:#4ade80;font-weight:700;text-transform:uppercase;letter-spacing:.3px"><i class="fa-solid fa-play"></i> Reproduciendo</span>';
+                extraClass = 'current-song';
+            } else if (it.queued) {
+                badge = '<span style="font-size:10px;color:var(--accent);font-weight:700;text-transform:uppercase;letter-spacing:.3px">Cola</span>';
+                extraClass = 'queued';
+            }
+            
+            return `<div class="upnext-item ${extraClass}" data-id="${it.id}" data-current="${it.current ? 'true' : 'false'}">
                 <div class="cover"><img src="${escapeHtml(cover)}" alt=""></div>
                 <div class="meta">
                     <strong>${escapeHtml(it.titulo || 'Sin titulo')}</strong>
@@ -157,6 +167,12 @@
                 </div>
             </div>`;
         }).join('');
+        
+        // Scroll to current song
+        const currentEl = container.querySelector('.upnext-item.current-song');
+        if (currentEl) {
+            currentEl.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+        }
     }
 
     function bindSongCards(){
@@ -374,13 +390,20 @@
 
                 // Reset progress bar for new song
                 updateProgressBar(0, 0);
+                
+                // Update now-playing highlight on track items
+                document.querySelectorAll('.track-item.playing, .song-card.playing').forEach(el => el.classList.remove('playing'));
+                if (newSongId) {
+                    const playingItem = document.querySelector(`.track-item[data-cancion-id="${newSongId}"], .song-card[data-cancion-id="${newSongId}"]`);
+                    if (playingItem) playingItem.classList.add('playing');
+                }
             }
 
             // Update upnext
             const upnextDiv = document.getElementById('upnext-content');
             if (upnextDiv){
                 const items = (st.upnext || []);
-                const upnextStr = JSON.stringify(items.map(it=>[it.id, !!it.queued]));
+                const upnextStr = JSON.stringify(items.map(it=>[it.id, !!it.queued, !!it.current]));
                 if (window._lastUpNextStr !== upnextStr) {
                     window._lastUpNextStr = upnextStr;
                     window._currentUpNext = items; // Save for restoration after SPA nav

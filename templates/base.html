@@ -46,7 +46,7 @@
 
     <!-- Sidebar -->
     <aside class="sidebar">
-        <div class="logo-container"><img src="{{ url_for('static', filename='img/logo.svg') }}" alt="DuckSound" style="height:32px;width:auto"> DuckSound</div>
+        <a href="{{ url_for('dashboard') }}" class="logo-container" style="text-decoration:none;color:inherit"><img src="{{ url_for('static', filename='img/logo.svg') }}" alt="DuckSound" style="height:32px;width:auto"> DuckSound</a>
         <nav class="nav-menu">
             <a href="{{ url_for('dashboard') }}" class="nav-item {% if request.endpoint == 'dashboard' and not es_favoritos %}active{% endif %}"><i class="fa-solid fa-house"></i> Principal</a>
             <a href="{{ url_for('favoritos') }}" class="nav-item {% if es_favoritos %}active{% endif %}"><i class="fa-solid fa-heart"></i> Favoritos</a>

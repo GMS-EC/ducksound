@@ -201,6 +201,15 @@
         btnPlay.textContent = '⏸';
         crossfadeTriggered = false;
         nextSongPrepared = false;
+        
+        // Resetear tiempo guardado al iniciar canción nueva
+        try{
+            const saved = JSON.parse(localStorage.getItem('player_state')||'{}');
+            saved.currentIndex = currentIndex;
+            saved.currentTime = 0;
+            localStorage.setItem('player_state', JSON.stringify(saved));
+        }catch(e){}
+        
         postState();
 
         try { fetch('/api/play/' + s.id, {method: 'POST'}); } catch(e) {}
@@ -218,18 +227,32 @@
         const nextSongs = [];
         try{
             const queuedIds = new Set();
+            
+            // Current song first (so the user can see where they are)
+            const currentSong = normalizeSong(playlist[currentIndex] || null);
+            if (currentSong && currentSong.id) {
+                nextSongs.push({id: currentSong.id, titulo: currentSong.titulo, artista: currentSong.artista, cover: currentSong.cover, current: true});
+                queuedIds.add(currentSong.id);
+            }
+            
+            // Queued songs
             queuedSongs.forEach(song => {
                 const s = normalizeSong(song);
                 if (!s || !s.id || queuedIds.has(s.id)) return;
                 queuedIds.add(s.id);
                 nextSongs.push({id: s.id, titulo: s.titulo, artista: s.artista, cover: s.cover, queued: true});
             });
-            for(let i=1;i<=6;i++){
-                const s = normalizeSong(playlist[currentIndex + i]);
+            
+            // Upcoming playlist songs (up to 20 total)
+            const maxTotal = 20;
+            for(let i=1;i<=maxTotal;i++){
+                const idx = currentIndex + i;
+                if (idx >= playlist.length) break;
+                const s = normalizeSong(playlist[idx]);
                 if (!s) break;
                 if (queuedIds.has(s.id)) continue;
                 nextSongs.push({id: s.id, titulo: s.titulo, artista: s.artista, cover: s.cover});
-                if (nextSongs.length >= 6) break;
+                if (nextSongs.length >= maxTotal) break;
             }
         }catch(e){}
         const currentSong = normalizeSong(playlist[currentIndex] || null);
@@ -288,6 +311,17 @@
                     _lastSentTime = t;
                     parent.postMessage({type:'timeupdate', currentTime: t, duration: d, currentIndex}, window.location.origin);
                 }
+                
+                // Persistir estado cada ~3 segundos
+                if (!window._lastPlaybackSave || Date.now() - window._lastPlaybackSave > 3000) {
+                    window._lastPlaybackSave = Date.now();
+                    try{
+                        const saved = JSON.parse(localStorage.getItem('player_state')||'{}');
+                        saved.currentIndex = currentIndex;
+                        saved.currentTime = t;
+                        localStorage.setItem('player_state', JSON.stringify(saved));
+                    }catch(e){}
+                }
             }catch(e){}
         });
     }
@@ -330,6 +364,9 @@
                 if (playlist.length || queuedSongs.length) playIndex(getNextIndex({consumeQueue: true}));
             } else if (cmd === 'prev'){
                 if (playlist.length) playIndex(currentIndex<=0?playlist.length-1:currentIndex-1);
+            } else if (cmd === 'playSong'){
+                const idx = parseInt(msg.index);
+                if (!isNaN(idx) && idx >= 0 && idx < playlist.length) playIndex(idx);
             } else if (cmd === 'seek'){
                 const sec = Number(msg.seconds) || 0;
                 try{ activeAudio.currentTime = Math.max(0, (activeAudio.currentTime || 0) + sec); }catch(e){}
@@ -399,6 +436,18 @@
                 fetchReplayGain(playlist[currentIndex].id).then(gain => {
                     activeGain.gain.value = gain;
                 });
+                
+                // Restaurar tiempo de reproducción si estaba guardado
+                if (typeof st.currentTime === 'number' && st.currentTime > 0) {
+                    const seekTo = st.currentTime;
+                    const onMeta = () => {
+                        activeAudio.removeEventListener('loadedmetadata', onMeta);
+                        try{
+                            activeAudio.currentTime = Math.min(seekTo, activeAudio.duration || 0);
+                        }catch(e){}
+                    };
+                    activeAudio.addEventListener('loadedmetadata', onMeta);
+                }
                 
                 // No reproducir automáticamente al recargar la página
         // if (st.isPlaying){ activeAudio.play().catch(()=>{}); isPlaying=true; btnPlay.textContent='⏸'; }

@@ -182,6 +182,13 @@ def dashboard():
     
     # Nuevas variables para la vista tipo Spotify
     daily_mixes = DailyMix.query.filter_by(usuario_id=session['user_id']).order_by(DailyMix.fecha.desc()).limit(6).all()
+    if not daily_mixes:
+        from datetime import date
+        today = date.today()
+        mixes_hoy = DailyMix.query.filter_by(usuario_id=session['user_id'], fecha=today).first()
+        if not mixes_hoy:
+            _generate_daily_mixes(session['user_id'])
+            daily_mixes = DailyMix.query.filter_by(usuario_id=session['user_id']).order_by(DailyMix.fecha.desc()).limit(6).all()
     albumes_recientes = Album.query.order_by(Album.id.desc()).limit(12).all()
     artistas_recientes = Artista.query.order_by(Artista.id.desc()).limit(12).all()
     canciones_recientes = Cancion.query.order_by(Cancion.fecha_agregada.desc()).limit(10).all()
