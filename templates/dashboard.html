@@ -29,7 +29,7 @@
 
 {% if es_favoritos %}
 <!-- VISTA CLÁSICA DE LISTA PARA FAVORITOS -->
-<div class="tracklist" id="dashboard-tracklist">
+<div class="tracklist spotify-tracklist" id="dashboard-tracklist">
     {% for cancion in canciones %}
     <div class="track-item" data-cancion-id="{{ cancion.id }}"
         data-audio="{{ url_for('servir_audio', cancion_id=cancion.id) }}"
@@ -38,7 +38,7 @@
         <button class="track-play-btn" title="Reproducir"><i class="fa-solid fa-play"></i></button>
         <span class="track-num">
             <span class="num-text">{{ loop.index }}</span>
-            <div class="playing-eq"><span></span><span></span><span></span><span></span></div>
+            <span class="playing-eq"><span></span><span></span><span></span></span>
         </span>
         <div class="track-cover-sm">
             <img src="{{ url_for('servir_album_art', cancion_id=cancion.id) }}" alt="" loading="lazy"
@@ -51,12 +51,6 @@
         </div>
         <span class="track-artist-col">{{ cancion.artista_obj.nombre if cancion.artista_obj else '' }}</span>
         <span class="track-duration">
-            <div class="track-progress-indicator">
-                <svg class="progress-ring" width="28" height="28">
-                    <circle class="progress-ring__background" stroke-width="2" fill="transparent" r="12" cx="14" cy="14" />
-                    <circle class="progress-ring__circle" stroke-width="2" stroke-dasharray="75 75" stroke-dashoffset="75" fill="transparent" r="12" cx="14" cy="14" />
-                </svg>
-            </div>
             <span class="duration-text">
                 {% if cancion.duracion %}{{ (cancion.duracion // 60) }}:{{ '%02d' % (cancion.duracion % 60) }}{% else %}--:--{% endif %}
             </span>
@@ -158,14 +152,17 @@
     <div class="home-shelf-header">
         <h2 class="home-shelf-title">Últimas pistas agregadas</h2>
     </div>
-    <div class="tracklist" id="dashboard-tracklist">
+    <div class="tracklist spotify-tracklist" id="dashboard-tracklist">
         {% for cancion in canciones_recientes %}
         <div class="track-item" data-cancion-id="{{ cancion.id }}"
             data-audio="{{ url_for('servir_audio', cancion_id=cancion.id) }}"
             data-cover="{{ url_for('servir_album_art', cancion_id=cancion.id) }}" data-titulo="{{ cancion.titulo }}"
             data-artista="{{ cancion.artista_obj.nombre if cancion.artista_obj else 'Desconocido' }}">
             <button class="track-play-btn" title="Reproducir"><i class="fa-solid fa-play"></i></button>
-            <span class="track-num">{{ loop.index }}</span>
+            <span class="track-num">
+                <span class="num-text">{{ loop.index }}</span>
+                <span class="playing-eq"><span></span><span></span><span></span></span>
+            </span>
             <div class="track-cover-sm">
                 <img src="{{ url_for('servir_album_art', cancion_id=cancion.id) }}" alt="" loading="lazy"
                     onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
@@ -180,7 +177,7 @@
                 {% if cancion.duracion %}{{ (cancion.duracion // 60) }}:{{ '%02d' % (cancion.duracion % 60) }}{% else
                 %}--:--{% endif %}
             </span>
-            <button class="btn-add-collection" data-type="cancion" data-id="{{ cancion.id }}" title="Añadir a playlist"
+            <button class="btn-add-collection" data-type="cancion" data-id="{{ cancion.id }}" title="Añadir a playlist">
                 style="background:transparent; border:none; color:var(--muted); cursor:pointer; padding:4px"><i
                     class="fa-solid fa-plus"></i></button>
         </div>
@@ -208,6 +205,35 @@
             }
             greetingEl.textContent = greeting;
         }
+
+        // Track click to play
+        document.querySelectorAll('.track-item').forEach(function(item) {
+            item.addEventListener('click', function(e) {
+                if (e.target.closest('.btn-add-collection')) return;
+                const allTracks = Array.from(document.querySelectorAll('.track-item'));
+                const playlist = allTracks.map(t => ({
+                    id: parseInt(t.dataset.cancionId),
+                    titulo: t.dataset.titulo,
+                    artista: t.dataset.artista,
+                    audio: t.dataset.audio,
+                    cover: t.dataset.cover || null,
+                    lyrics: t.dataset.lyrics || null
+                }));
+                const songId = parseInt(item.dataset.cancionId);
+                const iframe = document.getElementById('player-frame');
+                if (iframe && iframe.contentWindow) {
+                    iframe.contentWindow.postMessage({type: 'setPlaylist', playlist: playlist}, window.location.origin);
+                    const song = playlist.find(s => s.id === songId);
+                    if (song) {
+                        setTimeout(function() {
+                            iframe.contentWindow.postMessage({type: 'playSong', song: song}, window.location.origin);
+                        }, 100);
+                    }
+                }
+                document.querySelectorAll('.track-item').forEach(t => t.classList.remove('playing'));
+                item.classList.add('playing');
+            });
+        });
     })();
 </script>
 {% endblock %}

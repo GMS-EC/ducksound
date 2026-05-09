@@ -62,14 +62,14 @@
     <!-- CANCIONES POPULARES -->
     <section class="artist-section">
         <h2 class="section-title">Canciones</h2>
-        <div class="tracklist-header">
+        <div class="tracklist-header spotify-tracklist-header">
             <span></span>
             <span class="tracklist-col-num">#</span>
             <span class="tracklist-col-title">Título</span>
             <span class="tracklist-col-artist">Álbum</span>
             <span class="tracklist-col-duration">Duración</span>
         </div>
-        <div class="tracklist" id="artist-tracklist">
+        <div class="tracklist spotify-tracklist" id="artist-tracklist">
             {% for s in songs %}
             <div class="track-item" data-cancion-id="{{ s.id }}"
                  data-audio="{{ url_for('servir_audio', cancion_id=s.id) }}"
@@ -79,7 +79,10 @@
                  data-artista="{{ artist.nombre }}"
                  data-context="artist" data-artist-id="{{ artist.id }}">
                 <button class="track-play-btn" title="Reproducir"><i class="fa-solid fa-play"></i></button>
-                <span class="track-num">{{ loop.index }}</span>
+                <span class="track-num">
+                    <span class="num-text">{{ loop.index }}</span>
+                    <span class="playing-eq"><span></span><span></span><span></span></span>
+                </span>
                 <div class="track-cover-sm">
                     {% if s.ruta_imagen_album %}
                     <img src="{{ url_for('servir_album_art', cancion_id=s.id) }}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">

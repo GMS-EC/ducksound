@@ -9,7 +9,15 @@
     </div>
 </div>
 
-<div class="tracklist" id="mix-tracklist">
+<div class="tracklist-header spotify-tracklist-header">
+    <span></span>
+    <span class="tracklist-col-num">#</span>
+    <span class="tracklist-col-title">Título</span>
+    <span class="tracklist-col-artist">Artista</span>
+    <span class="tracklist-col-duration">Duración</span>
+</div>
+
+<div class="tracklist spotify-tracklist" id="mix-tracklist">
     {% for cancion in mix.canciones %}
     <div class="track-item" data-cancion-id="{{ cancion.id }}"
          data-audio="{{ url_for('servir_audio', cancion_id=cancion.id) }}"
@@ -17,7 +25,10 @@
          data-titulo="{{ cancion.titulo }}"
          data-artista="{{ cancion.artista_obj.nombre if cancion.artista_obj else 'Desconocido' }}">
         <button class="track-play-btn" title="Reproducir"><i class="fa-solid fa-play"></i></button>
-        <span class="track-num">{{ loop.index }}</span>
+        <span class="track-num">
+            <span class="num-text">{{ loop.index }}</span>
+            <span class="playing-eq"><span></span><span></span><span></span></span>
+        </span>
         <div class="track-cover-sm">
             <img src="{{ url_for('servir_album_art', cancion_id=cancion.id) }}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
             <div class="cover-fallback" style="display:none"><i class="fa-solid fa-music"></i></div>

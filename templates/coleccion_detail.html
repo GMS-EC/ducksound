@@ -11,7 +11,7 @@
 
 {% if coleccion.canciones %}
 <section style="margin-bottom:36px">
-    <div class="tracklist-header">
+    <div class="tracklist-header spotify-tracklist-header">
         <span></span>
         <span class="tracklist-col-num">#</span>
         <span class="tracklist-col-title">Título</span>
@@ -19,7 +19,7 @@
         <span class="tracklist-col-duration">Duración</span>
     </div>
 
-    <div class="tracklist" id="collection-tracklist">
+    <div class="tracklist spotify-tracklist" id="collection-tracklist">
         {% for s in coleccion.canciones %}
         <div class="track-item" data-cancion-id="{{ s.id }}" 
              data-audio="{{ url_for('servir_audio', cancion_id=s.id) }}"
@@ -29,7 +29,10 @@
              data-artista="{{ s.artista_obj.nombre if s.artista_obj else 'Desconocido' }}"
              data-context="coleccion" data-album-id="{{ coleccion.id }}">
             <button class="track-play-btn" title="Reproducir"><i class="fa-solid fa-play"></i></button>
-            <span class="track-num">{{ loop.index }}</span>
+            <span class="track-num">
+                <span class="num-text">{{ loop.index }}</span>
+                <span class="playing-eq"><span></span><span></span><span></span></span>
+            </span>
             <div class="track-cover-sm">
                 {% if s.ruta_imagen_album %}
                 <img src="{{ url_for('servir_album_art', cancion_id=s.id) }}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">

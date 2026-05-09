@@ -316,53 +316,185 @@ def daily_mix_detail(mix_id):
 
 
 def _generate_daily_mixes(usuario_id):
-    """Genera mixes diarios personalizados basados en favoritos, géneros e historial"""
+    """Genera 3 daily mixes personalizados basados en historial, favoritos y similitud acústica."""
     import random
     from models import Favorito, HistorialEscucha
+    from datetime import date, timedelta
+    from recommender import get_similar_songs
 
     today = date.today()
+    last_week = datetime.utcnow() - timedelta(days=7)
 
-    # Obtener géneros más escuchados
-    generos = db.session.query(Cancion.genero, db.func.count(Cancion.id).label('cnt'))\
-        .join(HistorialEscucha)\
-        .filter(HistorialEscucha.usuario_id == usuario_id)\
-        .group_by(Cancion.genero)\
-        .order_by(db.desc('cnt'))\
-        .limit(3).all()
+    # === 1. OBTENER FUENTES DE DATOS ===
 
-    # Obtener canciones favoritas
+    # Canciones más reproducidas (top 50)
+    mas_escuchadas = db.session.query(
+        Cancion.id, db.func.count(HistorialEscucha.id).label('plays')
+    ).join(HistorialEscucha).filter(
+        HistorialEscucha.usuario_id == usuario_id,
+        HistorialEscucha.skip == False
+    ).group_by(Cancion.id).order_by(db.desc('plays')).limit(50).all()
+    mas_escuchadas_ids = [c.id for c in mas_escuchadas]
+    mas_escuchadas_plays = {c.id: c.plays for c in mas_escuchadas}
+
+    # Canciones favoritas
     fav_ids = [f.cancion_id for f in Favorito.query.filter_by(usuario_id=usuario_id).all()]
 
-    # Crear mixes
-    mix_names = ['Morning Vibes', 'Afternoon Chill', 'Night Beats']
-    for i, name in enumerate(mix_names):
-        canciones = []
-        # Mezclar favoritos con aleatorias del género principal
-        if fav_ids:
-            canciones.extend(random.sample(fav_ids, min(len(fav_ids), 10)))
-        if generos and i < len(generos):
-            genre = generos[i][0]
-            if genre:
-                genre_songs = Cancion.query.filter(Cancion.genero == genre,
-                    ~Cancion.id.in_(fav_ids) if fav_ids else db.true()).limit(10).all()
-                canciones.extend([c.id for c in genre_songs])
+    # Canciones escuchadas en la última semana (para excluir)
+    recientes_ids = [h.cancion_id for h in HistorialEscucha.query.filter(
+        HistorialEscucha.usuario_id == usuario_id,
+        HistorialEscucha.reproducido_en >= last_week
+    ).distinct(HistorialEscucha.cancion_id).all()]
 
-        if not canciones:
-            # Fallback: canciones aleatorias
-            all_ids = [c.id for c in Cancion.query.order_by(db.func.random()).limit(20).all()]
-            canciones = all_ids
+    # Top 3 géneros más escuchados
+    top_generos = db.session.query(
+        Cancion.genero, db.func.count(Cancion.id).label('cnt')
+    ).join(HistorialEscucha).filter(
+        HistorialEscucha.usuario_id == usuario_id,
+        Cancion.genero.isnot(None),
+        Cancion.genero != ''
+    ).group_by(Cancion.genero).order_by(db.desc('cnt')).limit(3).all()
+    top_generos_list = [g[0] for g in top_generos if g[0]]
+
+    # Canciones con análisis acústico (BPM, energía, etc.)
+    todas_canciones = {c.id: c for c in Cancion.query.all()}
+
+    # === 2. FUNCIÓN AUXILIAR: OBTENER CANCIONES POR VIBE ===
+    def canciones_por_vibe(max_bpm=None, min_bpm=None, excluir_ids=None, limit=25):
+        """Filtra canciones por rango de BPM."""
+        excluir = set(excluir_ids or [])
+        query = Cancion.query
+        if min_bpm is not None:
+            query = query.filter(Cancion.bpm >= min_bpm)
+        if max_bpm is not None:
+            query = query.filter(Cancion.bpm <= max_bpm)
+        # Preferir canciones con BPM conocido
+        query = query.order_by(Cancion.bpm.desc().nullslast(), db.func.random())
+        candidatos = query.limit(limit * 3).all()
+        return [c.id for c in candidatos if c.id not in excluir][:limit]
+
+    def obtener_similares_a(song_ids, top_k=8):
+        """Obtiene canciones similares a un conjunto de canciones."""
+        similares_ids = set()
+        for sid in song_ids[:5]:  # Top 5 para similitud
+            try:
+                similares = get_similar_songs(sid, top_k=top_k)
+                for s in similares:
+                    if s['id'] not in similares_ids:
+                        similares_ids.add(s['id'])
+            except Exception:
+                continue
+        return list(similares_ids)
+
+    def mezclar_pool(pools, target=20):
+        """Mezcla proporcionalmente de varios pools."""
+        result = []
+        seen = set()
+        idx = [0] * len(pools)
+        rounds = 0
+        while len(result) < target and rounds < target * 2:
+            for i, pool in enumerate(pools):
+                if len(result) >= target:
+                    break
+                if idx[i] < len(pool):
+                    cid = pool[idx[i]]
+                    idx[i] += 1
+                    if cid not in seen:
+                        seen.add(cid)
+                        result.append(cid)
+            rounds += 1
+        return result[:target]
+
+    # === 3. GENERAR CADA MIX ===
+
+    # Pool base compartido: canciones más escuchadas + favoritas
+    pool_populares = list(dict.fromkeys(mas_escuchadas_ids + fav_ids))
+
+    mixes_data = [
+        {
+            'name': 'Morning Vibes',
+            'desc': 'Energía para empezar el día',
+            'bpm_range': (None, None),  # Sin filtro de BPM
+            'pools': ['populares', 'similares', 'genero'],
+        },
+        {
+            'name': 'Afternoon Chill',
+            'desc': 'Relax para la tarde',
+            'bpm_range': (None, None),
+            'pools': ['favoritos', 'similares', 'explorar'],
+        },
+        {
+            'name': 'Night Beats',
+            'desc': 'Ritmo para la noche',
+            'bpm_range': (None, None),
+            'pools': ['historial', 'similares', 'nuevos'],
+        },
+    ]
+
+    for mix_info in mixes_data:
+        name = mix_info['name']
+        pools = []
+        pool_similares_ids = []  # IDs de canciones similares en esta iteración
+        excluir_ids_set = set(recientes_ids)
+
+        # Pool 1: Populares (más escuchadas + favoritas) excluyendo recientes
+        populares_pool = pool_populares.copy()
+        random.shuffle(populares_pool)
+        pool_populares_filtrado = [c for c in populares_pool if c not in excluir_ids_set]
+        if pool_populares_filtrado:
+            pools.append(pool_populares_filtrado)
+            excluir_ids_set.update(pool_populares_filtrado)
+
+        # Pool 2: Similares a las favoritas
+        if fav_ids:
+            raw_similares = obtener_similares_a(fav_ids, top_k=6)
+            pool_similares_ids = [s for s in raw_similares if s not in excluir_ids_set]
+            if pool_similares_ids:
+                pools.append(pool_similares_ids)
+                excluir_ids_set.update(pool_similares_ids)
+
+        # Pool 3: Exploración del género (canciones no escuchadas)
+        if top_generos_list:
+            genre = top_generos_list[(hash(name) % len(top_generos_list))]
+            explorar_ids = [
+                c.id for c in Cancion.query.filter(
+                    Cancion.genero.ilike(f'%{genre}%'),
+                    ~Cancion.id.in_(excluir_ids_set) if excluir_ids_set else db.true()
+                ).order_by(db.func.random()).limit(30).all()
+            ]
+            if explorar_ids:
+                pools.append(explorar_ids)
+                excluir_ids_set.update(explorar_ids)
+
+        # Fallback si no hay suficientes
+        if not pools or sum(len(p) for p in pools) < 5:
+            fallback_ids = [c.id for c in Cancion.query.order_by(db.func.random()).limit(30).all()]
+            fallback_ids = [c for c in fallback_ids if c not in excluir_ids_set]
+            pools = [fallback_ids]
+
+        # Mezclar pools proporcionalmente
+        mix_canciones_ids = mezclar_pool(pools, target=20)
+
+        # Si aún así está vacío, fallback total
+        if not mix_canciones_ids:
+            mix_canciones_ids = [c.id for c in Cancion.query.order_by(db.func.random()).limit(20).all()]
+
+        # === 4. GUARDAR MIX ===
+        # Limpiar mixes viejos del mismo nombre para este usuario (opcional)
+        DailyMix.query.filter_by(usuario_id=usuario_id, nombre=name, fecha=today).delete()
 
         mix = DailyMix(usuario_id=usuario_id, nombre=name, fecha=today)
         db.session.add(mix)
         db.session.flush()
 
-        # Añadir canciones
-        for idx, cid in enumerate(canciones[:20]):
+        for idx, cid in enumerate(mix_canciones_ids[:20]):
             db.session.execute(
                 db.text("INSERT OR IGNORE INTO daily_mix_canciones (mix_id, cancion_id, orden) VALUES (:m, :c, :o)"),
                 {'m': mix.id, 'c': cid, 'o': idx}
             )
+
     db.session.commit()
+    print(f"✅ Daily mixes generados para usuario {usuario_id}: Morning Vibes, Afternoon Chill, Night Beats")
 
 
 # ============================================

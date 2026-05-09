@@ -2694,6 +2694,199 @@ body {
 .horizontal-scroll-grid>* {
   flex: 0 0 auto;
   width: 200px;
-  /* Ancho fijo para tarjetas en scroll */
   scroll-snap-align: start;
 }
+
+/* ==========================================
+   SPOTIFY TRACKLIST (reutilizable)
+   Agrega clase .spotify-tracklist al contenedor
+   y .spotify-tracklist-header al header
+   ========================================== */
+
+.spotify-tracklist-header {
+  display: grid;
+  grid-template-columns: 40px 40px 1fr 1fr 60px;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 16px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  user-select: none;
+}
+.spotify-tracklist-header .tracklist-col-duration { text-align: right; }
+
+.spotify-tracklist {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.spotify-tracklist .track-item {
+  display: grid;
+  grid-template-columns: 40px 40px 1fr 1fr 60px;
+  gap: 12px;
+  align-items: center;
+  padding: 6px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  border: none;
+  background: transparent;
+  min-width: 0;
+}
+.spotify-tracklist .track-item:hover {
+  background: rgba(255,255,255,0.05);
+}
+
+.spotify-tracklist .track-play-btn {
+  grid-column: 1;
+  grid-row: 1;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--text-bright);
+  cursor: pointer;
+  border-radius: 50%;
+  font-size: 13px;
+  z-index: 1;
+}
+.spotify-tracklist .track-item:hover .track-play-btn { display: inline-flex; }
+.spotify-tracklist .track-item.playing .track-play-btn { display: none; }
+
+.spotify-tracklist .track-num {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  font-size: 14px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.spotify-tracklist .track-item:hover .track-num { display: none; }
+.spotify-tracklist .track-item.playing .track-num { display: flex; }
+.spotify-tracklist .track-item.playing .num-text { display: none; }
+.spotify-tracklist .track-item.playing .playing-eq { display: flex; }
+
+.spotify-tracklist .playing-eq {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  height: 16px;
+}
+.spotify-tracklist .playing-eq span {
+  display: block;
+  width: 3px;
+  background: #1DB954;
+  border-radius: 2px;
+  animation: spotifyEq 0.6s ease-in-out infinite alternate;
+}
+.spotify-tracklist .playing-eq span:nth-child(1) { height: 8px;  animation-duration: 0.45s; }
+.spotify-tracklist .playing-eq span:nth-child(2) { height: 14px; animation-duration: 0.70s; }
+.spotify-tracklist .playing-eq span:nth-child(3) { height: 10px; animation-duration: 0.55s; }
+@keyframes spotifyEq {
+  0%   { transform: scaleY(0.4); }
+  100% { transform: scaleY(1); }
+}
+
+.spotify-tracklist .track-cover-sm {
+  width: 40px;
+  height: 40px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: rgba(255,255,255,0.04);
+}
+.spotify-tracklist .track-cover-sm img { width: 100%; height: 100%; object-fit: cover; }
+.spotify-tracklist .track-cover-sm .cover-fallback {
+  width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--muted); font-size: 14px;
+}
+
+.spotify-tracklist .track-info {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.spotify-tracklist .track-title {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-bright);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.15s;
+}
+.spotify-tracklist .track-item:hover .track-title { color: #fff; }
+.spotify-tracklist .track-item.playing .track-title { color: #1DB954; }
+.spotify-tracklist .track-artist-mobile {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spotify-tracklist .track-artist-col,
+.spotify-tracklist .track-album-col {
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spotify-tracklist .track-duration {
+  text-align: right;
+  font-size: 13px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.spotify-tracklist .track-duration .track-progress-indicator,
+.spotify-tracklist .track-duration .progress-ring { display: none; }
+
+.spotify-tracklist .btn-add-collection {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.spotify-tracklist .track-item:hover .btn-add-collection { opacity: 1; }
+
+/* Disc separator */
+.spotify-tracklist .disc-separator {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 0 8px;
+}
+.spotify-tracklist .disc-separator .disc-line {
+  flex: 1;
+  height: 1px;
+  background: rgba(255,255,255,0.08);
+}
+.spotify-tracklist .disc-separator .disc-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+
+/* Empty state */
+.spotify-tracklist .empty-state { grid-column: 1 / -1; }
