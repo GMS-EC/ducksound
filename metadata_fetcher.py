@@ -78,63 +78,42 @@ def buscar_artista_deezer(nombre_artista):
         return None
 
 
-def buscar_biografia_wikipedia(nombre_artista):
+def buscar_biografia_deezer(nombre_artista):
     """
-    Obtiene un resumen biográfico de Wikipedia para un artista.
+    Obtiene datos biográficos de un artista desde Deezer.
+    Construye una reseña con información disponible (discografía, popularidad).
     """
     try:
-        params = {
-            'action': 'query',
-            'format': 'json',
-            'titles': nombre_artista,
-            'prop': 'extracts',
-            'exintro': True,
-            'explaintext': True,
-            'redirects': 1,
-            'exchars': 500,
-        }
-        headers = {'User-Agent': 'DuckSound/1.0 (contacto@ejemplo.com)'}
-        
-        # Intentar en español primero
-        resp = requests.get(
-            'https://es.wikipedia.org/w/api.php',
-            params=params,
-            headers=headers,
-            timeout=REQUEST_TIMEOUT
-        )
-        resp.raise_for_status()
-        data = resp.json()
+        deezer_data = buscar_artista_deezer(nombre_artista)
+        if not deezer_data:
+            return None
 
-        pages = data.get('query', {}).get('pages', {})
-        for page_id, page in pages.items():
-            if page_id != '-1' and page.get('extract'):
-                extract = page['extract'].strip()
-                # Limitar a ~400 caracteres
-                if len(extract) > 400:
-                    extract = extract[:397] + '...'
-                return extract
+        partes = []
+        if deezer_data.get('name'):
+            partes.append(deezer_data['name'])
 
-        # Si no encontró en español, intentar en inglés
-        params['titles'] = nombre_artista + ' (musician)'
-        resp2 = requests.get(
-            'https://en.wikipedia.org/w/api.php',
-            params=params,
-            headers=headers,
-            timeout=REQUEST_TIMEOUT
-        )
-        if resp2.ok:
-            data2 = resp2.json()
-            pages2 = data2.get('query', {}).get('pages', {})
-            for page_id, page in pages2.items():
-                if page_id != '-1' and page.get('extract'):
-                    extract = page['extract'].strip()
-                    if len(extract) > 400:
-                        extract = extract[:397] + '...'
-                    return extract
+        if deezer_data.get('nb_album', 0) > 0:
+            discos = deezer_data['nb_album']
+            partes.append(f"Cuenta con {discos} álbum{'es' if discos != 1 else ''}")
+
+        if deezer_data.get('nb_fan', 0) > 0:
+            fans = deezer_data['nb_fan']
+            if fans >= 1000000:
+                fans_str = f"{fans/1000000:.1f}M"
+            elif fans >= 1000:
+                fans_str = f"{fans/1000:.1f}K"
+            else:
+                fans_str = str(fans)
+            partes.append(f"{fans_str} oyentes mensuales en Deezer")
+
+        if len(partes) > 1:
+            bio = '. '.join(partes) + '.'
+            return bio[:400]
+
+        return None
 
     except Exception as e:
-        logging.error(f"Error al obtener biografía de Wikipedia para '{nombre_artista}': {e}")
-
+        logging.error(f"Error al obtener biografía de Deezer para '{nombre_artista}': {e}")
     return None
 
 
@@ -159,9 +138,9 @@ def enrich_artist(artista_obj, commit=True):
             actualizado = True
         time.sleep(RATE_LIMIT_DELAY)
 
-    # 2. Biografía desde Wikipedia
+    # 2. Biografía desde Deezer
     if not artista_obj.biografia:
-        bio = buscar_biografia_wikipedia(artista_obj.nombre)
+        bio = buscar_biografia_deezer(artista_obj.nombre)
         if bio:
             artista_obj.biografia = bio
             logging.info(f"✅ Biografía obtenida para {artista_obj.nombre}")
