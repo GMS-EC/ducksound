@@ -90,15 +90,14 @@
         const queued = normalizeSong(song);
         if (!queued || !queued.id) return currentIndex;
 
+        // Buscar la canción en el playlist sin moverla
         const existingIdx = playlist.findIndex(s => s && s.id === queued.id);
-        if (existingIdx === currentIndex) return currentIndex;
-        if (existingIdx !== -1) {
-            playlist.splice(existingIdx, 1);
-            if (existingIdx < currentIndex) currentIndex -= 1;
-        }
+        if (existingIdx !== -1) return existingIdx;
 
+        // No existe en el playlist, agregarla después de la actual
         const insertAt = Math.max(0, currentIndex + 1);
         playlist.splice(insertAt, 0, queued);
+        if (insertAt <= currentIndex) currentIndex += 1;
         return insertAt;
     }
 

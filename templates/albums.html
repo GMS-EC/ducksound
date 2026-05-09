@@ -28,7 +28,7 @@
             <p class="album-card-meta">
                 {{ item.track_count }} {% if item.track_count == 1 %}canción{% else %}canciones{% endif %}
                 {% if item.total_duration %}
-                · {{ (item.total_duration // 3600) }} hr {{ (item.total_duration % 3600) // 60 }} min
+                · {{ '%d:%02d' | format((item.total_duration % 3600) // 60, item.total_duration % 60) }}
                 {% endif %}
             </p>
         </div>

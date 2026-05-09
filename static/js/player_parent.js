@@ -297,8 +297,9 @@
                             const cues = parseLRC(txt);
                             renderLyrics(cues, song.id);
                             if (window._activeRightTab !== 'upnext') selectRightTab('lyrics');
-                        }).catch(()=>{
+                        })                        .catch(()=>{
                             lyricsPanel.innerHTML = '<p class="no-lyrics"><span class="no-lyrics-icon"><i class="fa-solid fa-music"></i></span>Letra no encontrada</p>';
+                            window._currentLyrics = null;
                         });
                     } else {
                         lyricsPanel.innerHTML = '<p class="no-lyrics"><span class="no-lyrics-icon"><i class="fa-solid fa-music"></i></span>Selecciona una canción</p>';
@@ -455,7 +456,18 @@
     function renderSimilar(similares){
         const relatedDiv = document.getElementById('related-content');
         if (!relatedDiv) return;
-        relatedDiv.innerHTML = similares.map(s=> `<div class="similar-item" data-cancion-id="${s.id}" data-titulo="${escapeHtml(s.titulo)}" data-artista="${escapeHtml(s.artista||'')}"><div class="cover"><img src="${s.cover||'/album-art/'+s.id}"></div><div class="meta"><strong>${escapeHtml(s.titulo)}</strong><div class="muted">${escapeHtml(s.artista)}</div></div></div>`).join('');
+        relatedDiv.innerHTML = similares.map(s=>{
+            const cover = s.cover || '/album-art/' + s.id;
+            const pct = s.similarity != null ? Math.round(s.similarity * 100) : null;
+            return `<div class="similar-item" data-cancion-id="${s.id}" data-titulo="${escapeHtml(s.titulo)}" data-artista="${escapeHtml(s.artista||'')}">
+                <div class="cover"><img src="${escapeHtml(cover)}" alt=""></div>
+                <div class="meta">
+                    <strong>${escapeHtml(s.titulo)}</strong>
+                    <div class="muted">${escapeHtml(s.artista)}</div>
+                </div>
+                ${pct !== null ? '<span class="similarity-badge">' + pct + '%</span>' : ''}
+            </div>`;
+        }).join('');
         relatedDiv.querySelectorAll('.similar-item').forEach(item => {
             item.addEventListener('click', ()=>{
                 const id = parseInt(item.dataset.cancionId);
@@ -500,7 +512,7 @@
             // Update time text next to animation
             const timeText = activeTrack.querySelector('.duration-text');
             if (timeText) {
-                timeText.textContent = formatTime(cur) + ' / ' + formatTime(dur);
+                timeText.textContent = formatTime(dur);
             }
         }
     }
