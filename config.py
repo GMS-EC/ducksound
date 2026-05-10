@@ -3,73 +3,57 @@ from pathlib import Path
 
 # Configuración base de la aplicación
 class Config:
-    # Versión de la aplicación
     APP_VERSION = '1.2.0'
 
     # Secret key para sesiones y CSRF
-    _secret = os.environ.get('SECRET_KEY')
-    if not _secret:
+    SECRET_KEY = os.environ.get('SECRET_KEY')
+    if not SECRET_KEY:
         _secret_file = Path(__file__).resolve().parent / '.secret_key'
         try:
-            with open(_secret_file, 'r') as f:
-                _secret = f.read().strip()
+            SECRET_KEY = _secret_file.read_text().strip()
         except FileNotFoundError:
             import secrets
-            _secret = secrets.token_hex(32)
+            SECRET_KEY = secrets.token_hex(32)
             try:
-                with open(_secret_file, 'w') as f:
-                    f.write(_secret)
+                _secret_file.write_text(SECRET_KEY)
             except Exception:
                 pass
-    SECRET_KEY = _secret
-    
-    # Configuración de la base de datos SQLite
-    BASE_DIR = Path(__file__).resolve().parent
+
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
-    # Opciones de motor para SQLite: timeout de espera + pool health check
-    SQLALCHEMY_ENGINE_OPTIONS = {
-        'connect_args': {
-            'timeout': 30,              # Esperar hasta 30s si la DB está bloqueada
-            'check_same_thread': False   # Requerido para servidores multi-thread (Gunicorn/Waitress)
-        },
-        'pool_pre_ping': True,          # Verificar que la conexión esté viva antes de usarla
-    }
-    
-    # Rutas de medios - Detectar si estamos en Docker o localmente
-    if Path('/music').exists():
-        # En Docker: música montada como volumen del usuario (solo lectura)
-        AUDIO_FOLDER = Path('/music')
-        MEDIA_FOLDER = Path('/music')
+    # ─── BASE DE DATOS (PostgreSQL únicamente) ────────────────────
+    _db_url = os.environ.get('DATABASE_URL')
+    if not _db_url:
+        _host = os.environ.get('DB_HOST', 'postgres')
+        _port = os.environ.get('DB_PORT', '5432')
+        _name = os.environ.get('DB_NAME', 'ducksound')
+        _user = os.environ.get('DB_USER', 'ducksound')
+        _pass = os.environ.get('DB_PASSWORD', 'ducksound')
+        _db_url = f'postgresql://{_user}:{_pass}@{_host}:{_port}/{_name}'
 
-        # Directorio /data es un volumen persistente gestionado por la app
+    SQLALCHEMY_DATABASE_URI = _db_url
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        'pool_size': int(os.environ.get('DB_POOL_SIZE', 10)),
+        'pool_recycle': int(os.environ.get('DB_POOL_RECYCLE', 300)),
+        'pool_pre_ping': True,
+    }
+
+    # ─── RUTAS ────────────────────────────────────────────────────
+    if Path('/music').exists():
+        AUDIO_FOLDER = Path('/music')
         DATA_DIR = Path('/data')
         DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-        # Base de datos
-        DB_DIR = DATA_DIR / 'db'
-        DB_DIR.mkdir(parents=True, exist_ok=True)
-        SQLALCHEMY_DATABASE_URI = f'sqlite:///{DB_DIR}/ducksound.db'
-
-        # Lyrics (la app los descarga/gestiona)
         LYRICS_FOLDER = DATA_DIR / 'lyrics'
         LYRICS_FOLDER.mkdir(parents=True, exist_ok=True)
-
-        # Álbum art
         ALBUM_ART_FOLDER = DATA_DIR / 'album_art'
         ALBUM_ART_FOLDER.mkdir(exist_ok=True)
     else:
-        # Localmente: usar carpetas en Downloads
         MEDIA_FOLDER = Path(r'C:\Users\marcu\Downloads\Musica')
         AUDIO_FOLDER = MEDIA_FOLDER / 'music'
         LYRICS_FOLDER = MEDIA_FOLDER / 'lyrics'
-        # DB local junto a la app
-        SQLALCHEMY_DATABASE_URI = f'sqlite:///{BASE_DIR}/ducksound.db'
-        # Álbum art junto a la DB
-        ALBUM_ART_FOLDER = BASE_DIR / 'album_art'
+        ALBUM_ART_FOLDER = Path(__file__).resolve().parent / 'album_art'
         ALBUM_ART_FOLDER.mkdir(exist_ok=True)
     
-    # Configuración de subida de archivos
-    MAX_CONTENT_LENGTH = 100 * 1024 * 1024  # 100MB máximo
+    MAX_CONTENT_LENGTH = 100 * 1024 * 1024
     ALLOWED_AUDIO_EXTENSIONS = {'mp3', 'flac', 'wav', 'm4a'}
     ALLOWED_LYRICS_EXTENSIONS = {'lrc'}

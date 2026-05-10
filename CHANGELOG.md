@@ -54,6 +54,14 @@ El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1
 - **Modos de inicio**: `web` (Gunicorn), `worker` (RQ), `migrate-only`.
 - **Gunicorn con gthread**: 4 workers × 2 hilos para mejor concurrencia.
 - **Healthcheck en Redis**: docker-compose espera a que Redis esté listo antes de iniciar web/worker.
+- **PostgreSQL como única base de datos**: Eliminado SQLite. La URL se construye automáticamente desde `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`.
+- **Variables de entorno simplificadas**: `.env.example` con todas las variables documentadas y agrupadas por sección.
+
+### 🧪 Testing y CI/CD
+- **Tests unitarios**: Suite de tests con pytest para `normalizar_artista` (15 casos: feat, &, /, and, AC/DC, etc.).
+- **Tests de recommender**: Verificación de estructura de resultados y rango de similitud.
+- **GitHub Actions**: Workflow CI con matrix Python 3.10/3.11, compilación de todos los módulos, ejecución de tests y build de Docker image.
+- **Dependencias**: Agregados `pytest`, `pytest-flask`, `psycopg2-binary` a requirements.txt.
 
 ---
 
@@ -79,6 +87,18 @@ El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1
 - **Menú contextual**: Click derecho en canciones con opciones (Reproducir siguiente, Añadir a cola, Añadir a playlist, Ir al álbum/artista)
 - **Sin reproducción automática**: La música ya no comienza sola al recargar la página
 - **Sincronización de letras**: Corregido conflicto entre sistemas de letras, ahora sincroniza correctamente con la música actual
+
+### 🎮 Atajos de teclado
+- `Espacio`: Play/Pause | `→ / ←`: Adelantar/Retroceder 10s | `Ctrl+→ / Ctrl+←`: Siguiente/Anterior
+- `↑ / ↓`: Subir/Bajar volumen | `M`: Mutear | `S`: Shuffle | `R`: Repeat
+- `L`: Abrir letra | `U`: Abrir cola de reproducción
+- Los atajos se desactivan automáticamente si el usuario está escribiendo en un input
+
+### 📱 Diseño responsive
+- **1024px**: Panel derecho se oculta, main wrapper usa todo el ancho
+- **900px**: Sidebar compacto (solo iconos), header de álbum en vertical
+- **768px**: Tracklist a 4 columnas (sin columna de artista/álbum), volumen oculto
+- **600px**: Sidebar mínimo (48px), track actions ocultos, tarjetas de álbum más pequeñas
 
 ### 🐛 Correcciones de Bugs
 - **Salto de carpetas de discos**: El escaneo ahora ignora carpetas "CD 1", "Disc 2", etc. y usa carpetas superiores

@@ -3005,3 +3005,134 @@ body {
   margin: 0;
   line-height: 1.4;
 }
+
+/* ==========================================
+   MOBILE RESPONSIVE
+   ========================================== */
+@media (max-width: 1024px) {
+  .right-panel {
+    display: none;
+  }
+  .main-wrapper {
+    margin-right: 0;
+  }
+}
+
+@media (max-width: 900px) {
+  .sidebar {
+    width: 64px;
+    overflow: hidden;
+  }
+  .sidebar .logo-container {
+    font-size: 0;
+    justify-content: center;
+    padding: 16px 0;
+  }
+  .sidebar .logo-container img {
+    margin: 0;
+  }
+  .sidebar .nav-item span,
+  .sidebar .sidebar-user-name,
+  .sidebar .sidebar-user-role {
+    display: none;
+  }
+  .sidebar .nav-item {
+    justify-content: center;
+    padding: 12px;
+    font-size: 18px;
+  }
+  .sidebar .sidebar-user-section {
+    justify-content: center;
+  }
+  .main-wrapper {
+    margin-left: 64px;
+  }
+  .album-header {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 16px;
+  }
+  .album-header-cover {
+    width: 180px;
+    min-width: 180px;
+    height: 180px;
+  }
+  .album-header-info {
+    text-align: center;
+    align-items: center;
+  }
+  .album-header-actions {
+    justify-content: center;
+  }
+}
+
+@media (max-width: 768px) {
+  .album-detail .tracklist-header,
+  .artist-detail .tracklist-header,
+  .spotify-tracklist-header {
+    display: none;
+  }
+  .spotify-tracklist .track-item {
+    grid-template-columns: 32px 36px 1fr 40px;
+    gap: 8px;
+    padding: 6px 10px;
+  }
+  .spotify-tracklist .track-artist-col,
+  .spotify-tracklist .track-album-col {
+    display: none;
+  }
+  .spotify-tracklist .track-artist-mobile {
+    display: block !important;
+  }
+  .player-volume {
+    display: none !important;
+  }
+  .tracklist-header {
+    display: none;
+  }
+  .track-item {
+    grid-template-columns: 28px 32px 1fr 36px !important;
+    gap: 8px;
+  }
+  .track-artist-col {
+    display: none;
+  }
+  .track-artist-mobile {
+    display: block;
+  }
+  .track-cover-sm {
+    width: 36px;
+    height: 36px;
+  }
+}
+
+@media (max-width: 600px) {
+  #btn-audio-info {
+    display: none !important;
+  }
+  .sidebar {
+    width: 48px;
+  }
+  .main-wrapper {
+    margin-left: 48px;
+  }
+  .player-left-section .player-track-actions {
+    display: none !important;
+  }
+  .player-track-info {
+    max-width: 100px;
+  }
+  #mini-title {
+    font-size: 13px;
+  }
+  #mini-artist {
+    font-size: 11px;
+  }
+  .album-card {
+    width: 160px;
+  }
+  .horizontal-scroll-grid > * {
+    width: 160px;
+  }
+}

@@ -678,5 +678,54 @@
             }
             sendToPlayer({type:'command', cmd:'getState'});
         };
+
+        // ===== Keyboard shortcuts =====
+        document.addEventListener('keydown', function(e) {
+            // Ignorar si el usuario está escribiendo en un input
+            if (e.target.matches('input, textarea, select')) return;
+
+            switch (e.code) {
+                case 'Space':
+                    e.preventDefault();
+                    document.getElementById('mini-play')?.click();
+                    break;
+                case 'ArrowRight':
+                    if (e.ctrlKey) { document.getElementById('mini-next')?.click(); }
+                    else { document.getElementById('mini-forward10')?.click(); }
+                    break;
+                case 'ArrowLeft':
+                    if (e.ctrlKey) { document.getElementById('mini-prev')?.click(); }
+                    else { document.getElementById('mini-back10')?.click(); }
+                    break;
+                case 'ArrowUp':
+                    e.preventDefault();
+                    const vol = document.getElementById('volume-slider');
+                    if (vol) { vol.value = Math.min(1, parseFloat(vol.value) + 0.05); vol.dispatchEvent(new Event('input')); }
+                    break;
+                case 'ArrowDown':
+                    e.preventDefault();
+                    const vold = document.getElementById('volume-slider');
+                    if (vold) { vold.value = Math.max(0, parseFloat(vold.value) - 0.05); vold.dispatchEvent(new Event('input')); }
+                    break;
+                case 'KeyM':
+                    document.getElementById('volume-icon')?.click();
+                    break;
+                case 'KeyS':
+                    document.getElementById('mini-shuffle')?.click();
+                    break;
+                case 'KeyR':
+                    document.getElementById('mini-repeat')?.click();
+                    break;
+                case 'KeyL':
+                    // Abrir letra
+                    const tab = document.querySelector('#right-panel .tab[data-tab="lyrics"]');
+                    if (tab) tab.click();
+                    break;
+                case 'KeyU':
+                    const tabU = document.querySelector('#right-panel .tab[data-tab="upnext"]');
+                    if (tabU) tabU.click();
+                    break;
+            }
+        });
     });
 })();
