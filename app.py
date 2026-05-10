@@ -75,6 +75,10 @@ def csrf_protect():
         # Excepciones para peticiones autorizadas por Token de API (no basadas en cookies)
         if request.headers.get('Authorization') or request.headers.get('X-Admin-Token'):
             return
+        
+        # Excepciones para endpoints llamados desde el iframe del reproductor
+        if request.path.startswith('/api/play/') or request.path.startswith('/api/audio-info/'):
+            return
             
         token = session.get('_csrf_token')
         if not token:
