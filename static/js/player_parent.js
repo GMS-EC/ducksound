@@ -340,10 +340,7 @@
                 if (miniArtist) miniArtist.textContent = song ? (song.artista||'Artista') : '';
                 setMiniCoverImage(miniCover, song);
             }
-                    }).catch(()=>{});
-                }
-                updateProgressBar(0, 0);
-            }
+            updateProgressBar(0, 0);
 
             // Sync playback indicators (EQ animation and active highlights)
             document.querySelectorAll('.track-item.playing, .song-card.playing').forEach(el => {

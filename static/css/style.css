@@ -2984,16 +2984,6 @@ body {
 .lyrics-auto-translate input[type="checkbox"]:checked::after {
   transform: translateX(14px) !important;
 }
-.lyrics-auto-translate:hover {
-  background: rgba(255,255,255,0.04) !important;
-  color: var(--text) !important;
-}
-.lyrics-auto-translate input[type="checkbox"] {
-  accent-color: var(--accent) !important;
-  width: 14px !important;
-  height: 14px !important;
-  cursor: pointer !important;
-}
 .lyrics-content-scroll {
   flex: 1;
   overflow-y: auto;
