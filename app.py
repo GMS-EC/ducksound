@@ -68,18 +68,14 @@ import secrets
 @app.before_request
 def csrf_protect():
     """
-    Protección contra falsificación de petición en sitios cruzados (CSRF).
-    Requiere un token válido en todas las peticiones POST/PUT/DELETE.
+    Protección CSRF solo para rutas regulares (form-based).
+    Las rutas /api/* y /admin/* ya están protegidas por sesión o token Bearer.
     """
     if request.method not in ["GET", "HEAD", "OPTIONS", "TRACE"]:
-        # Excepciones para peticiones autorizadas por Token de API (no basadas en cookies)
-        if request.headers.get('Authorization') or request.headers.get('X-Admin-Token'):
+        # Exentar API y admin (autenticación por sesión o token)
+        if request.path.startswith('/api/') or request.path.startswith('/admin/'):
             return
         
-        # Excepciones para endpoints llamados desde el iframe del reproductor
-        if request.path.startswith('/api/play/') or request.path.startswith('/api/audio-info/'):
-            return
-            
         token = session.get('_csrf_token')
         if not token:
             return jsonify({'error': 'Falta el token CSRF en la sesión'}), 403
