@@ -617,12 +617,6 @@
         }catch(err){
             // Error de conexión — ignorar, próximo poll reintentará
         }
-            const data = await res.json();
-            renderStatus(data);
-        }catch(err){
-            statusText.textContent = 'RECONECTANDO';
-            msg.textContent = 'Esperando respuesta del servidor...';
-        }
     }
 
     function attachPoller(taskId){
