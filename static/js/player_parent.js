@@ -431,9 +431,6 @@
         btn.style.opacity = enabled ? '1' : '0.4';
     }
 
-    // Variable para cancelar auto-traducción pendiente
-    let _pendingAutoTranslate = null;
-
     function renderLyrics(cues, songId){
         const lyricsPanel = document.getElementById('lyrics-content-panel');
         if (!lyricsPanel) return;
@@ -445,10 +442,6 @@
             return;
         }
         window._translatedHtml = null; // Limpiar para canción nueva
-        if (_pendingAutoTranslate) {
-            clearTimeout(_pendingAutoTranslate);
-            _pendingAutoTranslate = null;
-        }
         
         if (!cues || cues.length===0){
             scrollDiv.innerHTML = '<p class="no-lyrics"><span class="no-lyrics-icon"><i class="fa-solid fa-music"></i></span>Letra no encontrada</p>';
@@ -460,18 +453,6 @@
         scrollDiv.innerHTML = '<div class="lyrics-lines">' + html + '</div>';
         window._currentLyrics = {songId: songId, cues: cues, index: -1};
         updateTranslateBtn(true);
-        
-        // Auto-traducir si está marcado
-        const chkAuto = document.getElementById('chk-auto-translate');
-        if (chkAuto && chkAuto.checked) {
-            _pendingAutoTranslate = setTimeout(() => {
-                // Verificar que siga siendo la misma canción
-                if (window._currentLyrics && window._currentLyrics.songId === songId) {
-                    translateLyrics(cues);
-                }
-                _pendingAutoTranslate = null;
-            }, 300);
-        }
     }
 
     function translateLyrics(cues){
@@ -658,16 +639,6 @@
             window._userLang = p.idioma_preferido || 'es';
         }).catch(()=>{ window._userLang = 'es'; });
         
-        // Restaurar estado del checkbox auto-traducir
-        const chkAuto = document.getElementById('chk-auto-translate');
-        if (chkAuto) {
-            const saved = localStorage.getItem('ducksound_auto_translate');
-            if (saved === 'true') chkAuto.checked = true;
-            chkAuto.addEventListener('change', function(){
-                localStorage.setItem('ducksound_auto_translate', this.checked);
-            });
-        }
-        
         const ctrls = {
             'mini-play': ()=> { tryUnlockAudio(); sendToPlayer({type:'command', cmd:'toggle'}); },
             'mini-next': ()=> sendToPlayer({type:'command', cmd:'next'}),
@@ -686,11 +657,6 @@
         const btnTrans = document.getElementById('btn-translate-lyrics');
         if (btnTrans) {
             btnTrans.addEventListener('click', function(){
-                // Cancelar auto-traducción pendiente al hacer clic manual
-                if (_pendingAutoTranslate) {
-                    clearTimeout(_pendingAutoTranslate);
-                    _pendingAutoTranslate = null;
-                }
                 const L = window._currentLyrics;
                 if (L && L.cues && L.cues.length > 0) {
                     translateLyrics(L.cues);

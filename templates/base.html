@@ -73,32 +73,30 @@
     <!-- Contenido principal -->
     <main class="main-wrapper">
         {% block content %}{% endblock %}
-        <!-- Panel derecho tipo YT Music (contenido: upnext / lyrics / related) -->
-        <aside class="right-panel" id="right-panel">
-            <div class="right-tabs">
-                <button class="tab" data-tab="upnext">A CONTINUACIÓN</button>
-                <button class="tab active" data-tab="lyrics">LETRA</button>
-                <button class="tab" data-tab="related">SIMILARES</button>
-            </div>
-            <div class="right-content" id="right-content">
-                <!-- Contenido dinámico -->
-                <div id="upnext-content" class="tab-content"></div>
-                <div id="lyrics-content-panel" class="tab-content active">
-                    <div class="lyrics-toolbar">
-                        <button id="btn-translate-lyrics" class="lyrics-translate-btn"><i class="fa-solid fa-language"></i> Traducir</button>
-                        <label class="lyrics-auto-translate" title="Traducir automáticamente al cambiar de canción">
-                            <input type="checkbox" id="chk-auto-translate"> Auto
-                        </label>
-                    </div>
-                    <div class="lyrics-content-scroll">
-                        <p class="no-lyrics"><span class="no-lyrics-icon"><i class="fa-solid fa-music"></i></span>Selecciona una canción para ver la letra</p>
-                    </div>
-                </div>
-                <div id="related-content" class="tab-content"></div>
-            </div>
-        </aside>
-    {% block extra_js %}{% endblock %}
     </main>
+    
+    <!-- Panel derecho tipo YT Music (independiente de navegación) -->
+    <aside class="right-panel" id="right-panel">
+        <div class="right-tabs">
+            <button class="tab" data-tab="upnext">A CONTINUACIÓN</button>
+            <button class="tab active" data-tab="lyrics">LETRA</button>
+            <button class="tab" data-tab="related">SIMILARES</button>
+        </div>
+        <div class="right-content" id="right-content">
+            <!-- Contenido dinámico -->
+            <div id="upnext-content" class="tab-content"></div>
+            <div id="lyrics-content-panel" class="tab-content active">
+                <div class="lyrics-toolbar">
+                    <button id="btn-translate-lyrics" class="lyrics-translate-btn"><i class="fa-solid fa-language"></i> Traducir</button>
+                </div>
+                <div class="lyrics-content-scroll">
+                    <p class="no-lyrics"><span class="no-lyrics-icon"><i class="fa-solid fa-music"></i></span>Selecciona una canción para ver la letra</p>
+                </div>
+            </div>
+            <div id="related-content" class="tab-content"></div>
+        </div>
+    </aside>
+    {% block extra_js %}{% endblock %}
     
     <!-- ===== BARRA DE REPRODUCCIÓN INFERIOR ===== -->
     <!-- Diseño profesional con 3 columnas: info canción | controles+progreso | volumen+extras -->
