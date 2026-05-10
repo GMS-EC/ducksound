@@ -120,20 +120,37 @@ def obtener_o_crear_artista(nombre, enriquecer=False):
         return None
 
     nombre_norm = normalizar_artista(nombre)
-    # Buscar por nombre normalizado (case-insensitive, trim)
+    if not nombre_norm:
+        return None
+
+    # 1. Buscar por nombre normalizado (case-insensitive, trim)
     from sqlalchemy import func
     artista_obj = Artista.query.filter(func.lower(func.trim(Artista.nombre)) == nombre_norm.lower().strip()).first()
     if artista_obj:
         return artista_obj
 
+    # 2. Fuzzy matching contra TODOS los artistas existentes
+    #    Captura: "Artist A" ≈ "Artist A feat. B", "The Artist" ≈ "Artist, The"
+    from rapidfuzz import fuzz
+    UMBRAL_FUZZY = 85
+    mejor_ratio = 0
+    mejor_artista = None
+    for a in Artista.query.all():
+        ratio = fuzz.ratio(nombre_norm.lower(), a.nombre.lower())
+        if ratio > mejor_ratio:
+            mejor_ratio = ratio
+            mejor_artista = a
+    if mejor_ratio >= UMBRAL_FUZZY and mejor_artista:
+        return mejor_artista
+
+    # 3. Crear nuevo artista (con protección UNIQUE)
     try:
-        artista_obj = Artista(nombre=nombre_norm or nombre)
+        artista_obj = Artista(nombre=nombre_norm)
         db.session.add(artista_obj)
         db.session.flush()
         return artista_obj
     except Exception:
         db.session.rollback()
-        # Si falló por unique constraint, hacer get
         artista_obj = Artista.query.filter(func.lower(func.trim(Artista.nombre)) == nombre_norm.lower().strip()).first()
         return artista_obj
 
