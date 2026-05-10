@@ -440,7 +440,11 @@
         const scrollDiv = lyricsPanel.querySelector('.lyrics-content-scroll');
         if (!scrollDiv) return;
         
-        // Cancelar auto-traducción pendiente si cambia la canción
+        // Si ya tenemos traducción cacheada para esta misma canción, no re-renderizar
+        if (window._translatedHtml && window._currentLyrics && window._currentLyrics.songId === songId) {
+            return;
+        }
+        window._translatedHtml = null; // Limpiar para canción nueva
         if (_pendingAutoTranslate) {
             clearTimeout(_pendingAutoTranslate);
             _pendingAutoTranslate = null;
@@ -472,38 +476,48 @@
 
     function translateLyrics(cues){
         const btn = document.getElementById('btn-translate-lyrics');
+        if (!btn) return;
         
-        // Verificar que las cues sigan siendo válidas (misma canción)
+        // Verificar que las cues sigan siendo válidas
         if (!cues || !window._currentLyrics || window._currentLyrics.cues !== cues) {
-            if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+            setBtnReady(btn);
             return;
         }
         
-        if (btn) { btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; btn.disabled = true; }
+        setBtnLoading(btn);
         
-        // Obtener idioma del perfil (fallback español si falla)
         const targetLang = (window._userLang) || 'es';
         
-        if (!cues || !Array.isArray(cues) || cues.length === 0) {
-            resetBtn(btn);
+        if (!Array.isArray(cues) || cues.length === 0) {
+            setBtnReady(btn);
             return;
         }
         
         const text = cues.map(c=>c.text || '').join('\n---\n');
+        let timedOut = false;
+        const timer = setTimeout(() => { timedOut = true; setBtnReady(btn); }, 12000);
+        
         fetch('/api/translate', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({text, target: targetLang}) })
         .then(r=>r.json()).then(data=>{
+            clearTimeout(timer);
+            if (timedOut) return;
             if (!data.translated) throw new Error('no translation');
             const lines = data.translated.split('\n---\n');
             const linesDiv = document.querySelector('.lyrics-lines');
-            if (linesDiv) {
-                linesDiv.innerHTML = cues.map((c,i)=> `<div class="lyric-line" data-start="${c.start}" data-index="${i}"><div class="lyric-main-text">${escapeHtml(c.text)}</div><div class="lyric-subline">${escapeHtml(lines[i]||'')}</div></div>`).join('');
-                if (btn) { btn.innerHTML = '<i class="fa-solid fa-language"></i> Traducido'; btn.disabled = false; }
+            if (linesDiv && window._currentLyrics && window._currentLyrics.cues === cues) {
+                const html = cues.map((c,i)=> `<div class="lyric-line" data-start="${c.start}" data-index="${i}"><div class="lyric-main-text">${escapeHtml(c.text)}</div><div class="lyric-subline">${escapeHtml(lines[i]||'')}</div></div>`).join('');
+                linesDiv.innerHTML = html;
+                window._translatedHtml = html;
+                setBtnDone(btn);
             }
-        }).catch(()=> { resetBtn(btn); });
+        }).catch(()=> {
+            clearTimeout(timer);
+            if (!timedOut) setBtnReady(btn);
+        });
         
-        function resetBtn(b){
-            if (b) { b.innerHTML = '<i class="fa-solid fa-language"></i> Traducir'; b.disabled = false; b.style.opacity = '1'; }
-        }
+        function setBtnLoading(b) { b.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; b.disabled = true; }
+        function setBtnReady(b) { b.innerHTML = '<i class="fa-solid fa-language"></i> Traducir'; b.disabled = false; b.style.opacity = '1'; }
+        function setBtnDone(b) { b.innerHTML = '<i class="fa-solid fa-language"></i> Traducido'; b.disabled = false; }
     }
 
     function renderSimilar(similares){
@@ -579,8 +593,17 @@
     function initRightPanel(){
         document.querySelectorAll('#right-panel .tab').forEach(t => t.addEventListener('click', ()=> selectRightTab(t.dataset.tab)));
         selectRightTab(window._activeRightTab || 'lyrics');
-        if (window._currentLyrics) renderLyrics(window._currentLyrics.cues, window._currentLyrics.songId);
-        else updateTranslateBtn(false);
+        if (window._currentLyrics) {
+            const scrollDiv = document.querySelector('.lyrics-content-scroll');
+            // Restaurar traducción cachead si existe
+            if (window._translatedHtml && scrollDiv) {
+                scrollDiv.innerHTML = '<div class="lyrics-lines">' + window._translatedHtml + '</div>';
+                const btn = document.getElementById('btn-translate-lyrics');
+                if (btn) { btn.innerHTML = '<i class="fa-solid fa-language"></i> Traducido'; btn.disabled = false; }
+            } else {
+                renderLyrics(window._currentLyrics.cues, window._currentLyrics.songId);
+            }
+        } else updateTranslateBtn(false);
         if (window._currentUpNext) renderUpNextList(document.getElementById('upnext-content'), window._currentUpNext);
         if (window._currentSimilar) renderSimilar(window._currentSimilar);
         const lP = document.getElementById('lyrics-content-panel');
