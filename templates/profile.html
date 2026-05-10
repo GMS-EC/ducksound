@@ -96,7 +96,7 @@
             </label>
 
             <!-- Acciones -->
-            <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px">
+            <div class="profile-btn-row">
                 <button type="submit" class="btn btn-accent"><i class="fa-solid fa-floppy-disk"></i> Guardar</button>
                 {% if is_admin %}
                 <a href="{{ url_for('admin.admin_panel') }}" class="btn"><i class="fa-solid fa-gear"></i> Admin</a>
@@ -104,7 +104,7 @@
                     <i class="fa-solid fa-heart"></i> Apoyar
                 </a>
                 {% endif %}
-                <a href="{{ url_for('logout') }}" class="btn" style="margin-left:auto;color:var(--accent);border-color:rgba(217,88,64,0.3)"><i class="fa-solid fa-right-from-bracket"></i> Salir</a>
+                <a href="{{ url_for('logout') }}" class="btn btn-logout"><i class="fa-solid fa-right-from-bracket"></i> Salir</a>
             </div>
             
             <div id="profile-msg" style="display:none;padding:12px 16px;border-radius:var(--radius);font-size:14px"></div>
