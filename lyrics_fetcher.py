@@ -9,18 +9,8 @@ from config import Config
 _lyrics_cache = {}
 _LYRICS_CACHE_TTL = 3600  # 1 hora
 
-# Variable global para seguimiento de progreso de descarga de letras
-_lyrics_progress = {
-    'active': False,
-    'total': 0,
-    'completed': 0,
-    'downloaded': 0,
-    'errors': 0,
-    'current_song': '',
-    'finished': False
-}
-import threading
-_lyrics_progress_lock = threading.Lock()
+# Progreso de descarga de letras vía Redis
+from task_queue import progress_set, progress_get
 
 
 def _detectar_tipo_lyrics(contenido):
@@ -275,8 +265,7 @@ def _descargar_letras_impl(batch_size):
     """Implementación real, ejecutada dentro del contexto de la app."""
     from models import Cancion, db
     import time
-    
-    global _lyrics_progress
+    from task_queue import progress_set
     
     print("=" * 60)
     print("🎤 DESCARGANDO LETRAS EN SEGUNDO PLANO")
@@ -292,50 +281,49 @@ def _descargar_letras_impl(batch_size):
     
     if not canciones_sin_letra:
         print("✅ Todas las canciones ya tienen letra local")
-        with _lyrics_progress_lock:
-            _lyrics_progress['active'] = False
-            _lyrics_progress['finished'] = True
+        progress_set('lyrics', {'active': False, 'finished': True})
         return
     
     print(f"📊 Canciones sin letra: {len(canciones_sin_letra)}")
     print(f"🔄 Iniciando descarga en lotes de {batch_size}...\n")
     
+    def set_progress(**kw):
+        data = progress_get('lyrics') or {}
+        data.update(kw)
+        progress_set('lyrics', data)
+    
     # Inicializar progreso
-    with _lyrics_progress_lock:
-        _lyrics_progress['active'] = True
-        _lyrics_progress['total'] = len(canciones_sin_letra)
-        _lyrics_progress['completed'] = 0
-        _lyrics_progress['downloaded'] = 0
-        _lyrics_progress['errors'] = 0
-        _lyrics_progress['current_song'] = ''
-        _lyrics_progress['finished'] = False
+    progress_set('lyrics', {
+        'active': True,
+        'total': len(canciones_sin_letra),
+        'completed': 0,
+        'downloaded': 0,
+        'errors': 0,
+        'current_song': '',
+        'finished': False
+    })
     
     descargadas = 0
     errores = 0
     
     for idx, cancion in enumerate(canciones_sin_letra, start=1):
         try:
-            print(f"[{idx}/{len(canciones_sin_letra)}] 🔍 {cancion.titulo} - {cancion.artista_obj.nombre if cancion.artista_obj else '?'}")
+            song_str = f"{cancion.titulo} - {cancion.artista_obj.nombre if cancion.artista_obj else '?'}"
+            print(f"[{idx}/{len(canciones_sin_letra)}] 🔍 {song_str}")
             
-            # Actualizar progreso
-            with _lyrics_progress_lock:
-                _lyrics_progress['current_song'] = f"{cancion.titulo} - {cancion.artista_obj.nombre if cancion.artista_obj else '?'}"
-                _lyrics_progress['completed'] = idx - 1
+            set_progress(current_song=song_str, completed=idx - 1)
             
             resultado = obtener_o_descargar_letra(cancion.id)
             
             if resultado:
                 print(f"  ✅ Letra obtenida")
                 descargadas += 1
-                with _lyrics_progress_lock:
-                    _lyrics_progress['downloaded'] = descargadas
+                set_progress(downloaded=descargadas)
             else:
                 print(f"  ⚠️ No se encontró letra")
                 errores += 1
-                with _lyrics_progress_lock:
-                    _lyrics_progress['errors'] = errores
+                set_progress(errors=errores)
             
-            # Pausa pequeña para no saturar la API
             if idx % batch_size == 0:
                 print(f"  ⏸️ Pausa breve... (lote completado)")
                 time.sleep(2)
@@ -343,8 +331,7 @@ def _descargar_letras_impl(batch_size):
         except Exception as e:
             print(f"  ❌ Error: {e}")
             errores += 1
-            with _lyrics_progress_lock:
-                _lyrics_progress['errors'] = errores
+            set_progress(errors=errores)
     
     print("\n" + "="*60)
     print(f"✅ DESCARGA COMPLETADA")
@@ -352,9 +339,9 @@ def _descargar_letras_impl(batch_size):
     print(f"   ⚠️ Errores: {errores}")
     print("="*60)
     
-    # Marcar como finalizado
-    with _lyrics_progress_lock:
-        _lyrics_progress['active'] = False
-        _lyrics_progress['finished'] = True
-        _lyrics_progress['completed'] = len(canciones_sin_letra)
-        _lyrics_progress['current_song'] = 'Completado'
+    progress_set('lyrics', {
+        'active': False,
+        'finished': True,
+        'completed': len(canciones_sin_letra),
+        'current_song': 'Completado'
+    })

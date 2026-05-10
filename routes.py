@@ -8,16 +8,11 @@ from datetime import datetime
 from flask import current_app
 
 admin_bp = Blueprint('admin', __name__)
-
-# Blueprint para endpoints JSON / API
 api_bp = Blueprint('api', __name__)
-
-# Blueprint para exploración (artistas, albums)
 browse_bp = Blueprint('browse', __name__)
 
-_scan_tasks = {}
-_scan_tasks_lock = threading.Lock()
-_active_scan_id = None  # ID del escaneo activo actualmente (solo uno a la vez)
+# Scan task tracking via Redis (persistente entre procesos)
+from task_queue import scan_task_set, scan_task_get, scan_set_active, scan_get_active
 
 # Caché en memoria simple para endpoints (evita saturar APIs externas)
 import time
@@ -25,39 +20,10 @@ from functools import wraps
 
 _route_cache = {}
 
-def route_cache(ttl_seconds=3600):
-    def decorator(f):
-        @wraps(f)
-        def wrapper(*args, **kwargs):
-            key = f"{f.__name__}:{args}:{kwargs}"
-            now = time.time()
-            if key in _route_cache:
-                value, expires = _route_cache[key]
-                if now < expires:
-                    return value
-            result = f(*args, **kwargs)
-            # Solo guardamos si fue un JSON exitoso o algo cacheable
-            _route_cache[key] = (result, now + ttl_seconds)
-            return result
-        return wrapper
-    return decorator
-
 
 def _cleanup_old_tasks():
-    """Limpia tareas de escaneo completadas hace más de 1 hora para evitar memory leaks."""
-    now = datetime.utcnow()
-    with _scan_tasks_lock:
-        to_delete = []
-        for tid, task in _scan_tasks.items():
-            if task['status'] in ('done', 'error'):
-                try:
-                    updated = datetime.fromisoformat(task['updated_at'].rstrip('Z'))
-                    if (now - updated).total_seconds() > 3600:
-                        to_delete.append(tid)
-                except Exception:
-                    pass
-        for tid in to_delete:
-            del _scan_tasks[tid]
+    """Limpieza manejada por Redis TTL."""
+    pass
 
 
 def _is_admin_session():
@@ -106,26 +72,23 @@ def escanear_canciones():
 @admin_bp.route('/admin/clean_metadata', methods=['POST'])
 def admin_clean_metadata():
     """Agrupa artistas y álbumes duplicados sin requerir un escaneo del disco."""
-    global _active_scan_id
     if not _is_admin_request():
         return jsonify({'error': 'Unauthorized'}), 401
 
-    with _scan_tasks_lock:
-        if _active_scan_id and _active_scan_id in _scan_tasks:
-            active = _scan_tasks[_active_scan_id]
-            if active['status'] in ('running', 'enriching'):
-                return jsonify({'error': 'scan_in_progress', 'task_id': _active_scan_id}), 409
+    existing_tid, existing_task = scan_get_active()
+    if existing_tid and existing_task and existing_task.get('status') in ('running', 'enriching'):
+        return jsonify({'error': 'scan_in_progress', 'task_id': existing_tid}), 409
 
-        task_id = str(uuid.uuid4())
-        _active_scan_id = task_id
-        _scan_tasks[task_id] = {
-            'status': 'running',
-            'message': 'Iniciando limpieza...',
-            'percent': 0,
-            'processed': 0,
-            'total': 0,
-            'summary': None
-        }
+    task_id = str(uuid.uuid4())
+    scan_set_active(task_id)
+    scan_task_set(task_id, {
+        'status': 'running',
+        'message': 'Iniciando limpieza...',
+        'percent': 0,
+        'processed': 0,
+        'total': 0,
+        'summary': None
+    })
 
     def _run_clean():
         from models import Artista, Album, db
@@ -134,9 +97,10 @@ def admin_clean_metadata():
         
         with app.app_context():
             def emit(data):
-                with _scan_tasks_lock:
-                    if task_id in _scan_tasks:
-                        _scan_tasks[task_id].update(data)
+                t = scan_task_get(task_id)
+                if t:
+                    t.update(data)
+                    scan_task_set(task_id, t)
             
             try:
                 import os
@@ -219,194 +183,68 @@ def admin_clean_metadata():
 
 @admin_bp.route('/admin/escanear/start', methods=['POST'])
 def admin_scan_start():
-    """Inicia un escaneo en segundo plano y devuelve task_id para polling."""
-    global _active_scan_id
+    """Inicia un escaneo completo vía RQ worker."""
     if not _is_admin_request():
         return jsonify({'error': 'Unauthorized'}), 401
 
-    # Verificar si ya hay un escaneo en curso
-    with _scan_tasks_lock:
-        if _active_scan_id and _active_scan_id in _scan_tasks:
-            active = _scan_tasks[_active_scan_id]
-            if active['status'] in ('running', 'enriching'):
-                return jsonify({'error': 'scan_in_progress', 'task_id': _active_scan_id}), 409
+    existing_tid, existing_task = scan_get_active()
+    if existing_tid and existing_task and existing_task.get('status') in ('running', 'enriching'):
+        return jsonify({'error': 'scan_in_progress', 'task_id': existing_tid}), 409
 
     task_id = str(uuid.uuid4())
-    started_at = datetime.utcnow().isoformat() + 'Z'
 
-    # Limpiar tareas antiguas para evitar memory leak
-    _cleanup_old_tasks()
+    scan_set_active(task_id)
+    scan_task_set(task_id, {
+        'task_id': task_id, 'status': 'running', 'percent': 0,
+        'message': 'Preparando escaneo...', 'processed': 0, 'total': 0,
+        'current_file': None, 'summary': None, 'error': None,
+        'started_at': datetime.utcnow().isoformat() + 'Z',
+        'updated_at': datetime.utcnow().isoformat() + 'Z',
+    })
 
-    with _scan_tasks_lock:
-        _active_scan_id = task_id
-        _scan_tasks[task_id] = {
-            'task_id': task_id,
-            'status': 'running',
-            'percent': 0,
-            'message': 'Preparando escaneo...',
-            'processed': 0,
-            'total': 0,
-            'current_file': None,
-            'summary': None,
-            'error': None,
-            'started_at': started_at,
-            'updated_at': started_at,
-        }
-
-    def _worker(app_obj, current_task_id):
-        global _active_scan_id
-        def _progress(payload):
-            with _scan_tasks_lock:
-                t = _scan_tasks.get(current_task_id)
-                if not t:
-                    return
-                t['percent'] = payload.get('percent', t.get('percent', 0))
-                t['message'] = payload.get('message', t.get('message', ''))
-                t['processed'] = payload.get('processed', t.get('processed', 0))
-                t['total'] = payload.get('total', t.get('total', 0))
-                t['current_file'] = payload.get('current_file', t.get('current_file'))
-                if payload.get('summary'):
-                    t['summary'] = payload.get('summary')
-                stage = payload.get('stage')
-                if stage == 'done':
-                    t['status'] = 'done'
-                elif stage == 'enriching':
-                    t['status'] = 'enriching'
-                elif stage == 'error':
-                    t['status'] = 'error'
-                    t['error'] = payload.get('message') or 'Error durante el escaneo'
-                t['updated_at'] = datetime.utcnow().isoformat() + 'Z'
-
-        try:
-            with app_obj.app_context():
-                resumen = escanear_carpeta_audio(progress_callback=_progress)
-            with _scan_tasks_lock:
-                t = _scan_tasks.get(current_task_id)
-                if t:
-                    t['status'] = 'done'
-                    t['percent'] = 100
-                    t['summary'] = resumen
-                    t['message'] = 'Escaneo finalizado'
-                    t['updated_at'] = datetime.utcnow().isoformat() + 'Z'
-        except Exception as ex:
-            with _scan_tasks_lock:
-                t = _scan_tasks.get(current_task_id)
-                if t:
-                    t['status'] = 'error'
-                    t['error'] = str(ex)
-                    t['message'] = f'Error durante el escaneo: {ex}'
-                    t['updated_at'] = datetime.utcnow().isoformat() + 'Z'
-        finally:
-            # Limpiar el escaneo activo cuando termina
-            with _scan_tasks_lock:
-                if _active_scan_id == current_task_id:
-                    _active_scan_id = None
-
-    thread = threading.Thread(target=_worker, args=(current_app._get_current_object(), task_id), daemon=True)
-    thread.start()
+    from task_queue import enqueue
+    from tasks import run_full_scan
+    enqueue(run_full_scan, task_id)
     return jsonify({'task_id': task_id})
 
 
 @admin_bp.route('/admin/escanear/quick', methods=['POST'])
 def admin_scan_quick():
-    """Inicia un escaneo RÁPIDO (incremental) en segundo plano: solo procesa archivos nuevos/eliminados."""
-    global _active_scan_id
+    """Inicia un escaneo rápido vía RQ worker."""
     if not _is_admin_request():
         return jsonify({'error': 'Unauthorized'}), 401
 
-    # Verificar si ya hay un escaneo en curso
-    with _scan_tasks_lock:
-        if _active_scan_id and _active_scan_id in _scan_tasks:
-            active = _scan_tasks[_active_scan_id]
-            if active['status'] in ('running', 'enriching'):
-                return jsonify({'error': 'scan_in_progress', 'task_id': _active_scan_id}), 409
+    existing_tid, existing_task = scan_get_active()
+    if existing_tid and existing_task and existing_task.get('status') in ('running', 'enriching'):
+        return jsonify({'error': 'scan_in_progress', 'task_id': existing_tid}), 409
 
     task_id = str(uuid.uuid4())
-    started_at = datetime.utcnow().isoformat() + 'Z'
-    _cleanup_old_tasks()
 
-    with _scan_tasks_lock:
-        _active_scan_id = task_id
-        _scan_tasks[task_id] = {
-            'task_id': task_id,
-            'status': 'running',
-            'percent': 0,
-            'message': 'Iniciando escaneo rápido...',
-            'processed': 0,
-            'total': 0,
-            'current_file': None,
-            'summary': None,
-            'error': None,
-            'started_at': started_at,
-            'updated_at': started_at,
-        }
+    scan_set_active(task_id)
+    scan_task_set(task_id, {
+        'task_id': task_id, 'status': 'running', 'percent': 0,
+        'message': 'Iniciando escaneo rápido...', 'processed': 0, 'total': 0,
+        'current_file': None, 'summary': None, 'error': None,
+        'started_at': datetime.utcnow().isoformat() + 'Z',
+        'updated_at': datetime.utcnow().isoformat() + 'Z',
+    })
 
-    def _worker_quick(app_obj, current_task_id):
-        global _active_scan_id
-        def _progress(payload):
-            with _scan_tasks_lock:
-                t = _scan_tasks.get(current_task_id)
-                if not t:
-                    return
-                t.update({
-                    'percent': payload.get('percent', t.get('percent', 0)),
-                    'message': payload.get('message', t.get('message', '')),
-                    'processed': payload.get('processed', t.get('processed', 0)),
-                    'total': payload.get('total', t.get('total', 0)),
-                    'current_file': payload.get('current_file', t.get('current_file')),
-                    'updated_at': datetime.utcnow().isoformat() + 'Z',
-                })
-                if payload.get('summary'):
-                    t['summary'] = payload['summary']
-                stage = payload.get('stage')
-                if stage == 'done':
-                    t['status'] = 'done'
-                elif stage == 'enriching':
-                    t['status'] = 'enriching'
-                elif stage == 'error':
-                    t['status'] = 'error'
-                    t['error'] = payload.get('message') or 'Error durante el escaneo'
-
-        try:
-            with app_obj.app_context():
-                resumen = escaneo_rapido(progress_callback=_progress)
-            with _scan_tasks_lock:
-                t = _scan_tasks.get(current_task_id)
-                if t:
-                    t['status'] = 'done'
-                    t['percent'] = 100
-                    t['summary'] = resumen
-                    t['message'] = 'Escaneo rápido finalizado'
-                    t['updated_at'] = datetime.utcnow().isoformat() + 'Z'
-        except Exception as ex:
-            with _scan_tasks_lock:
-                t = _scan_tasks.get(current_task_id)
-                if t:
-                    t['status'] = 'error'
-                    t['error'] = str(ex)
-                    t['message'] = f'Error: {ex}'
-                    t['updated_at'] = datetime.utcnow().isoformat() + 'Z'
-        finally:
-            with _scan_tasks_lock:
-                if _active_scan_id == current_task_id:
-                    _active_scan_id = None
-
-    thread = threading.Thread(target=_worker_quick, args=(current_app._get_current_object(), task_id), daemon=True)
-    thread.start()
+    from task_queue import enqueue
+    from tasks import run_quick_scan
+    enqueue(run_quick_scan, task_id)
     return jsonify({'task_id': task_id})
 
 
 @admin_bp.route('/admin/escanear/active', methods=['GET'])
 def admin_scan_active():
-    """Devuelve el escaneo activo actual si hay uno en curso. Permite reconectarse tras navegar."""
+    """Devuelve el escaneo activo actual si hay uno en curso."""
     if not _is_admin_request():
         return jsonify({'error': 'Unauthorized'}), 401
 
-    with _scan_tasks_lock:
-        if _active_scan_id and _active_scan_id in _scan_tasks:
-            task = _scan_tasks[_active_scan_id]
-            if task['status'] in ('running', 'enriching'):
-                return jsonify(task)
+    tid, task = scan_get_active()
+    if tid and task and task.get('status') in ('running', 'enriching'):
+        return jsonify({'task_id': tid, 'status': task.get('status', 'unknown')})
+    return jsonify({}), 200
 
     return jsonify({'active': False}), 200
 
@@ -418,11 +256,10 @@ def admin_scan_status(task_id):
     if not _is_admin_request():
         return jsonify({'error': 'Unauthorized'}), 401
 
-    with _scan_tasks_lock:
-        task = _scan_tasks.get(task_id)
-        if not task:
-            return jsonify({'error': 'task_not_found'}), 404
-        return jsonify(task)
+    task = scan_task_get(task_id)
+    if not task:
+        return jsonify({'error': 'task_not_found'}), 404
+    return jsonify(task)
 
 
 @admin_bp.route('/admin')
@@ -1185,19 +1022,18 @@ def admin_crear_usuario():
 def api_lyrics_progress():
     """Devuelve el progreso actual de la descarga de letras en segundo plano."""
     try:
-        from lyrics_fetcher import _lyrics_progress, _lyrics_progress_lock
-        
-        with _lyrics_progress_lock:
-            return jsonify({
-                'active': _lyrics_progress['active'],
-                'finished': _lyrics_progress['finished'],
-                'total': _lyrics_progress['total'],
-                'completed': _lyrics_progress['completed'],
-                'downloaded': _lyrics_progress['downloaded'],
-                'errors': _lyrics_progress['errors'],
-                'current_song': _lyrics_progress['current_song'],
-                'percent': int((_lyrics_progress['completed'] / _lyrics_progress['total']) * 100) if _lyrics_progress['total'] > 0 else 0
-            }), 200
+        from task_queue import progress_get
+        p = progress_get('lyrics') or {}
+        return jsonify({
+            'active': p.get('active', False),
+            'finished': p.get('finished', True),
+            'total': p.get('total', 0),
+            'completed': p.get('completed', 0),
+            'downloaded': p.get('downloaded', 0),
+            'errors': p.get('errors', 0),
+            'current_song': p.get('current_song', ''),
+            'percent': int((p.get('completed', 0) / max(p.get('total', 1), 1)) * 100) if p.get('total', 0) > 0 else 0
+        }), 200
     except Exception as e:
         return jsonify({'error': str(e), 'active': False, 'finished': True}), 500
 

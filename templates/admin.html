@@ -601,21 +601,17 @@
         try{
             const res = await fetch('/admin/escanear/status/' + encodeURIComponent(taskId));
             if (res.status === 404) {
-                sessionStorage.removeItem('ducksound_scan_task_id');
-                statusText.textContent = 'DESCONECTADO';
-                msg.textContent = 'La tarea ya no está disponible (servidor reiniciado)';
-                setRunningState(false);
-                if (pollTimer){ clearInterval(pollTimer); pollTimer = null; }
+                // Tarea no encontrada — podría ser reinicio, reintentar
                 return;
             }
             if (!res.ok) {
-                // Error de red — ignorar, próximo poll reintentará
+                // Error de red — reintentar
                 return;
             }
             const data = await res.json();
             renderStatus(data);
         }catch(err){
-            // Error de conexión — ignorar, próximo poll reintentará
+            // Error de conexión — reintentar
         }
     }
 
@@ -648,6 +644,8 @@
 
     // Helper reutilizable para iniciar cualquier tipo de escaneo
     async function startScan(endpoint, initMsg) {
+        // Detener poller anterior si existe
+        if (pollTimer){ clearInterval(pollTimer); pollTimer = null; }
         panel.style.display = 'block';
         summary.style.display = 'none';
         summary.innerHTML = '';

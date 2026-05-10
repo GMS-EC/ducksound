@@ -1,27 +1,16 @@
 import time
 import logging
 import requests
-import threading
 
-# ===== Progreso de enriquecimiento =====
-_mb_progress = {
-    'active': False,
-    'total': 0,
-    'completed': 0,
-    'found': 0,
-    'current_artist': '',
-    'finished': False,
-    'message': ''
-}
-_mb_lock = threading.Lock()
+# Progreso de enriquecimiento vía Redis
+from task_queue import progress_update, progress_get
 
 def _progress(**kw):
-    with _mb_lock:
-        _mb_progress.update(kw)
+    progress_update('mb', **kw)
 
 def get_mb_progress():
-    with _mb_lock:
-        return dict(_mb_progress)
+    p = progress_get('mb') or {}
+    return p
 
 _USER_AGENT = 'DuckSound/1.0 (https://github.com/anomalyco/ducksound; contacto@ducksound.local)'
 _MB_BASE = 'https://musicbrainz.org/ws/2'
