@@ -654,6 +654,7 @@
 
     // Helper reutilizable para iniciar cualquier tipo de escaneo
     async function startScan(endpoint, initMsg) {
+        panel.style.display = 'block';
         summary.style.display = 'none';
         summary.innerHTML = '';
         bar.style.width = '0%';
@@ -661,6 +662,7 @@
         msg.textContent = initMsg;
         counter.textContent = '0/0';
         currentFile.textContent = '';
+        setRunningState(true);
 
         try {
             const res = await fetch(endpoint, {method: 'POST'});
@@ -672,7 +674,10 @@
                 }
                 return;
             }
-            if (!res.ok) throw new Error('No se pudo iniciar el escaneo');
+            if (!res.ok) {
+                const errMsg = res.status === 401 ? 'No autorizado (inicia sesión de nuevo)' : 'Error del servidor';
+                throw new Error(errMsg);
+            }
             const data = await res.json();
             if (!data.task_id) throw new Error('Respuesta sin task_id');
             attachPoller(data.task_id);
