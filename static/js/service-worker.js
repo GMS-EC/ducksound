@@ -2,8 +2,6 @@ const CACHE_NAME = 'ducksound-cache-v1';
 const urlsToCache = [
     '/',
     '/static/css/style.css',
-    '/static/css/global_gmsec.css',
-    '/static/js/player.js',
     '/static/js/player_parent.js',
     '/static/img/logo.svg',
     '/static/img/favicon.png',

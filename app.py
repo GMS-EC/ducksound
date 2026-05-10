@@ -2,7 +2,6 @@ from flask import Flask, render_template, request, redirect, url_for, session, j
 from config import Config
 from models import db, Usuario, Artista, Cancion, Favorito, HistorialEscucha, DailyMix, Coleccion, Album
 from datetime import datetime, date, timedelta
-from collections import defaultdict
 import os
 import sys
 import requests

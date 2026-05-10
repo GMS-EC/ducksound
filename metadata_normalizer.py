@@ -86,7 +86,14 @@ def normalizar_artista(nombre):
     n = re.sub(r'(?i)\s*[\(\[]\s*(feat\.|ft\.|featuring).*?[\)\]]', '', n)
     n = re.sub(r'(?i)\s+(feat\.|ft\.|featuring)\s+.*$', '', n)
     
-    # 2. Separar en el PRIMER delimitador de colaboración
+    # 2. Unificar "The" al inicio ANTES de separar por colaboraciones
+    #    "Smith, The" → "The Smith"
+    original_n = n
+    n = re.sub(r',\s*The$', '', n).strip()
+    if n != original_n:
+        n = 'The ' + n
+    
+    # 3. Separar en el PRIMER delimitador de colaboración
     # Ordenado por especificidad (el más específico primero para evitar falsos)
     for delim in [' & ', ' vs ', ' + ', ' x ', ', ', ' / ']:
         if delim in n:
@@ -109,13 +116,6 @@ def normalizar_artista(nombre):
     n = re.sub(r'(?i)\s+B\.C\.$', '', n)  # Ghost B.C. -> Ghost
     
     return n.strip()
-
-
-def normalizar_titulo(titulo):
-    """Normaliza título de canción"""
-    if not titulo:
-        return titulo
-    return limpiar_nombre(titulo)
 
 
 def normalizar_album(titulo):
