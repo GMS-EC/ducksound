@@ -601,22 +601,24 @@
         try{
             const res = await fetch('/admin/escanear/status/' + encodeURIComponent(taskId));
             if (res.status === 404) {
+                // Tarea expirada — mostrar como completada
                 sessionStorage.removeItem('ducksound_scan_task_id');
-                panel.style.display = 'none';
+                statusText.textContent = 'COMPLETADO';
+                msg.textContent = 'Escaneo finalizado';
+                setRunningState(false);
                 if (pollTimer){ clearInterval(pollTimer); pollTimer = null; }
                 return;
             }
             if (!res.ok) {
-                // Error de red, reintentar después
+                // Error de red — mantener visible, reintentar
+                statusText.textContent = 'RECONECTANDO';
                 return;
             }
             const data = await res.json();
             renderStatus(data);
         }catch(err){
-            // Error de conexión, ocultar panel hasta que se inicie un nuevo escaneo
-            panel.style.display = 'none';
-            if (pollTimer){ clearInterval(pollTimer); pollTimer = null; }
-            sessionStorage.removeItem('ducksound_scan_task_id');
+            // Error de conexión — mantener panel visible
+            statusText.textContent = 'RECONECTANDO';
         }
     }
 
