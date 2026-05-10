@@ -73,8 +73,8 @@ case "$MODE" in
         echo "🚀 Iniciando servidor web..."
         exec gunicorn app:app \
             --bind 0.0.0.0:${PORT:-8604} \
-            --workers ${WEB_WORKERS:-4} \
-            --threads ${WEB_THREADS:-2} \
+            --workers ${WEB_WORKERS:-1} \
+            --threads ${WEB_THREADS:-8} \
             --worker-class gthread \
             --timeout 120 \
             --access-logfile - \
