@@ -167,45 +167,95 @@ def obtener_o_descargar_letra(cancion_id):
                     tipo_letra = 'txt'
                 
                 if letra_contenido:
-                    # Crear archivo de letra
-                    nombre_archivo = _crear_nombre_archivo_seguro(cancion)
-                    extension = '.lrc' if tipo_letra == 'lrc' else '.txt'
-                    ruta_archivo = Config.LYRICS_FOLDER / f"{nombre_archivo}{extension}"
-                    
-                    # Asegurar que el directorio exista
-                    Config.LYRICS_FOLDER.mkdir(parents=True, exist_ok=True)
-                    
-                    # Escribir archivo
-                    with open(ruta_archivo, 'w', encoding='utf-8') as f:
-                        f.write(letra_contenido)
-                    
-                    # Actualizar base de datos
-                    cancion.ruta_archivo_lrc = str(ruta_archivo)
-                    db.session.commit()
-                    
-                    resultado = {"tipo": tipo_letra, "letra": letra_contenido}
-                    _lyrics_cache[cancion_id] = (time.time(), resultado)
-                    return resultado
+                    return _guardar_letra(cancion, letra_contenido, tipo_letra, cancion_id)
             
             elif response.status_code == 404:
-                print(f"No se encontró letra para canción {cancion_id}")
-                return None
+                print(f"No se encontró letra para canción {cancion_id} en LRCLIB")
             else:
                 print(f"Error en API LRCLIB para canción {cancion_id}: {response.status_code}")
-                return None
                 
         except requests.exceptions.Timeout:
-            print(f"Timeout buscando letra para canción {cancion_id}")
-            return None
+            print(f"Timeout LRCLIB para canción {cancion_id}")
         except requests.exceptions.RequestException as e:
-            print(f"Error de red buscando letra para canción {cancion_id}: {e}")
-            return None
+            print(f"Error de red LRCLIB para canción {cancion_id}: {e}")
         except Exception as e:
-            print(f"Error inesperado buscando letra para canción {cancion_id}: {e}")
-            return None
-            
+            print(f"Error inesperado LRCLIB para canción {cancion_id}: {e}")
+        
+        # === PASO 4: FALLBACKS si LRCLIB no encontró nada ===
+        titulo = cancion.titulo
+        artista = cancion.artista_obj.nombre if cancion.artista_obj else ''
+        
+        # Fallback 1: Lyrics.ovh (API gratuita, texto plano)
+        if titulo and artista:
+            try:
+                ovh_url = f"https://api.lyrics.ovh/v1/{requests.utils.quote(artista)}/{requests.utils.quote(titulo)}"
+                ovh_resp = requests.get(ovh_url, timeout=10)
+                if ovh_resp.status_code == 200:
+                    ovh_data = ovh_resp.json()
+                    if ovh_data.get('lyrics'):
+                        letra = ovh_data['lyrics'].strip()
+                        if letra:
+                            return _guardar_letra(cancion, letra, 'txt', cancion_id)
+            except Exception as e:
+                print(f"Error Lyrics.ovh para {cancion_id}: {e}")
+        
+        # Fallback 2: Genius scraping (solo si tenemos nombre de artista y título)
+        if titulo and artista:
+            try:
+                import urllib.parse
+                query = f"{artista} {titulo}"
+                search_url = f"https://genius.com/api/search/song?q={urllib.parse.quote(query)}"
+                genius_headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; rv:102.0) Gecko/20100101 Firefox/102.0'}
+                g_resp = requests.get(search_url, headers=genius_headers, timeout=10)
+                if g_resp.status_code == 200:
+                    g_data = g_resp.json()
+                    hits = g_data.get('response', {}).get('sections', [])
+                    for section in hits:
+                        for hit in section.get('hits', []):
+                            result = hit.get('result', {})
+                            song_url = result.get('url', '')
+                            if song_url:
+                                page = requests.get(song_url, headers=genius_headers, timeout=10)
+                                if page.status_code == 200:
+                                    import re
+                                    # Buscar el contenedor de letras en el HTML de Genius
+                                    match = re.search(r'<div class="lyrics"[^>]*>(.*?)</div>\s*</div>', page.text, re.DOTALL)
+                                    if not match:
+                                        match = re.search(r'<div data-lyrics-container[^>]*>(.*?)</div>', page.text, re.DOTALL)
+                                    if match:
+                                        html_lyrics = match.group(1)
+                                        # Limpiar HTML básico
+                                        letra_limpia = re.sub(r'<br\s*/?>', '\n', html_lyrics)
+                                        letra_limpia = re.sub(r'<[^>]+>', '', letra_limpia)
+                                        letra_limpia = re.sub(r'\n{3,}', '\n\n', letra_limpia).strip()
+                                        if letra_limpia:
+                                            return _guardar_letra(cancion, letra_limpia, 'txt', cancion_id)
+                                break  # Solo intentar el primer resultado
+            except Exception as e:
+                print(f"Error Genius para {cancion_id}: {e}")
+        return None
+        
     except Exception as e:
         print(f"Error en obtener_o_descargar_letra para canción {cancion_id}: {e}")
+        return None
+
+
+def _guardar_letra(cancion, letra_contenido, tipo_letra, cancion_id):
+    """Guarda la letra en disco y actualiza la BD."""
+    try:
+        nombre_archivo = _crear_nombre_archivo_seguro(cancion)
+        extension = '.lrc' if tipo_letra == 'lrc' else '.txt'
+        ruta_archivo = Config.LYRICS_FOLDER / f"{nombre_archivo}{extension}"
+        Config.LYRICS_FOLDER.mkdir(parents=True, exist_ok=True)
+        with open(ruta_archivo, 'w', encoding='utf-8') as f:
+            f.write(letra_contenido)
+        cancion.ruta_archivo_lrc = str(ruta_archivo)
+        db.session.commit()
+        resultado = {"tipo": tipo_letra, "letra": letra_contenido}
+        _lyrics_cache[cancion_id] = (time.time(), resultado)
+        return resultado
+    except Exception as e:
+        print(f"Error al guardar letra: {e}")
         return None
 
 

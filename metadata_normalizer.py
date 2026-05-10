@@ -71,20 +71,43 @@ def limpiar_nombre(nombre):
 
 
 def normalizar_artista(nombre):
-    """Normaliza nombre de artista: solo limpia feat/ft/featuring, NO separa colaboraciones"""
+    """
+    Normaliza nombre de artista extrayendo SOLO el artista principal.
+    Elimina colaboradores y versiona el nombre para evitar duplicados.
+    """
     if not nombre:
         return nombre
     n = limpiar_nombre(nombre)
+    if not n:
+        return n
     
-    # Limpiar solo feat/ft/featuring al final o entre paréntesis
-    # NO separamos por , & / y x para evitar crear artistas falsos
+    # 1. Quitar feat/ft/featuring y todo lo que sigue
     n = re.sub(r'(?i)\s*[-–—]+\s*(feat\.|ft\.|featuring)\s+.*$', '', n)
     n = re.sub(r'(?i)\s*[\(\[]\s*(feat\.|ft\.|featuring).*?[\)\]]', '', n)
     n = re.sub(r'(?i)\s+(feat\.|ft\.|featuring)\s+.*$', '', n)
     
-    # Casos específicos
+    # 2. Separar en el PRIMER delimitador de colaboración
+    # Ordenado por especificidad (el más específico primero para evitar falsos)
+    for delim in [' & ', ' vs ', ' + ', ' x ', ', ', ' / ']:
+        if delim in n:
+            # Solo separar si el delimitador está rodeado de palabras
+            partes = n.split(delim, 1)
+            if len(partes) > 1 and partes[0].strip():
+                n = partes[0].strip()
+                break
+    
+    # 3. " and " en minúsculas = colaboración (ej: "artist a and artist b")
+    #    " And " / " AND " = parte del nombre (ej: "Blade And Bath")
+    m = re.search(r'\b[a-z]+ and [a-z]', n)
+    if m:
+        n = n.split(' and ')[0].strip()
+    
+    # 4. Unificar "The" al inicio (ej: "Smith, The" → "The Smith")
+    n = re.sub(r',\s*The$', '', n).strip()
+    
+    # 5. Casos específicos
     n = re.sub(r'(?i)\s+B\.C\.$', '', n)  # Ghost B.C. -> Ghost
-            
+    
     return n.strip()
 
 

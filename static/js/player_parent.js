@@ -581,7 +581,8 @@
                 scrollDiv.innerHTML = '<div class="lyrics-lines">' + window._translatedHtml + '</div>';
                 const btn = document.getElementById('btn-translate-lyrics');
                 if (btn) { btn.innerHTML = '<i class="fa-solid fa-language"></i> Traducido'; btn.disabled = false; }
-            } else {
+            } else if (!scrollDiv.querySelector('.lyrics-lines')) {
+                // Solo renderizar si no hay letras ya cargadas (evita resetear el índice sincronizado)
                 renderLyrics(window._currentLyrics.cues, window._currentLyrics.songId);
             }
         } else updateTranslateBtn(false);

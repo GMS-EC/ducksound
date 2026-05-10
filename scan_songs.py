@@ -176,6 +176,8 @@ def extraer_metadatos(ruta_archivo):
             'titulo': getattr(tag, 'title', None) or extra_tag('title', 'TITLE'),
             'artista': artista,
             'albumartist': albumartist,
+            'artista_display': artista,  # Original con colaboraciones para display
+            'artista_principal': normalizar_artista(albumartist),  # Artista unificado desde albumartist
             'album': getattr(tag, 'album', None) or extra_tag('album', 'ALBUM'),
             'duracion': int(tag.duration) if getattr(tag, 'duration', None) else None,
             'ruta_imagen': None,
@@ -233,15 +235,22 @@ def obtener_o_crear_artista(nombre, enriquecer=False):
         return None
 
     nombre_norm = normalizar_artista(nombre)
-    artista_obj = Artista.query.filter_by(nombre=nombre_norm).first()
+    # Buscar por nombre normalizado (case-insensitive, trim)
+    from sqlalchemy import func
+    artista_obj = Artista.query.filter(func.lower(func.trim(Artista.nombre)) == nombre_norm.lower().strip()).first()
     if artista_obj:
         return artista_obj
 
-    artista_obj = Artista(nombre=nombre_norm or nombre)
-    db.session.add(artista_obj)
-    db.session.flush()
-
-    return artista_obj
+    try:
+        artista_obj = Artista(nombre=nombre_norm or nombre)
+        db.session.add(artista_obj)
+        db.session.flush()
+        return artista_obj
+    except Exception:
+        db.session.rollback()
+        # Si falló por unique constraint, hacer get
+        artista_obj = Artista.query.filter(func.lower(func.trim(Artista.nombre)) == nombre_norm.lower().strip()).first()
+        return artista_obj
 
 
 def obtener_o_crear_album(album, albumartist):
@@ -263,9 +272,16 @@ def obtener_o_crear_album(album, albumartist):
         return album_obj
 
     album_obj = Album(titulo=album_final, artista_id=album_artista_obj.id)
-    db.session.add(album_obj)
-    db.session.flush()
-    return album_obj
+    try:
+        db.session.add(album_obj)
+        db.session.flush()
+        return album_obj
+    except Exception:
+        db.session.rollback()
+        # Si falló por unique constraint, buscar de nuevo
+        albumes_artista = Album.query.filter_by(artista_id=album_artista_obj.id).all()
+        album_obj = obtener_album_base_fuzz(album_final, albumes_artista)
+        return album_obj
 
 
 def limpiar_entidades_vacias():
@@ -796,29 +812,25 @@ def escanear_carpeta_audio(progress_callback=None):
                 print(f"  Album inferido desde carpeta: {album}")
 
         albumartist = albumartist or artista
-
-        artista_obj = obtener_o_crear_artista(artista)
-        if not artista_obj and artista:
-            artista_obj = Artista(nombre=artista)
+        
+        # Usar artista_principal (desde albumartist) como único artista
+        artista_principal = (metadatos or {}).get('artista_principal') or normalizar_artista(albumartist or artista)
+        # artista_display conserva el original con colaboraciones
+        artista_display = (metadatos or {}).get('artista_display') or artista
+        
+        artista_obj = obtener_o_crear_artista(artista_principal)
+        if not artista_obj and artista_principal:
+            artista_obj = Artista(nombre=artista_principal)
             db.session.add(artista_obj)
             db.session.flush()
-            # Auto-enriquecer metadatos del nuevo artista desde APIs públicas
             try:
                 enrich_artist(artista_obj, commit=False)
-                print(f"  Metadatos automaticos obtenidos para: {artista}")
+                print(f"  Metadatos automaticos obtenidos para: {artista_principal}")
             except Exception as e:
                 print(f"  ⚠ No se pudieron obtener metadatos automáticos: {e}")
-
-        album_obj = None
-        album_base, album_version = detectar_version(album)
-        album_final = normalizar_album(album_base or album)
-        if album_final and artista_obj:
-            album_obj = Album.query.filter_by(titulo=album_final, artista_id=artista_obj.id).first()
-        if not album_obj and album_final and artista_obj and albumartist is None:
-            album_obj = Album(titulo=album_final, artista_id=artista_obj.id)
-            db.session.add(album_obj)
-            db.session.flush()
-        album_obj = obtener_o_crear_album(album, albumartist)
+        
+        # Álbum: único camino, usando albumartist
+        album_obj = obtener_o_crear_album(album, artista_principal) if (album and artista_principal) else None
 
         # Buscar archivo LRC correspondiente (solo local para rapidez)
         ruta_lrc = buscar_archivo_lrc(archivo, carpeta_lyrics)
@@ -1094,9 +1106,12 @@ def escaneo_rapido(progress_callback=None):
                 if album_carpeta and not album:
                     album = album_carpeta
             albumartist = albumartist or artista
+            
+            # Artista principal desde albumartist (unificado)
+            artista_principal_rapido = (metadatos or {}).get('artista_principal') or normalizar_artista(albumartist or artista)
 
-            artista_obj = obtener_o_crear_artista(artista)
-            album_obj = obtener_o_crear_album(album, albumartist)
+            artista_obj = obtener_o_crear_artista(artista_principal_rapido)
+            album_obj = obtener_o_crear_album(album, artista_principal_rapido) if (album and artista_principal_rapido) else None
 
             # Solo búsqueda local (escaneo rápido no descarga de API)
             ruta_lrc = buscar_archivo_lrc(archivo, carpeta_lyrics)

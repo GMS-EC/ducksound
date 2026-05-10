@@ -53,6 +53,19 @@ with app.app_context():
         # Ignorar si ya existe la columna
         pass
     
+    # Migración: Índices UNIQUE para evitar duplicados de artistas y álbumes
+    try:
+        from sqlalchemy import text
+        db.session.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS idx_artistas_nombre ON artistas(LOWER(TRIM(nombre)))'))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+    try:
+        db.session.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS idx_albumes_titulo_artista ON albumes(LOWER(TRIM(titulo)), artista_id)'))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+    
     # Crear usuario administrador si no existe ninguno
     if Usuario.query.count() == 0:
         admin_user = Usuario(
