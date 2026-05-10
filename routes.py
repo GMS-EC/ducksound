@@ -802,9 +802,14 @@ def artists_list():
     artists_data = []
     
     # Pre-cargamos portadas de todos los álbumes para evitar query N+1 en las portadas
-    # Solo tomamos un álbum arbitrario por artista
-    first_albums = db.session.query(Album).group_by(Album.artista_id).all()
-    first_album_dict = {al.artista_id: al for al in first_albums}
+    # Solo tomamos un álbum por artista (el primero por orden de ID)
+    first_albums = Album.query.order_by(Album.artista_id, Album.id).all()
+    first_album_dict = {}
+    seen_artists = set()
+    for al in first_albums:
+        if al.artista_id not in seen_artists:
+            seen_artists.add(al.artista_id)
+            first_album_dict[al.artista_id] = al
 
     for a in artists:
         ac = album_dict.get(a.id, 0)
