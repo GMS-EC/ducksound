@@ -601,17 +601,14 @@
         try{
             const res = await fetch('/admin/escanear/status/' + encodeURIComponent(taskId));
             if (res.status === 404) {
-                // El escaneo ya no existe (servidor reiniciado o tarea limpiada)
                 sessionStorage.removeItem('ducksound_scan_task_id');
-                statusText.textContent = 'FINALIZADO';
-                msg.textContent = 'El escaneo anterior ya no está disponible';
-                currentFile.textContent = '';
-                setRunningState(false);
-                if (pollTimer){ clearInterval(pollTimer); pollTimer = null; }
-                panel.style.display = 'none';
+                setReadyState();
                 return;
             }
-            if (!res.ok) throw new Error('No se pudo consultar estado');
+            if (!res.ok) {
+                // Error de red, reintentar después
+                return;
+            }
             const data = await res.json();
             renderStatus(data);
         }catch(err){
@@ -633,8 +630,19 @@
         pollTimer = setInterval(function(){ pollStatus(taskId); }, 1200);
     }
 
-    // Al cargar la página: limpiar estado previo y verificar escaneo activo
+    // Al cargar la página: mostrar panel en estado listo
     sessionStorage.removeItem('ducksound_scan_task_id');
+    function setReadyState() {
+        panel.style.display = 'block';
+        bar.style.width = '0%';
+        statusText.textContent = 'LISTO';
+        msg.textContent = 'Esperando escaneo...';
+        counter.textContent = '0/0';
+        currentFile.textContent = '';
+        summary.style.display = 'none';
+    }
+    setReadyState();
+
     async function checkActiveOnLoad(){
         try {
             const res = await fetch('/admin/escanear/active');
