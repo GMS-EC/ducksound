@@ -18,12 +18,30 @@ from task_queue import scan_task_set, scan_task_get, scan_set_active, scan_get_a
 import time
 from functools import wraps
 
-_route_cache = {}
-
 
 def _cleanup_old_tasks():
     """Limpieza manejada por Redis TTL."""
     pass
+
+
+# Caché en memoria simple para endpoints (evita saturar APIs externas)
+_route_cache = {}
+
+def route_cache(ttl_seconds=3600):
+    def decorator(f):
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            key = f"{f.__name__}:{args}:{kwargs}"
+            now = time.time()
+            if key in _route_cache:
+                value, expires = _route_cache[key]
+                if now < expires:
+                    return value
+            result = f(*args, **kwargs)
+            _route_cache[key] = (result, now + ttl_seconds)
+            return result
+        return wrapper
+    return decorator
 
 
 def _is_admin_session():
