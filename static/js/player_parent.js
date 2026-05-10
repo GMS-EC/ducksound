@@ -339,16 +339,7 @@
                 }
                 if (miniArtist) miniArtist.textContent = song ? (song.artista||'Artista') : '';
                 setMiniCoverImage(miniCover, song);
-
-                // Like status
-                if (song && song.id) {
-                    fetch('/api/favoritos').then(r => r.json()).then(favIds => {
-                        const btnLike = document.getElementById('btn-like');
-                        if (btnLike) {
-                            const liked = favIds.includes(song.id);
-                            btnLike.querySelector('i').className = liked ? 'fa-solid fa-heart' : 'fa-regular fa-heart';
-                            btnLike.style.color = liked ? 'var(--accent)' : '';
-                        }
+            }
                     }).catch(()=>{});
                 }
                 updateProgressBar(0, 0);
@@ -441,11 +432,20 @@
         btn.style.opacity = enabled ? '1' : '0.4';
     }
 
+    // Variable para cancelar auto-traducción pendiente
+    let _pendingAutoTranslate = null;
+
     function renderLyrics(cues, songId){
         const lyricsPanel = document.getElementById('lyrics-content-panel');
         if (!lyricsPanel) return;
         const scrollDiv = lyricsPanel.querySelector('.lyrics-content-scroll');
         if (!scrollDiv) return;
+        
+        // Cancelar auto-traducción pendiente si cambia la canción
+        if (_pendingAutoTranslate) {
+            clearTimeout(_pendingAutoTranslate);
+            _pendingAutoTranslate = null;
+        }
         
         if (!cues || cues.length===0){
             scrollDiv.innerHTML = '<p class="no-lyrics"><span class="no-lyrics-icon"><i class="fa-solid fa-music"></i></span>Letra no encontrada</p>';
@@ -461,19 +461,38 @@
         // Auto-traducir si está marcado
         const chkAuto = document.getElementById('chk-auto-translate');
         if (chkAuto && chkAuto.checked) {
-            setTimeout(() => translateLyrics(cues), 300);
+            _pendingAutoTranslate = setTimeout(() => {
+                // Verificar que siga siendo la misma canción
+                if (window._currentLyrics && window._currentLyrics.songId === songId) {
+                    translateLyrics(cues);
+                }
+                _pendingAutoTranslate = null;
+            }, 300);
         }
     }
 
     function translateLyrics(cues){
         const btn = document.getElementById('btn-translate-lyrics');
+        
+        // Verificar que las cues sigan siendo válidas (misma canción)
+        if (!cues || !window._currentLyrics || window._currentLyrics.cues !== cues) {
+            if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+            return;
+        }
+        
         if (btn) { btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; btn.disabled = true; }
-        fetch('/api/profile').then(r=>r.json()).then(p=>{
-            const target = p.idioma_preferido || 'es';
-            if (!cues || !Array.isArray(cues)) throw new Error('no cues');
-            const text = cues.map(c=>c.text || '').join('\n---\n');
-            return fetch('/api/translate', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({text, target}) });
-        }).then(r=>r.json()).then(data=>{
+        
+        // Obtener idioma del perfil (fallback español si falla)
+        const targetLang = (window._userLang) || 'es';
+        
+        if (!cues || !Array.isArray(cues) || cues.length === 0) {
+            resetBtn(btn);
+            return;
+        }
+        
+        const text = cues.map(c=>c.text || '').join('\n---\n');
+        fetch('/api/translate', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({text, target: targetLang}) })
+        .then(r=>r.json()).then(data=>{
             if (!data.translated) throw new Error('no translation');
             const lines = data.translated.split('\n---\n');
             const linesDiv = document.querySelector('.lyrics-lines');
@@ -481,14 +500,11 @@
                 linesDiv.innerHTML = cues.map((c,i)=> `<div class="lyric-line" data-start="${c.start}" data-index="${i}"><div class="lyric-main-text">${escapeHtml(c.text)}</div><div class="lyric-subline">${escapeHtml(lines[i]||'')}</div></div>`).join('');
                 if (btn) { btn.innerHTML = '<i class="fa-solid fa-language"></i> Traducido'; btn.disabled = false; }
             }
-        }).catch(()=> {
-            const btn = document.getElementById('btn-translate-lyrics');
-            if (btn) {
-                btn.innerHTML = '<i class="fa-solid fa-language"></i> Traducir';
-                btn.disabled = false;
-                btn.style.opacity = '1';
-            }
-        });
+        }).catch(()=> { resetBtn(btn); });
+        
+        function resetBtn(b){
+            if (b) { b.innerHTML = '<i class="fa-solid fa-language"></i> Traducir'; b.disabled = false; b.style.opacity = '1'; }
+        }
     }
 
     function renderSimilar(similares){
@@ -614,6 +630,12 @@
 
     document.addEventListener('DOMContentLoaded', () => {
         bindSongCards(); initRightPanel();
+        
+        // Cachear idioma del usuario para traducción
+        fetch('/api/profile').then(r=>r.json()).then(p=>{
+            window._userLang = p.idioma_preferido || 'es';
+        }).catch(()=>{ window._userLang = 'es'; });
+        
         const ctrls = {
             'mini-play': ()=> { tryUnlockAudio(); sendToPlayer({type:'command', cmd:'toggle'}); },
             'mini-next': ()=> sendToPlayer({type:'command', cmd:'next'}),
@@ -628,15 +650,6 @@
         const vS = document.getElementById('volume-slider');
         if (vS) vS.addEventListener('input', function(){ updateVolumeIcon(this.value); sendToPlayer({type:'command', cmd:'volume', value: parseFloat(this.value)}); });
         
-        const btnLike = document.getElementById('btn-like');
-        if (btnLike) btnLike.addEventListener('click', function(){
-            const sid = parseInt(document.getElementById('mini-title')?.dataset.songId);
-            if (sid) fetch('/api/favoritos/toggle/'+sid, {method:'POST'}).then(r=>r.json()).then(d=>{
-                this.querySelector('i').className = d.liked ? 'fa-solid fa-heart' : 'fa-regular fa-heart';
-                this.style.color = d.liked ? 'var(--accent)' : '';
-            });
-        });
-
         // Botón de traducir letras (permanente)
         const btnTrans = document.getElementById('btn-translate-lyrics');
         if (btnTrans) {

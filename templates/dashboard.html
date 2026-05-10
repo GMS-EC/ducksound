@@ -7,9 +7,9 @@
     <h1 class="dashboard-title">
         <i class="fa-solid {% if es_favoritos %}fa-heart{% else %}fa-music{% endif %}"
             style="color:var(--accent);margin-right:8px"></i>
-        {% if es_favoritos %}Tus Favoritos{% else %}<span id="dynamic-greeting">Buenos días</span>{% endif %}
+        {% if es_favoritos %}Tus Favoritos{% else %}<span id="dynamic-greeting" data-user="{{ nombre_usuario }}">Buenos días</span>{% endif %}
     </h1>
-    <p class="dashboard-subtitle">Hola, {{ nombre_usuario }}</p>
+    <p class="dashboard-subtitle">Bienvenido</p>
 </div>
 
 {% if not canciones and es_favoritos %}
@@ -188,7 +188,6 @@
                 {% if cancion.duracion %}{{ (cancion.duracion // 60) }}:{{ '%02d' % (cancion.duracion % 60) }}{% else
                 %}--:--{% endif %}
             </span>
-            <button class="btn-add-collection" data-type="cancion" data-id="{{ cancion.id }}" title="Añadir a playlist" style="background:transparent; border:none; color:var(--muted); cursor:pointer; padding:4px"><i class="fa-solid fa-plus"></i></button>
         </div>
         {% endfor %}
     </div>
@@ -206,13 +205,14 @@
         const greetingEl = document.getElementById("dynamic-greeting");
         if (greetingEl) {
             const hour = new Date().getHours();
+            const userName = greetingEl.dataset.user || '';
             let greeting = "Buenos días";
             if (hour >= 12 && hour < 20) {
                 greeting = "Buenas tardes";
             } else if (hour >= 20 || hour < 5) {
                 greeting = "Buenas noches";
             }
-            greetingEl.textContent = greeting;
+            greetingEl.textContent = greeting + ' ' + userName;
         }
 
         // Track click to play

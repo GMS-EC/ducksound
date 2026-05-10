@@ -41,7 +41,6 @@
         <span class="track-duration">
             {% if cancion.duracion %}{{ (cancion.duracion // 60) }}:{{ '%02d' % (cancion.duracion % 60) }}{% else %}--:--{% endif %}
         </span>
-        <button class="btn-add-collection" data-type="cancion" data-id="{{ cancion.id }}" title="Añadir a colección" style="background:transparent; border:none; color:var(--muted); cursor:pointer; padding:4px"><i class="fa-solid fa-plus"></i></button>
     </div>
     {% endfor %}
 </div>

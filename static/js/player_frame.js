@@ -65,7 +65,7 @@
     let nextSongPrepared = false;
     let crossfadeTriggered = false;
 
-    masterGain.gain.value = _volume;
+    masterGain.gain.value = _volume * _volume; // Curva exponencial
 
     function normalizeSong(song){
         if (!song) return song;
@@ -113,7 +113,10 @@
             do { idx = Math.floor(Math.random() * playlist.length); } while (idx === currentIndex && playlist.length > 1);
             return idx;
         }
-        return (currentIndex + 1) % playlist.length;
+        const nextIdx = currentIndex + 1;
+        // Si no hay repetición y es la última canción, no avanzar
+        if (repeatMode === 'none' && nextIdx >= playlist.length) return currentIndex;
+        return nextIdx % playlist.length;
     }
 
     async function fetchReplayGain(songId) {
@@ -283,7 +286,8 @@
                 return;
             }
             if (playlist.length && !crossfadeTriggered) {
-                playIndex(getNextIndex({consumeQueue: true}));
+                const nextIdx = getNextIndex({consumeQueue: true});
+                if (nextIdx !== currentIndex) playIndex(nextIdx);
             }
         });
 
@@ -297,7 +301,8 @@
                 if (crossfadeEnabled && d > 0 && !crossfadeTriggered && (d - t) <= crossfadeDuration) {
                     crossfadeTriggered = true;
                     if (playlist.length && repeatMode !== 'one') {
-                        playIndex(getNextIndex({consumeQueue: true}), true); // True = isCrossfading
+                        const nextIdx = getNextIndex({consumeQueue: true});
+                        if (nextIdx !== currentIndex) playIndex(nextIdx, true);
                     }
                 }
                 
@@ -383,7 +388,7 @@
             } else if (cmd === 'volume'){
                 const vol = Math.max(0, Math.min(1, Number(msg.value) || 0));
                 _volume = vol;
-                masterGain.gain.value = vol; // Apply directly to master GainNode
+                masterGain.gain.value = vol * vol; // Curva exponencial para sensación natural
                 parent.postMessage({type:'volumeChange', volume: vol}, window.location.origin);
             } else if (cmd === 'toggleMute'){
                 if (masterGain.gain.value > 0){
