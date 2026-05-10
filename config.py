@@ -1,6 +1,8 @@
 import os
 from pathlib import Path
 
+BASE_DIR = Path(__file__).resolve().parent
+
 # Configuración base de la aplicación
 class Config:
     APP_VERSION = '1.2.0'

@@ -249,9 +249,19 @@
                 const doc = parser.parseFromString(text, 'text/html');
                 const newMain = doc.querySelector('main.main-wrapper');
                 if (!newMain) return false;
-                // replace main content
+                // SPA transition: fade out
                 const currentMain = document.querySelector('main.main-wrapper');
+                currentMain.style.transition = 'opacity 0.12s ease, transform 0.12s ease';
+                currentMain.style.opacity = '0';
+                currentMain.style.transform = 'translateY(6px)';
+                await new Promise(r => setTimeout(r, 100));
+                // replace main content
                 currentMain.innerHTML = newMain.innerHTML;
+                // fade in
+                requestAnimationFrame(() => {
+                    currentMain.style.opacity = '1';
+                    currentMain.style.transform = 'translateY(0)';
+                });
                 // update title
                 if (doc.title) document.title = doc.title;
                 // execute inline scripts inside main

@@ -1,5 +1,24 @@
 // Parent bridge: forwards play commands to the iframe player and binds song-card clicks
 (function(){
+    // ===== Toast notificaciones globales =====
+    function showToast(message, type) {
+        type = type || 'info';
+        const container = document.getElementById('toast-container');
+        if (!container) {
+            const c = document.createElement('div');
+            c.id = 'toast-container';
+            c.className = 'toast-container';
+            document.body.appendChild(c);
+        }
+        const el = document.createElement('div');
+        el.className = 'toast toast-' + type;
+        const icons = {success: 'fa-regular fa-circle-check', error: 'fa-regular fa-circle-xmark', info: 'fa-regular fa-circle'};
+        el.innerHTML = '<i class="' + (icons[type] || icons.info) + '"></i><span>' + message + '</span>';
+        document.getElementById('toast-container').appendChild(el);
+        setTimeout(() => { el.classList.add('toast-out'); setTimeout(() => el.remove(), 300); }, 3000);
+    }
+    window.showToast = showToast;
+
     function resolveCoverUrl(song){
         if (!song) return '';
         if (song.cover && String(song.cover).trim() !== '') return song.cover;
@@ -79,14 +98,17 @@
             if (action === 'play-next') {
                 sendToPlayer({type: 'queueSong', song, position: 'next'});
                 selectRightTab('upnext');
+                showToast('Reproduciendo a continuación', 'info');
             } else if (action === 'add-queue') {
                 sendToPlayer({type: 'queueSong', song, position: 'end'});
                 selectRightTab('upnext');
+                showToast('Añadido a la cola', 'info');
             } else if (action === 'add-fav') {
                 fetch('/api/favoritos/toggle/' + song.id, {method:'POST'}).then(r=>r.json()).then(d=>{
                     const label = button.querySelector('span');
                     if (label) label.textContent = d.liked ? 'Quitar de favoritos' : 'Añadir a favoritos';
                     button.querySelector('i').className = d.liked ? 'fa-solid fa-heart' : 'fa-regular fa-heart';
+                    showToast(d.liked ? '♥ Añadido a favoritos' : '♡ Quitado de favoritos', 'success');
                 });
             } else if (action === 'add-playlist') {
                 if (window.openCollectionModal) window.openCollectionModal('cancion', song.id);

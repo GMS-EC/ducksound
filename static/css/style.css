@@ -3136,3 +3136,115 @@ body {
     width: 160px;
   }
 }
+
+/* ==========================================
+   TOAST NOTIFICATIONS
+   ========================================== */
+.toast-container {
+  position: fixed;
+  bottom: 80px;
+  right: 20px;
+  z-index: 99999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  border-radius: 10px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-color);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+  animation: toastIn 0.3s ease-out;
+  min-width: 200px;
+  max-width: 360px;
+}
+.toast.toast-out {
+  animation: toastOut 0.3s ease-in forwards;
+}
+.toast i { font-size: 16px; width: 20px; text-align: center; }
+.toast-success i { color: #4ade80; }
+.toast-error i { color: #ff6b6b; }
+.toast-info i { color: var(--accent); }
+
+@keyframes toastIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes toastOut {
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(100%); opacity: 0; }
+}
+
+/* ==========================================
+   CARD HOVER EFFECTS
+   ========================================== */
+.album-card {
+  transition: transform 0.25s ease, box-shadow 0.25s ease !important;
+}
+.album-card:hover {
+  transform: scale(1.03);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.4) !important;
+}
+.album-card-cover {
+  position: relative;
+  overflow: hidden;
+}
+.album-card-cover::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  background: linear-gradient(transparent, rgba(0,0,0,0.4));
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+.album-card:hover .album-card-cover::after {
+  opacity: 1;
+}
+
+/* ==========================================
+   SKELETON LOADING
+   ========================================== */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg,
+    rgba(255,255,255,0.04) 25%,
+    rgba(255,255,255,0.08) 50%,
+    rgba(255,255,255,0.04) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 4px;
+}
+.skeleton-text { height: 14px; width: 100%; margin-bottom: 8px; }
+.skeleton-text-sm { height: 11px; width: 60%; }
+.skeleton-card { width: 100%; aspect-ratio: 1; border-radius: 8px; }
+.skeleton-row { height: 48px; width: 100%; margin-bottom: 4px; }
+
+/* ==========================================
+   SPA PAGE TRANSITION
+   ========================================== */
+.page-enter {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.page-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
