@@ -115,47 +115,78 @@ def extraer_metadatos(ruta_archivo):
         return None
 
 
-def obtener_o_crear_artista(nombre, enriquecer=False):
+def obtener_o_crear_artista(nombre, enriquecer=False, mbid=None):
     if not nombre:
         return None
 
     nombre_norm = normalizar_artista(nombre)
     if not nombre_norm:
         return None
-
-    # 1. Buscar por nombre normalizado (case-insensitive, trim)
+    
     from sqlalchemy import func
-    artista_obj = Artista.query.filter(func.lower(func.trim(Artista.nombre)) == nombre_norm.lower().strip()).first()
+    from rapidfuzz import fuzz
+    UMBRAL_FUZZY = 80
+
+    # 1. Buscar por musicbrainz_id si se proporcionó (desde metadatos del archivo)
+    if mbid:
+        artista_obj = Artista.query.filter_by(musicbrainz_id=mbid).first()
+        if artista_obj:
+            return artista_obj
+
+    # 2. Buscar por nombre_normalizado
+    artista_obj = Artista.query.filter(
+        func.lower(func.trim(Artista.nombre_normalizado)) == nombre_norm.lower().strip()
+    ).first()
     if artista_obj:
         return artista_obj
 
-    # 2. Fuzzy matching contra TODOS los artistas existentes
-    #    Captura: "Artist A" ≈ "Artist A feat. B", "The Artist" ≈ "Artist, The"
-    from rapidfuzz import fuzz
-    UMBRAL_FUZZY = 85
+    # 3. Buscar en MusicBrainz API
+    from musicbrainz_client import buscar_artista
+    mb_result = buscar_artista(nombre_norm)
+    if mb_result:
+        # Buscar por MBID en BD (otro artista pudo haberlo registrado ya)
+        artista_obj = Artista.query.filter_by(musicbrainz_id=mb_result['mbid']).first()
+        if artista_obj:
+            return artista_obj
+        # Buscar por nombre_normalizado de MusicBrainz
+        mb_nombre = normalizar_artista(mb_result['nombre'])
+        if mb_nombre:
+            artista_obj = Artista.query.filter(
+                func.lower(func.trim(Artista.nombre_normalizado)) == mb_nombre.lower().strip()
+            ).first()
+            if artista_obj:
+                return artista_obj
+
+    # 4. Fuzzy matching contra artistas existentes que NO tengan MBID
     mejor_ratio = 0
     mejor_artista = None
-    for a in Artista.query.all():
-        ratio = fuzz.ratio(nombre_norm.lower(), a.nombre.lower())
+    for a in Artista.query.filter(Artista.musicbrainz_id.is_(None)).all():
+        ratio = fuzz.token_set_ratio(nombre_norm.lower(), a.nombre.lower())
         if ratio > mejor_ratio:
             mejor_ratio = ratio
             mejor_artista = a
     if mejor_ratio >= UMBRAL_FUZZY and mejor_artista:
         return mejor_artista
 
-    # 3. Crear nuevo artista (con protección UNIQUE)
+    # 5. Crear nuevo artista
     try:
-        artista_obj = Artista(nombre=nombre_norm)
+        artista_obj = Artista(
+            nombre=nombre_norm,
+            nombre_normalizado=nombre_norm,
+            musicbrainz_id=mb_result['mbid'] if mb_result else None
+        )
         db.session.add(artista_obj)
         db.session.flush()
         return artista_obj
     except Exception:
         db.session.rollback()
-        artista_obj = Artista.query.filter(func.lower(func.trim(Artista.nombre)) == nombre_norm.lower().strip()).first()
+        artista_obj = Artista.query.filter(
+            func.lower(func.trim(Artista.nombre_normalizado)) == nombre_norm.lower().strip()
+        ).first()
         return artista_obj
 
 
-def obtener_o_crear_album(album, albumartist):
+def obtener_o_crear_album(album, albumartist, mbid=None):
     if not album or not albumartist:
         return None
 
@@ -163,6 +194,13 @@ def obtener_o_crear_album(album, albumartist):
     if not album_artista_obj:
         return None
 
+    # 1. Buscar por musicbrainz_id
+    if mbid:
+        album_obj = Album.query.filter_by(musicbrainz_id=mbid).first()
+        if album_obj:
+            return album_obj
+
+    # 2. Buscar por título normalizado + artista
     album_base, _ = detectar_version(album)
     album_final = normalizar_album(album_base or album)
     if not album_final:
@@ -171,6 +209,28 @@ def obtener_o_crear_album(album, albumartist):
     albumes_artista = Album.query.filter_by(artista_id=album_artista_obj.id).all()
     album_obj = obtener_album_base_fuzz(album_final, albumes_artista)
     if album_obj:
+        return album_obj
+
+    # 3. Consultar MusicBrainz si el artista tiene MBID
+    if album_artista_obj.musicbrainz_id:
+        from musicbrainz_client import buscar_album
+        mb_album = buscar_album(album, album_artista_obj.musicbrainz_id)
+        if mb_album and not mbid:
+            album_obj = Album.query.filter_by(musicbrainz_id=mb_album['mbid']).first()
+            if album_obj:
+                return album_obj
+            mbid = mb_album['mbid']
+
+    # 4. Crear nuevo álbum
+    album_obj = Album(titulo=album_final, artista_id=album_artista_obj.id, musicbrainz_id=mbid)
+    try:
+        db.session.add(album_obj)
+        db.session.flush()
+        return album_obj
+    except Exception:
+        db.session.rollback()
+        albumes_artista = Album.query.filter_by(artista_id=album_artista_obj.id).all()
+        album_obj = obtener_album_base_fuzz(album_final, albumes_artista)
         return album_obj
 
     album_obj = Album(titulo=album_final, artista_id=album_artista_obj.id)
@@ -675,7 +735,7 @@ def escanear_carpeta_audio(progress_callback=None):
         
         artista_obj = obtener_o_crear_artista(artista_principal)
         if not artista_obj and artista_principal:
-            artista_obj = Artista(nombre=artista_principal)
+            artista_obj = Artista(nombre=artista_principal, nombre_normalizado=artista_principal)
             db.session.add(artista_obj)
             db.session.flush()
             try:
@@ -831,6 +891,16 @@ def escanear_carpeta_audio(progress_callback=None):
         print("✅ Hilo de descarga iniciado (no espera a que termine)")
     except Exception as e:
         print(f"⚠️ No se pudo iniciar la descarga en segundo plano: {e}")
+    
+    # Lanzar enriquecimiento con MusicBrainz en segundo plano
+    try:
+        from musicbrainz_client import enriquecer_artistas_sin_mbid
+        print("🚀 Buscando MBID en MusicBrainz en segundo plano...")
+        th = threading.Thread(target=enriquecer_artistas_sin_mbid, kwargs={'limite': 200})
+        th.daemon = True
+        th.start()
+    except Exception as e:
+        print(f"⚠️ No se pudo iniciar MusicBrainz: {e}")
     
     return resumen
 
@@ -1067,6 +1137,16 @@ def escaneo_rapido(progress_callback=None):
         print("✅ Hilo de descarga iniciado (no espera a que termine)")
     except Exception as e:
         print(f"⚠️ No se pudo iniciar la descarga en segundo plano: {e}")
+    
+    # Lanzar enriquecimiento con MusicBrainz en segundo plano
+    try:
+        from musicbrainz_client import enriquecer_artistas_sin_mbid
+        print("🚀 Buscando MBID en MusicBrainz en segundo plano...")
+        th = threading.Thread(target=enriquecer_artistas_sin_mbid, kwargs={'limite': 200})
+        th.daemon = True
+        th.start()
+    except Exception as e:
+        print(f"⚠️ No se pudo iniciar MusicBrainz: {e}")
     
     return resumen
 

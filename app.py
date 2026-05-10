@@ -65,6 +65,29 @@ with app.app_context():
     except Exception:
         db.session.rollback()
     
+    # Migración: Columnas MusicBrainz para artistas
+    for col in ['musicbrainz_id VARCHAR(36)', 'nombre_normalizado VARCHAR(200)']:
+        try:
+            db.session.execute(text(f'ALTER TABLE artistas ADD COLUMN {col}'))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+    try:
+        db.session.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS idx_artistas_mbid ON artistas(musicbrainz_id)'))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+    try:
+        db.session.execute(text('ALTER TABLE albumes ADD COLUMN musicbrainz_id VARCHAR(36)'))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+    try:
+        db.session.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS idx_albumes_mbid ON albumes(musicbrainz_id)'))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+    
     # Crear usuario administrador si no existe ninguno
     if Usuario.query.count() == 0:
         admin_user = Usuario(

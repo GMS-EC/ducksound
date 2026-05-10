@@ -94,14 +94,22 @@ def normalizar_artista(nombre):
         n = 'The ' + n
     
     # 3. Separar en el PRIMER delimitador de colaboración
-    # Ordenado por especificidad (el más específico primero para evitar falsos)
-    for delim in [' & ', ' vs ', ' + ', ' x ', ', ', ' / ']:
-        if delim in n:
-            # Solo separar si el delimitador está rodeado de palabras
-            partes = n.split(delim, 1)
-            if len(partes) > 1 and partes[0].strip():
-                n = partes[0].strip()
-                break
+    # Usar expresiones regulares para mayor flexibilidad
+    import re as re_mod
+    # Patrones de colaboración: feat/ft, delimitadores comunes, slash con o sin espacios
+    separadores = [
+        r'\s+feat\.?\s+', r'\s+ft\.?\s+', r'\s+featuring\s+',
+        r'\s+&\s+', r'\s+vs\.?\s+', r'\s+x\s+', r'\s+\+\s+',
+        r',\s+', r'\s*/\s*',  # Slash con cualquier cantidad de espacios
+    ]
+    for pat in separadores:
+        partes = re_mod.split(pat, n, maxsplit=1)
+        if len(partes) > 1 and partes[0].strip():
+            # Verificar que no sea un nombre válido con slash (ej: "AC/DC")
+            if '/' in pat and len(partes[0].strip()) <= 2:
+                continue  # Muy corto, probablemente siglas
+            n = partes[0].strip()
+            break
     
     # 3. " and " en minúsculas = colaboración (ej: "artist a and artist b")
     #    " And " / " AND " = parte del nombre (ej: "Blade And Bath")

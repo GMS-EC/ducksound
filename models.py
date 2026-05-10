@@ -49,7 +49,9 @@ playlist_canciones = db.Table(
 class Artista(db.Model):
     __tablename__ = 'artistas'
     id = db.Column(db.Integer, primary_key=True)
-    nombre = db.Column(db.String(200), nullable=False, unique=True, index=True)
+    nombre = db.Column(db.String(200), nullable=False, index=True)
+    nombre_normalizado = db.Column(db.String(200), nullable=True, index=True)
+    musicbrainz_id = db.Column(db.String(36), nullable=True, unique=True)
     foto_url = db.Column(db.String(500), nullable=True)
     biografia = db.Column(db.Text, nullable=True)
     fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)
@@ -68,6 +70,7 @@ class Album(db.Model):
     anio = db.Column(db.Integer, nullable=True)
     portada_url = db.Column(db.String(500), nullable=True)
     artista_id = db.Column(db.Integer, db.ForeignKey('artistas.id'), nullable=False)
+    musicbrainz_id = db.Column(db.String(36), nullable=True, unique=True)
 
     artista = db.relationship('Artista', back_populates='albums')
     canciones = db.relationship('Cancion', back_populates='album_obj', cascade='all, delete-orphan')
