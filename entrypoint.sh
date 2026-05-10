@@ -43,7 +43,7 @@ with app.app_context():
     for col in [
         'ALTER TABLE artistas ADD COLUMN IF NOT EXISTS musicbrainz_id VARCHAR(36)',
         'ALTER TABLE artistas ADD COLUMN IF NOT EXISTS nombre_normalizado VARCHAR(200)',
-        'ALTER TABLE albumes ADD COLUMN IF NOT EXISTS musicbrainz_id VARCHAR(36)',
+        'ALTER TABLE albums ADD COLUMN IF NOT EXISTS musicbrainz_id VARCHAR(36)',
     ]:
         try:
             db.session.execute(text(col))
@@ -54,7 +54,7 @@ with app.app_context():
     for idx in [
         'CREATE INDEX IF NOT EXISTS idx_artistas_nombre_normalizado ON artistas(nombre_normalizado)',
         'CREATE INDEX IF NOT EXISTS idx_artistas_mbid ON artistas(musicbrainz_id)',
-        'CREATE INDEX IF NOT EXISTS idx_albumes_mbid ON albumes(musicbrainz_id)',
+        'CREATE INDEX IF NOT EXISTS idx_albums_mbid ON albums(musicbrainz_id)',
     ]:
         try:
             db.session.execute(text(idx))

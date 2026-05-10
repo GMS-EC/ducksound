@@ -22,13 +22,40 @@ with app.app_context():
     db.create_all()
 
     # Activar WAL mode para mejor rendimiento concurrente con SQLite
+    # ─── Migraciones PostgreSQL ───────────────────────────────────
     from sqlalchemy import text
+    
+    # Migración: Columnas adicionales para artistas
+    for col in [
+        'ALTER TABLE artistas ADD COLUMN IF NOT EXISTS musicbrainz_id VARCHAR(36)',
+        'ALTER TABLE artistas ADD COLUMN IF NOT EXISTS nombre_normalizado VARCHAR(200)',
+    ]:
+        try:
+            db.session.execute(text(col))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+    
+    # Migración: Columna para albums
     try:
-        db.session.execute(text('PRAGMA journal_mode=WAL'))
-        db.session.execute(text('PRAGMA busy_timeout=30000'))
+        db.session.execute(text('ALTER TABLE albums ADD COLUMN IF NOT EXISTS musicbrainz_id VARCHAR(36)'))
         db.session.commit()
     except Exception:
         db.session.rollback()
+    
+    # Índices
+    for idx in [
+        'CREATE INDEX IF NOT EXISTS idx_artistas_nombre_normalizado ON artistas(nombre_normalizado)',
+        'CREATE INDEX IF NOT EXISTS idx_artistas_mbid ON artistas(musicbrainz_id)',
+        'CREATE INDEX IF NOT EXISTS idx_albums_mbid ON albums(musicbrainz_id)',
+    ]:
+        try:
+            db.session.execute(text(idx))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+    
+    # Crear usuario administrador si no existe ninguno
     
     # Migración automática: Añadir numero_pista si no existe
     try:
