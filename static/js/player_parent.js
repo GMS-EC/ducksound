@@ -555,14 +555,29 @@
         const bS = document.getElementById('mini-shuffle'), bR = document.getElementById('mini-repeat');
         if (bS) {
             bS.style.color = s ? 'var(--accent)' : '';
-            bS.querySelector('i').className = s ? 'fa-solid fa-shuffle' : 'fa-solid fa-shuffle';
+            bS.style.opacity = s ? '1' : '0.6';
+            bS.title = s ? 'Aleatorio activo' : 'Aleatorio';
         }
         if (bR) {
-            const colors = {'none':'', 'one':'var(--accent)', 'all':'var(--accent)'};
-            bR.style.color = colors[r] || '';
-            // Icono diferente para repeat-one vs repeat-all
-            if (r === 'one') bR.querySelector('i').className = 'fa-solid fa-repeat-1';
-            else bR.querySelector('i').className = 'fa-solid fa-repeat';
+            const isActive = r === 'one' || r === 'all';
+            bR.style.color = isActive ? 'var(--accent)' : '';
+            bR.style.opacity = isActive ? '1' : '0.6';
+            // fa-repeat-1 no existe en Font Awesome Free, usar alternativa
+            bR.querySelector('i').className = 'fa-solid fa-repeat';
+            // Badge "1" solo para repeat-one
+            let badge = bR.querySelector('.repeat-badge');
+            if (r === 'one') {
+                if (!badge) {
+                    badge = document.createElement('span');
+                    badge.className = 'repeat-badge';
+                    badge.textContent = '1';
+                    bR.appendChild(badge);
+                }
+                badge.style.display = 'inline';
+            } else if (badge) {
+                badge.style.display = 'none';
+            }
+            bR.title = r === 'none' ? 'Repetir' : (r === 'one' ? 'Repetir: una canción' : 'Repetir: todas');
         }
     }
 

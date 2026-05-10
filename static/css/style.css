@@ -2892,13 +2892,14 @@ body {
 .spotify-tracklist .empty-state { grid-column: 1 / -1; }
 
 /* ==========================================
+/* ==========================================
    LYRICS TOOLBAR
    ========================================== */
 .lyrics-toolbar {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--border-color);
   position: sticky;
   top: 0;
@@ -2906,35 +2907,70 @@ body {
   z-index: 1;
 }
 .lyrics-translate-btn {
-  background: transparent;
+  background: rgba(255,255,255,0.06);
   border: 1px solid var(--border-color);
-  color: var(--muted);
-  font-size: 11px;
-  padding: 5px 12px;
-  border-radius: 4px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 5px 14px;
+  border-radius: 20px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.2s;
   font-family: inherit;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 .lyrics-translate-btn:hover {
+  background: rgba(255,255,255,0.1);
   border-color: var(--accent);
   color: var(--accent);
 }
+.lyrics-translate-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
 .lyrics-auto-translate {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   cursor: pointer;
   margin-left: auto;
   user-select: none;
+  padding: 4px 8px;
+  border-radius: 20px;
+  transition: all 0.2s;
 }
-.lyrics-auto-translate input {
+.lyrics-auto-translate:hover {
+  background: rgba(255,255,255,0.04);
+  color: var(--text);
+}
+.lyrics-auto-translate input[type="checkbox"] {
   accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
 }
 .lyrics-content-scroll {
   flex: 1;
   overflow-y: auto;
   padding: 12px;
+}
+
+/* Repeat badge */
+.repeat-badge {
+  position: absolute;
+  top: 2px;
+  right: 1px;
+  font-size: 8px;
+  font-weight: 800;
+  color: var(--accent);
+  pointer-events: none;
+  line-height: 1;
+}
+#mini-repeat {
+  position: relative;
 }

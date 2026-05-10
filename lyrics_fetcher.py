@@ -1,9 +1,14 @@
 import requests
 import os
 import re
+import time
 from pathlib import Path
 from models import db, Cancion
 from config import Config
+
+# Caché en memoria para letras: {cancion_id: (timestamp, resultado)}
+_lyrics_cache = {}
+_LYRICS_CACHE_TTL = 3600  # 1 hora
 
 # Variable global para seguimiento de progreso de descarga de letras
 _lyrics_progress = {
@@ -71,7 +76,13 @@ def obtener_o_descargar_letra(cancion_id):
         if not cancion:
             return None
         
-        # Paso 1: Verificar caché local
+        # Paso 0: Verificar caché en memoria
+        if cancion_id in _lyrics_cache:
+            cached_time, cached_result = _lyrics_cache[cancion_id]
+            if time.time() - cached_time < _LYRICS_CACHE_TTL:
+                return cached_result
+        
+        # Paso 1: Verificar caché local (archivo en disco)
         if cancion.ruta_archivo_lrc:
             ruta_lrc = Path(cancion.ruta_archivo_lrc)
             if ruta_lrc.exists():
@@ -80,7 +91,9 @@ def obtener_o_descargar_letra(cancion_id):
                         contenido = f.read()
                     
                     tipo = _detectar_tipo_lyrics(contenido)
-                    return {"tipo": tipo, "letra": contenido}
+                    resultado = {"tipo": tipo, "letra": contenido}
+                    _lyrics_cache[cancion_id] = (time.time(), resultado)
+                    return resultado
                 except (IOError, UnicodeDecodeError) as e:
                     print(f"Error leyendo archivo local {ruta_lrc}: {e}")
                     # Continuar con búsqueda de rescate si el archivo local no se puede leer
@@ -103,7 +116,9 @@ def obtener_o_descargar_letra(cancion_id):
                     
                     tipo = _detectar_tipo_lyrics(contenido)
                     print(f"🔄 Letra rescatada del disco: {Path(ruta_lrc_rescate).name}")
-                    return {"tipo": tipo, "letra": contenido}
+                    resultado = {"tipo": tipo, "letra": contenido}
+                    _lyrics_cache[cancion_id] = (time.time(), resultado)
+                    return resultado
                 except (IOError, UnicodeDecodeError) as e:
                     print(f"Error leyendo archivo rescatado {ruta_lrc_rescate}: {e}")
                     # Continuar con la API si el archivo rescatado no se puede leer
@@ -168,7 +183,9 @@ def obtener_o_descargar_letra(cancion_id):
                     cancion.ruta_archivo_lrc = str(ruta_archivo)
                     db.session.commit()
                     
-                    return {"tipo": tipo_letra, "letra": letra_contenido}
+                    resultado = {"tipo": tipo_letra, "letra": letra_contenido}
+                    _lyrics_cache[cancion_id] = (time.time(), resultado)
+                    return resultado
             
             elif response.status_code == 404:
                 print(f"No se encontró letra para canción {cancion_id}")
