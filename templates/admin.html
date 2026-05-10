@@ -602,7 +602,8 @@
             const res = await fetch('/admin/escanear/status/' + encodeURIComponent(taskId));
             if (res.status === 404) {
                 sessionStorage.removeItem('ducksound_scan_task_id');
-                setReadyState();
+                panel.style.display = 'none';
+                if (pollTimer){ clearInterval(pollTimer); pollTimer = null; }
                 return;
             }
             if (!res.ok) {
@@ -612,11 +613,10 @@
             const data = await res.json();
             renderStatus(data);
         }catch(err){
-            statusText.textContent = 'ERROR';
-            msg.textContent = 'No se pudo obtener el progreso';
-            currentFile.textContent = String(err);
-            setRunningState(false);
+            // Error de conexión, ocultar panel hasta que se inicie un nuevo escaneo
+            panel.style.display = 'none';
             if (pollTimer){ clearInterval(pollTimer); pollTimer = null; }
+            sessionStorage.removeItem('ducksound_scan_task_id');
         }
     }
 
@@ -630,19 +630,10 @@
         pollTimer = setInterval(function(){ pollStatus(taskId); }, 1200);
     }
 
-    // Al cargar la página: mostrar panel en estado listo
+    // Al cargar: limpiar estado previo y verificar escaneo activo
     sessionStorage.removeItem('ducksound_scan_task_id');
-    function setReadyState() {
-        panel.style.display = 'block';
-        bar.style.width = '0%';
-        statusText.textContent = 'LISTO';
-        msg.textContent = 'Esperando escaneo...';
-        counter.textContent = '0/0';
-        currentFile.textContent = '';
-        summary.style.display = 'none';
-    }
-    setReadyState();
-
+    panel.style.display = 'none';
+    
     async function checkActiveOnLoad(){
         try {
             const res = await fetch('/admin/escanear/active');
@@ -705,6 +696,11 @@
     function renderLyricsProgress(data) {
         if (!data) return;
         
+        if (!data.active && !data.finished) {
+            lyricsPanel.style.display = 'none';
+            return;
+        }
+        
         lyricsPanel.style.display = 'block';
         const pct = Number(data.percent || 0);
         lyricsBar.style.width = Math.max(0, Math.min(100, pct)) + '%';
@@ -719,13 +715,10 @@
                 '<div style="font-weight:600;margin-bottom:6px"><i class="fa-regular fa-circle-check" style="color:#4ade80;margin-right:6px"></i>Descarga completada</div>' +
                 '<div><i class="fa-solid fa-download" style="margin-right:6px"></i>Descargadas: <strong>' + (data.downloaded ?? 0) + '</strong></div>' +
                 '<div><i class="fa-solid fa-circle-exclamation" style="margin-right:6px"></i>Errores: <strong>' + (data.errors ?? 0) + '</strong></div>';
-        } else if (data.active) {
-            lyricsStatusText.textContent = 'DESCARGANDO';
-            lyricsMsg.textContent = 'Descargando letras...';
-            lyricsCurrentSong.textContent = data.current_song ? ('Canción actual: ' + data.current_song) : '';
         } else {
-            lyricsStatusText.textContent = 'INACTIVO';
-            lyricsMsg.textContent = 'No hay descarga en progreso';
+            lyricsStatusText.textContent = 'DESCARGANDO';
+            lyricsMsg.textContent = data.current_song ? ('Descargando: ' + data.current_song) : 'Descargando letras...';
+            lyricsSummary.style.display = 'none';
         }
         
         const completed = Number(data.completed || 0);
@@ -739,16 +732,7 @@
             if (!res.ok) return;
             const data = await res.json();
             renderLyricsProgress(data);
-            
-            // Si no está activo y ya terminó, detener el polling después de 30 segundos
-            if (!data.active && data.finished) {
-                setTimeout(() => {
-                    if (lyricsPollTimer) { clearInterval(lyricsPollTimer); lyricsPollTimer = null; }
-                }, 30000);
-            }
-        } catch (err) {
-            // Silencioso
-        }
+        } catch (err) {}
     }
 
     // Iniciar polling de letras
@@ -779,6 +763,8 @@
                     mbSummary.style.display = 'block';
                     mbSummary.innerHTML = '<div style="font-weight:600;margin-bottom:6px"><i class="fa-regular fa-circle-check" style="color:#4ade80;margin-right:6px"></i>MusicBrainz completado</div>' +
                         '<div><i class="fa-solid fa-id-card" style="margin-right:6px"></i>Encontrados: <strong>' + (data.found ?? 0) + '</strong> / ' + (data.total ?? 0) + '</div>';
+                } else {
+                    mbPanel.style.display = 'none';
                 }
                 return;
             }
