@@ -59,7 +59,9 @@
         menu.innerHTML = `
             <button type="button" data-action="play-next"><i class="fa-solid fa-forward-step"></i><span>Reproducir a continuación</span></button>
             <button type="button" data-action="add-queue"><i class="fa-solid fa-list-ul"></i><span>Añadir a la cola</span></button>
+            <button type="button" data-action="add-fav"><i class="fa-regular fa-heart"></i><span>Añadir a favoritos</span></button>
             <button type="button" data-action="add-playlist"><i class="fa-solid fa-plus"></i><span>Añadir a playlist</span></button>
+            <div class="context-divider"></div>
             <button type="button" data-action="go-album" class="context-album"><i class="fa-regular fa-circle-dot"></i><span>Ir al álbum</span></button>
             <button type="button" data-action="go-artist" class="context-artist"><i class="fa-regular fa-user"></i><span>Ir al artista</span></button>
         `;
@@ -80,6 +82,12 @@
             } else if (action === 'add-queue') {
                 sendToPlayer({type: 'queueSong', song, position: 'end'});
                 selectRightTab('upnext');
+            } else if (action === 'add-fav') {
+                fetch('/api/favoritos/toggle/' + song.id, {method:'POST'}).then(r=>r.json()).then(d=>{
+                    const label = button.querySelector('span');
+                    if (label) label.textContent = d.liked ? 'Quitar de favoritos' : 'Añadir a favoritos';
+                    button.querySelector('i').className = d.liked ? 'fa-solid fa-heart' : 'fa-regular fa-heart';
+                });
             } else if (action === 'add-playlist') {
                 if (window.openCollectionModal) window.openCollectionModal('cancion', song.id);
             } else if (action === 'go-album' && card.dataset.albumId) {
@@ -425,6 +433,14 @@
         return cues.sort((a,b)=>a.start - b.start);
     }
 
+    function updateTranslateBtn(enabled) {
+        const btn = document.getElementById('btn-translate-lyrics');
+        if (!btn) return;
+        btn.disabled = !enabled;
+        btn.innerHTML = enabled ? '<i class="fa-solid fa-language"></i> Traducir' : '<i class="fa-solid fa-language"></i> Traducir';
+        btn.style.opacity = enabled ? '1' : '0.4';
+    }
+
     function renderLyrics(cues, songId){
         const lyricsPanel = document.getElementById('lyrics-content-panel');
         if (!lyricsPanel) return;
@@ -434,11 +450,13 @@
         if (!cues || cues.length===0){
             scrollDiv.innerHTML = '<p class="no-lyrics"><span class="no-lyrics-icon"><i class="fa-solid fa-music"></i></span>Letra no encontrada</p>';
             window._currentLyrics = null;
+            updateTranslateBtn(false);
             return;
         }
         const html = cues.map((c, i)=>`<div class="lyric-line" data-start="${c.start}" data-index="${i}">${escapeHtml(c.text)}</div>`).join('');
         scrollDiv.innerHTML = '<div class="lyrics-lines">' + html + '</div>';
         window._currentLyrics = {songId: songId, cues: cues, index: -1};
+        updateTranslateBtn(true);
         
         // Auto-traducir si está marcado
         const chkAuto = document.getElementById('chk-auto-translate');
@@ -463,7 +481,14 @@
                 linesDiv.innerHTML = cues.map((c,i)=> `<div class="lyric-line" data-start="${c.start}" data-index="${i}"><div class="lyric-main-text">${escapeHtml(c.text)}</div><div class="lyric-subline">${escapeHtml(lines[i]||'')}</div></div>`).join('');
                 if (btn) { btn.innerHTML = '<i class="fa-solid fa-language"></i> Traducido'; btn.disabled = false; }
             }
-        }).catch(()=> { if (btn) { btn.innerHTML = '<i class="fa-solid fa-language"></i> Error'; btn.disabled = false; } });
+        }).catch(()=> {
+            const btn = document.getElementById('btn-translate-lyrics');
+            if (btn) {
+                btn.innerHTML = '<i class="fa-solid fa-language"></i> Traducir';
+                btn.disabled = false;
+                btn.style.opacity = '1';
+            }
+        });
     }
 
     function renderSimilar(similares){
@@ -540,6 +565,7 @@
         document.querySelectorAll('#right-panel .tab').forEach(t => t.addEventListener('click', ()=> selectRightTab(t.dataset.tab)));
         selectRightTab(window._activeRightTab || 'lyrics');
         if (window._currentLyrics) renderLyrics(window._currentLyrics.cues, window._currentLyrics.songId);
+        else updateTranslateBtn(false);
         if (window._currentUpNext) renderUpNextList(document.getElementById('upnext-content'), window._currentUpNext);
         if (window._currentSimilar) renderSimilar(window._currentSimilar);
         const lP = document.getElementById('lyrics-content-panel');
@@ -616,7 +642,13 @@
         if (btnTrans) {
             btnTrans.addEventListener('click', function(){
                 const L = window._currentLyrics;
-                if (L && L.cues) translateLyrics(L.cues);
+                if (L && L.cues && L.cues.length > 0) {
+                    translateLyrics(L.cues);
+                } else {
+                    // Feedback visual: flash el botón para indicar que no hay letras
+                    btnTrans.style.borderColor = 'var(--accent)';
+                    setTimeout(() => { btnTrans.style.borderColor = ''; }, 1000);
+                }
             });
         }
 

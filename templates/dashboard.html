@@ -31,19 +31,30 @@
 <!-- VISTA CLÁSICA DE LISTA PARA FAVORITOS -->
 <div class="tracklist spotify-tracklist" id="dashboard-tracklist">
     {% for cancion in canciones %}
-    <div class="track-item" data-cancion-id="{{ cancion.id }}"
-        data-audio="{{ url_for('servir_audio', cancion_id=cancion.id) }}"
-        data-cover="{{ url_for('servir_album_art', cancion_id=cancion.id) }}" data-titulo="{{ cancion.titulo }}"
-        data-artista="{{ cancion.artista_obj.nombre if cancion.artista_obj else 'Desconocido' }}">
-        <button class="track-play-btn" title="Reproducir"><i class="fa-solid fa-play"></i></button>
-        <span class="track-num">
-            <span class="num-text">{{ loop.index }}</span>
-            <span class="playing-eq"><span></span><span></span><span></span></span>
-        </span>
-        <div class="track-cover-sm">
-            <img src="{{ url_for('servir_album_art', cancion_id=cancion.id) }}" alt="" loading="lazy"
-                onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-            <div class="cover-fallback" style="display:none"><i class="fa-solid fa-music"></i></div>
+        <div class="track-item" data-cancion-id="{{ cancion.id }}"
+            data-audio="{{ url_for('servir_audio', cancion_id=cancion.id) }}"
+            data-cover="{{ url_for('servir_album_art', cancion_id=cancion.id) }}" data-titulo="{{ cancion.titulo }}"
+            data-artista="{{ cancion.artista_obj.nombre if cancion.artista_obj else 'Desconocido' }}">
+            <button class="track-play-btn" title="Reproducir"><i class="fa-solid fa-play"></i></button>
+            <span class="track-num">
+                <span class="num-text">{{ loop.index }}</span>
+                <span class="playing-eq"><span></span><span></span><span></span></span>
+            </span>
+            <div class="track-cover-sm">
+                <img src="{{ url_for('servir_album_art', cancion_id=cancion.id) }}" alt="" loading="lazy"
+                    onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                <div class="cover-fallback" style="display:none"><i class="fa-solid fa-music"></i></div>
+            </div>
+            <div class="track-info">
+                <span class="track-title">{{ cancion.titulo }}</span>
+                <span class="track-artist-mobile">{{ cancion.artista_obj.nombre if cancion.artista_obj else '' }}</span>
+            </div>
+            <span class="track-artist-col">{{ cancion.artista_obj.nombre if cancion.artista_obj else '' }}</span>
+            <span class="track-duration">
+                <span class="duration-text">
+                    {% if cancion.duracion %}{{ (cancion.duracion // 60) }}:{{ '%02d' % (cancion.duracion % 60) }}{% else %}--:--{% endif %}
+                </span>
+            </span>
         </div>
         <div class="track-info">
             <span class="track-title">{{ cancion.titulo }}</span>
