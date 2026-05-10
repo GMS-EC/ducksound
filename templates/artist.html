@@ -190,8 +190,7 @@
 
     document.querySelectorAll('#artist-tracklist .track-item').forEach(function(item) {
         item.addEventListener('click', function(e) {
-            if (e.target.closest('.btn-add-collection')) return;
-            if (e.target.closest('.track-play-btn')) {}
+            if (!e.target.closest('.track-play-btn')) return;
             const allTracks = Array.from(document.querySelectorAll('#artist-tracklist .track-item'));
             const playlist = allTracks.map(t => ({
                 id: parseInt(t.dataset.cancionId),

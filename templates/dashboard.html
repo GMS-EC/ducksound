@@ -215,10 +215,10 @@
             greetingEl.textContent = greeting + ' ' + userName;
         }
 
-        // Track click to play
+        // Track click to play (solo desde el botón play)
         document.querySelectorAll('.track-item').forEach(function(item) {
             item.addEventListener('click', function(e) {
-                if (e.target.closest('.btn-add-collection')) return;
+                if (!e.target.closest('.track-play-btn')) return;
                 const allTracks = Array.from(document.querySelectorAll('.track-item'));
                 const playlist = allTracks.map(t => ({
                     id: parseInt(t.dataset.cancionId),

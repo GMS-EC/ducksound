@@ -72,7 +72,7 @@
     // Track click to play
     document.querySelectorAll('.track-item').forEach(function(item) {
         item.addEventListener('click', function(e) {
-            if (e.target.closest('.btn-add-collection')) return;
+            if (!e.target.closest('.track-play-btn')) return;
             // Build playlist from all tracks in collection
             const allTracks = Array.from(document.querySelectorAll('.track-item'));
             const playlist = allTracks.map(t => ({

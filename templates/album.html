@@ -129,7 +129,10 @@
     if (playBtn) {
         playBtn.addEventListener('click', function() {
             const firstTrack = document.querySelector('.track-item');
-            if (firstTrack) firstTrack.click();
+            if (firstTrack) {
+                const playBtnEl = firstTrack.querySelector('.track-play-btn');
+                if (playBtnEl) playBtnEl.click();
+            }
         });
     }
     // Shuffle button
@@ -139,13 +142,15 @@
             const tracks = Array.from(document.querySelectorAll('.track-item'));
             if (tracks.length === 0) return;
             const randomTrack = tracks[Math.floor(Math.random() * tracks.length)];
-            randomTrack.click();
+            const playBtnEl = randomTrack.querySelector('.track-play-btn');
+            if (playBtnEl) playBtnEl.click();
         });
     }
-    // Track click to play
+    // Track click to play (solo desde el botón play)
     document.querySelectorAll('.track-item').forEach(function(item) {
         item.addEventListener('click', function(e) {
-            if (e.target.closest('.btn-add-collection')) return;
+            const playBtn = e.target.closest('.track-play-btn');
+            if (!playBtn) return;
             // Build playlist from all tracks
             const allTracks = Array.from(document.querySelectorAll('.track-item'));
             const playlist = allTracks.map(t => ({
@@ -157,7 +162,6 @@
                 lyrics: t.dataset.lyrics || null
             }));
             const songId = parseInt(item.dataset.cancionId);
-            // Send playlist and play
             const iframe = document.getElementById('player-frame');
             if (iframe && iframe.contentWindow) {
                 iframe.contentWindow.postMessage({type: 'setPlaylist', playlist: playlist}, window.location.origin);
@@ -168,7 +172,6 @@
                     }, 100);
                 }
             }
-            // Highlight
             document.querySelectorAll('.track-item').forEach(t => t.classList.remove('playing'));
             item.classList.add('playing');
         });

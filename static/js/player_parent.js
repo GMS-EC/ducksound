@@ -200,12 +200,12 @@
             if (card.dataset.playerClickBound) return;
             card.dataset.playerClickBound = '1';
             card.addEventListener('click', (e) => {
-                // Ensure audio is unlocked by user gesture (fix autoplay blocking)
+                // Ensure audio is unlocked by user gesture
                 tryUnlockAudio();
 
-                if (e.target.classList.contains('btn-play-song') || e.target.closest('.btn-play-song')) {
-                    e.stopPropagation();
-                }
+                // Solo reproducir si se hizo clic en el botón play
+                if (!e.target.closest('.track-play-btn')) return;
+
                 const id = parseInt(card.dataset.cancionId);
                 const song = songFromCard(card);
                 

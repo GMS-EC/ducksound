@@ -337,7 +337,8 @@
                 const pf = document.getElementById('player-frame');
                 if (pf && pf.contentWindow) {
                     pf.contentWindow.postMessage({
-                        type: 'settings',
+                        type: 'command',
+                        cmd: 'settings',
                         crossfade_enabled: d.crossfade_enabled
                     }, window.location.origin);
                 }

@@ -52,7 +52,7 @@ El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1
 ### 🐳 Docker
 - **Entrypoint automático**: `entrypoint.sh` ejecuta migraciones y configura el servicio.
 - **Modos de inicio**: `web` (Gunicorn), `worker` (RQ), `migrate-only`.
-- **Gunicorn con gthread**: 4 workers × 2 hilos para mejor concurrencia.
+- **Gunicorn con gthread**: 1 worker × 8 threads para estado compartido.
 - **Healthcheck en Redis**: docker-compose espera a que Redis esté listo antes de iniciar web/worker.
 - **PostgreSQL como única base de datos**: Eliminado SQLite. La URL se construye automáticamente desde `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`.
 - **Variables de entorno simplificadas**: `.env.example` con todas las variables documentadas y agrupadas por sección.
@@ -62,6 +62,20 @@ El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1
 - **Tests de recommender**: Verificación de estructura de resultados y rango de similitud.
 - **GitHub Actions**: Workflow CI con matrix Python 3.10/3.11, compilación de todos los módulos, ejecución de tests y build de Docker image.
 - **Dependencias**: Agregados `pytest`, `pytest-flask`, `psycopg2-binary` a requirements.txt.
+
+### 🔄 Estado persistente en Redis
+- **Progreso de escaneo**: Migrado de dict en memoria a Redis con TTL de 2 horas.
+- **Progreso de letras**: Migrado a Redis — sobrevive a reinicios del servidor web.
+- **Progreso de MusicBrainz**: Migrado a Redis — mismo tracking que letras.
+- **Tasks RQ**: Escaneos completos y rápidos ahora se ejecutan como jobs RQ en workers separados.
+
+### 🐛 Correcciones adicionales
+- **Grupo por artista (PostgreSQL)**: Reemplazado `GROUP BY` inválido por iteración en Python.
+- **Crossfade desde perfil**: Corregido el formato del mensaje al reproductor (faltaba `type: 'command'`).
+- **Click en tracklist**: Ahora solo se reproduce al hacer clic en el botón play (`.track-play-btn`), no en toda la fila.
+- **Play All / Shuffle**: Corregidos en álbumes, artistas, daily mixes y colecciones.
+- **Route cache**: Restaurada función `route_cache()` eliminada accidentalmente al mover el código.
+- **Scan polling**: El panel de progreso nunca se oculta por errores de red — reintenta silenciosamente.
 
 ---
 
