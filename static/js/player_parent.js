@@ -425,7 +425,9 @@
         const btn = document.getElementById('btn-translate-lyrics');
         if (!btn) return;
         btn.disabled = !enabled;
-        btn.innerHTML = enabled ? '<i class="fa-solid fa-language"></i> Traducir' : '<i class="fa-solid fa-language"></i> Traducir';
+        // No sobrescribir "Traducido" si ya lo está
+        if (enabled && btn.innerHTML.includes('Traducido')) return;
+        btn.innerHTML = '<i class="fa-solid fa-language"></i> Traducir';
         btn.style.opacity = enabled ? '1' : '0.4';
     }
 
@@ -633,6 +635,16 @@
             window._userLang = p.idioma_preferido || 'es';
         }).catch(()=>{ window._userLang = 'es'; });
         
+        // Restaurar estado del checkbox auto-traducir
+        const chkAuto = document.getElementById('chk-auto-translate');
+        if (chkAuto) {
+            const saved = localStorage.getItem('ducksound_auto_translate');
+            if (saved === 'true') chkAuto.checked = true;
+            chkAuto.addEventListener('change', function(){
+                localStorage.setItem('ducksound_auto_translate', this.checked);
+            });
+        }
+        
         const ctrls = {
             'mini-play': ()=> { tryUnlockAudio(); sendToPlayer({type:'command', cmd:'toggle'}); },
             'mini-next': ()=> sendToPlayer({type:'command', cmd:'next'}),
@@ -651,6 +663,11 @@
         const btnTrans = document.getElementById('btn-translate-lyrics');
         if (btnTrans) {
             btnTrans.addEventListener('click', function(){
+                // Cancelar auto-traducción pendiente al hacer clic manual
+                if (_pendingAutoTranslate) {
+                    clearTimeout(_pendingAutoTranslate);
+                    _pendingAutoTranslate = null;
+                }
                 const L = window._currentLyrics;
                 if (L && L.cues && L.cues.length > 0) {
                     translateLyrics(L.cues);
