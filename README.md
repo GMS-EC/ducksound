@@ -1,4 +1,4 @@
-# 🦆 DuckSound v1.2.0
+# 🦆 DuckSound
 
 **DuckSound** es un servidor de streaming de música personal, self-hosted, con interfaz web estilo Spotify, reproductor persistente, letras automatizadas desde múltiples fuentes, deduplicación con MusicBrainz y recomendaciones inteligentes.
 
