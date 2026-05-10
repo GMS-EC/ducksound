@@ -600,6 +600,18 @@
     async function pollStatus(taskId){
         try{
             const res = await fetch('/admin/escanear/status/' + encodeURIComponent(taskId));
+            if (res.status === 404) {
+                // El escaneo ya no existe (servidor reiniciado o tarea limpiada)
+                statusText.textContent = 'INTERRUMPIDO';
+                msg.textContent = 'El escaneo fue interrumpido (servidor reiniciado)';
+                currentFile.textContent = '';
+                setRunningState(false);
+                if (pollTimer){ clearInterval(pollTimer); pollTimer = null; }
+                sessionStorage.removeItem('ducksound_scan_task_id');
+                summary.style.display = 'block';
+                summary.innerHTML = '<div style="color:#ff8a8a;font-weight:600"><i class="fa-solid fa-triangle-exclamation" style="margin-right:6px"></i>Escaneo interrumpido</div><div>El servidor se reinició durante el escaneo. Inicia uno nuevo.</div>';
+                return;
+            }
             if (!res.ok) throw new Error('No se pudo consultar estado');
             const data = await res.json();
             renderStatus(data);
