@@ -21,20 +21,7 @@ db.init_app(app)
 with app.app_context():
     db.create_all()
 
-    # Activar WAL mode para mejor rendimiento concurrente con SQLite
-    # ─── Migraciones PostgreSQL ───────────────────────────────────
-    from sqlalchemy import text
-    
-    # Migración: Columnas adicionales para artistas
-    for col in [
-        'ALTER TABLE artistas ADD COLUMN IF NOT EXISTS musicbrainz_id VARCHAR(36)',
-        'ALTER TABLE artistas ADD COLUMN IF NOT EXISTS nombre_normalizado VARCHAR(200)',
-    ]:
-        try:
-            db.session.execute(text(col))
-            db.session.commit()
-        except Exception:
-            db.session.rollback()
+    # Crear usuario administrador si no existe ninguno
     
     # Migración: Columna para albums
     try:
