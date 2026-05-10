@@ -44,8 +44,18 @@
     <!-- Reproductor persistente en iframe (debe estar ANTES del main para que exista cuando scripts se ejecuten) -->
     <iframe id="player-frame" src="/player_frame" style="position:fixed;left:0;right:0;bottom:56px;height:1px;border:0;z-index:-1;background:transparent;display:none"></iframe>
 
+    <!-- Hamburger menu button (mobile only) -->
+    <button id="sidebar-toggle" class="sidebar-toggle" aria-label="Menú">
+        <i class="fa-solid fa-bars"></i>
+    </button>
+    <div id="sidebar-overlay" class="sidebar-overlay"></div>
+    <button id="right-panel-toggle" class="right-panel-toggle" aria-label="Panel">
+        <i class="fa-solid fa-chevron-left"></i>
+    </button>
+    <div id="right-panel-overlay" class="right-panel-overlay"></div>
+
     <!-- Sidebar -->
-    <aside class="sidebar">
+    <aside class="sidebar" id="sidebar">
         <a href="{{ url_for('dashboard') }}" class="logo-container" style="text-decoration:none;color:inherit"><img src="{{ url_for('static', filename='img/logo.svg') }}" alt="DuckSound" style="height:32px;width:auto"> DuckSound</a>
         <nav class="nav-menu">
             <a href="{{ url_for('dashboard') }}" class="nav-item {% if request.endpoint == 'dashboard' and not es_favoritos %}active{% endif %}"><i class="fa-solid fa-house"></i> Principal</a>
@@ -455,6 +465,50 @@
                 });
         });
     }
+    // Sidebar toggle para móviles
+    (function(){
+        const btn = document.getElementById('sidebar-toggle');
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('sidebar-overlay');
+        if (!btn || !sidebar) return;
+        function closeSidebar() {
+            sidebar.classList.remove('open');
+            if (overlay) overlay.classList.remove('visible');
+            document.body.style.overflow = '';
+        }
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            sidebar.classList.toggle('open');
+            if (overlay) overlay.classList.toggle('visible');
+            document.body.style.overflow = sidebar.classList.contains('open') ? 'hidden' : '';
+        });
+        if (overlay) overlay.addEventListener('click', closeSidebar);
+        sidebar.querySelectorAll('a').forEach(a => a.addEventListener('click', closeSidebar));
+        document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeSidebar(); });
+    })();
+    // Right panel toggle para móviles
+    (function(){
+        const btn = document.getElementById('right-panel-toggle');
+        const panel = document.getElementById('right-panel');
+        const overlay = document.getElementById('right-panel-overlay');
+        if (!btn || !panel) return;
+        function closePanel() {
+            panel.classList.remove('open');
+            if (overlay) overlay.classList.remove('visible');
+            document.body.style.overflow = '';
+        }
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            panel.classList.toggle('open');
+            if (overlay) overlay.classList.toggle('visible');
+            document.body.style.overflow = panel.classList.contains('open') ? 'hidden' : '';
+            this.innerHTML = panel.classList.contains('open')
+                ? '<i class="fa-solid fa-chevron-right"></i>'
+                : '<i class="fa-solid fa-chevron-left"></i>';
+        });
+        if (overlay) overlay.addEventListener('click', closePanel);
+        document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closePanel(); });
+    })();
     </script>
 </body>
 </html>
