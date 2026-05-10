@@ -78,6 +78,23 @@
         <div id="lyrics-summary" style="display:none;margin-top:10px;padding:10px;border-radius:8px;background:rgba(0,0,0,0.2)"></div>
     </div>
 
+    <!-- Panel de progreso de MusicBrainz -->
+    <div id="mb-progress-panel" style="display:none;margin-top:20px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">
+            <strong style="font-size:14px"><i class="fa-solid fa-id-card" style="margin-right:6px;color:var(--accent)"></i>MusicBrainz - Identificando artistas</strong>
+            <span id="mb-status-text" style="font-size:12px;color:rgba(232,234,237,0.75)">Iniciando...</span>
+        </div>
+        <div style="height:10px;background:rgba(255,255,255,0.08);border-radius:999px;overflow:hidden">
+            <div id="mb-progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg, #8b5cf6 0%, #a78bfa 100%);transition:width .25s ease"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:12px;color:rgba(232,234,237,0.65)">
+            <span id="mb-message">Esperando inicio...</span>
+            <span id="mb-counter">0/0</span>
+        </div>
+        <div id="mb-current-artist" style="margin-top:8px;font-size:12px;color:rgba(232,234,237,0.8)"></div>
+        <div id="mb-summary" style="display:none;margin-top:10px;padding:10px;border-radius:8px;background:rgba(0,0,0,0.2)"></div>
+    </div>
+
     <!-- ===== VERSIÓN Y ACTUALIZACIONES ===== -->
     <div class="version-section">
         <h2 class="version-section-title"><i class="fa-solid fa-code-branch"></i> Versión y Actualizaciones</h2>
@@ -717,6 +734,46 @@
     // Iniciar polling de letras
     pollLyricsProgress();
     lyricsPollTimer = setInterval(pollLyricsProgress, 3000);
+
+    // ===== MusicBrainz progress =====
+    const mbPanel = document.getElementById('mb-progress-panel');
+    const mbBar = document.getElementById('mb-progress-bar');
+    const mbStatusText = document.getElementById('mb-status-text');
+    const mbMsg = document.getElementById('mb-message');
+    const mbCounter = document.getElementById('mb-counter');
+    const mbCurrent = document.getElementById('mb-current-artist');
+    const mbSummary = document.getElementById('mb-summary');
+
+    async function pollMBProgress() {
+        try {
+            const res = await fetch('/api/mb-progress');
+            if (!res.ok) return;
+            const data = await res.json();
+            if (!data || !data.active) {
+                if (data.finished && data.total > 0) {
+                    mbPanel.style.display = 'block';
+                    mbBar.style.width = '100%';
+                    mbStatusText.textContent = 'COMPLETADO';
+                    mbMsg.textContent = data.message || 'Enriquecimiento finalizado';
+                    mbCounter.textContent = data.completed + '/' + data.total;
+                    mbSummary.style.display = 'block';
+                    mbSummary.innerHTML = '<div style="font-weight:600;margin-bottom:6px"><i class="fa-regular fa-circle-check" style="color:#4ade80;margin-right:6px"></i>MusicBrainz completado</div>' +
+                        '<div><i class="fa-solid fa-id-card" style="margin-right:6px"></i>Encontrados: <strong>' + (data.found ?? 0) + '</strong> / ' + (data.total ?? 0) + '</div>';
+                }
+                return;
+            }
+            mbPanel.style.display = 'block';
+            const pct = Number(data.percent || 0);
+            mbBar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+            mbStatusText.textContent = 'BUSCANDO MBID';
+            mbMsg.textContent = data.message || 'Enriqueciendo...';
+            mbCurrent.textContent = data.current_artist ? ('Artista: ' + data.current_artist) : '';
+            mbCounter.textContent = (data.completed || 0) + '/' + (data.total || 0);
+        } catch (err) {}
+    }
+
+    pollMBProgress();
+    setInterval(pollMBProgress, 2500);
 
 })();
 </script>

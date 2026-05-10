@@ -20,12 +20,20 @@ RUN pip install -r requirements.txt
 # Copiar el resto del código
 COPY . /app
 
-# Exponer puerto Flask
+# Hacer entrypoint ejecutable
+RUN chmod +x entrypoint.sh
+
+# Exponer puerto
 EXPOSE 8604
 
 # Variables por defecto
 ENV FLASK_ENV=production
+ENV WEB_WORKERS=4
+ENV WEB_THREADS=2
+ENV LOG_LEVEL=info
 
-# Comando por defecto: servidor WSGI de producción con workers y threads
-CMD ["gunicorn", "--bind", "0.0.0.0:8604", "--workers", "4", "--threads", "2", "--timeout", "120", "app:app"]
+# Entrypoint: ejecuta migraciones y luego inicia el servicio indicado
+# Modos: entrypoint.sh web | worker | migrate-only
+ENTRYPOINT ["./entrypoint.sh"]
+CMD ["web"]
 

@@ -144,18 +144,26 @@ def obtener_o_crear_artista(nombre, enriquecer=False, mbid=None):
     from musicbrainz_client import buscar_artista
     mb_result = buscar_artista(nombre_norm)
     if mb_result:
-        # Buscar por MBID en BD (otro artista pudo haberlo registrado ya)
+        # Usar sort_name como nombre_normalizado (romanizado si es diferente)
+        mb_nombre_raw = mb_result['nombre']
+        mb_sort = mb_result['sort_name']
+        mb_nombre_norm = normalizar_artista(mb_sort if mb_sort and mb_sort != mb_nombre_raw else mb_nombre_raw)
+        
+        # Buscar por MBID en BD
         artista_obj = Artista.query.filter_by(musicbrainz_id=mb_result['mbid']).first()
         if artista_obj:
             return artista_obj
+        
         # Buscar por nombre_normalizado de MusicBrainz
-        mb_nombre = normalizar_artista(mb_result['nombre'])
-        if mb_nombre:
+        if mb_nombre_norm:
             artista_obj = Artista.query.filter(
-                func.lower(func.trim(Artista.nombre_normalizado)) == mb_nombre.lower().strip()
+                func.lower(func.trim(Artista.nombre_normalizado)) == mb_nombre_norm.lower().strip()
             ).first()
             if artista_obj:
                 return artista_obj
+        
+        # Actualizar mb_result con el normalized name correcto
+        mb_result['nombre_norm'] = mb_nombre_norm
 
     # 4. Fuzzy matching contra artistas existentes que NO tengan MBID
     mejor_ratio = 0
@@ -169,10 +177,13 @@ def obtener_o_crear_artista(nombre, enriquecer=False, mbid=None):
         return mejor_artista
 
     # 5. Crear nuevo artista
+    # Usar sort_name de MusicBrainz como nombre_normalizado si existe (romanización)
+    mb_norm_name = mb_result.get('nombre_norm') if mb_result else None
+    final_norm = mb_norm_name or nombre_norm
     try:
         artista_obj = Artista(
             nombre=nombre_norm,
-            nombre_normalizado=nombre_norm,
+            nombre_normalizado=final_norm,
             musicbrainz_id=mb_result['mbid'] if mb_result else None
         )
         db.session.add(artista_obj)
@@ -607,9 +618,9 @@ def escanear_carpeta_audio(progress_callback=None):
     canciones_actualizadas = 0
     canciones_omitidas = 0
     
-    # Contador para commits en bloque cada 100 canciones
+    # Contador para commits en bloque cada 50 canciones
     commit_counter = 0
-    batch_size = 100
+    batch_size = 50
     
     # Se asume que el llamador (CLI o la ruta Flask) ejecuta esto dentro
     # del contexto de aplicación apropiado. No creamos un nuevo
@@ -880,27 +891,25 @@ def escanear_carpeta_audio(progress_callback=None):
         'summary': resumen
     })
     
-    # Lanzar descarga de letras en segundo plano
+    # Encolar tareas post-escaneo en Redis (workers los procesan sin bloquear la app)
     try:
+        from task_queue import enqueue
         from lyrics_fetcher import descargar_letras_segundo_plano
-        import threading
-        print("\n🚀 Iniciando descarga de letras en segundo plano...")
-        thread = threading.Thread(target=descargar_letras_segundo_plano, kwargs={'batch_size': 10})
-        thread.daemon = True
-        thread.start()
-        print("✅ Hilo de descarga iniciado (no espera a que termine)")
-    except Exception as e:
-        print(f"⚠️ No se pudo iniciar la descarga en segundo plano: {e}")
-    
-    # Lanzar enriquecimiento con MusicBrainz en segundo plano
-    try:
         from musicbrainz_client import enriquecer_artistas_sin_mbid
-        print("🚀 Buscando MBID en MusicBrainz en segundo plano...")
-        th = threading.Thread(target=enriquecer_artistas_sin_mbid, kwargs={'limite': 200})
-        th.daemon = True
-        th.start()
+        
+        print("\n🚀 Encolando tareas post-escaneo en Redis (letras + MusicBrainz)...")
+        enqueue(descargar_letras_segundo_plano, batch_size=10)
+        enqueue(enriquecer_artistas_sin_mbid, limite=200)
+        print("✅ Tareas encoladas — workers las procesarán en segundo plano")
     except Exception as e:
-        print(f"⚠️ No se pudo iniciar MusicBrainz: {e}")
+        print(f"⚠️ No se pudieron encolar tareas: {e}")
+        # Fallback: ejecutar en hilo
+        import threading
+        th = threading.Thread(target=lambda: (
+            descargar_letras_segundo_plano(batch_size=10),
+            enriquecer_artistas_sin_mbid(limite=200)
+        ), daemon=True)
+        th.start()
     
     return resumen
 
@@ -994,9 +1003,9 @@ def escaneo_rapido(progress_callback=None):
     archivos_nuevos_lista = [Path(p) for p in sorted(archivos_nuevos)]
     total = len(archivos_nuevos_lista)
 
-    # Contador para commits en bloque cada 100 canciones
+    # Contador para commits en bloque cada 50 canciones
     commit_counter = 0
-    batch_size = 100
+    batch_size = 50
 
     for idx, archivo in enumerate(archivos_nuevos_lista, start=1):
         emit_progress({
@@ -1126,27 +1135,24 @@ def escaneo_rapido(progress_callback=None):
         'summary': resumen
     })
     
-    # Lanzar descarga de letras en segundo plano
+    # Encolar tareas post-escaneo en Redis (workers los procesan sin bloquear la app)
     try:
+        from task_queue import enqueue
         from lyrics_fetcher import descargar_letras_segundo_plano
-        import threading
-        print("\n🚀 Iniciando descarga de letras en segundo plano...")
-        thread = threading.Thread(target=descargar_letras_segundo_plano, kwargs={'batch_size': 10})
-        thread.daemon = True
-        thread.start()
-        print("✅ Hilo de descarga iniciado (no espera a que termine)")
-    except Exception as e:
-        print(f"⚠️ No se pudo iniciar la descarga en segundo plano: {e}")
-    
-    # Lanzar enriquecimiento con MusicBrainz en segundo plano
-    try:
         from musicbrainz_client import enriquecer_artistas_sin_mbid
-        print("🚀 Buscando MBID en MusicBrainz en segundo plano...")
-        th = threading.Thread(target=enriquecer_artistas_sin_mbid, kwargs={'limite': 200})
-        th.daemon = True
-        th.start()
+        
+        print("\n🚀 Encolando tareas post-escaneo en Redis (letras + MusicBrainz)...")
+        enqueue(descargar_letras_segundo_plano, batch_size=10)
+        enqueue(enriquecer_artistas_sin_mbid, limite=200)
+        print("✅ Tareas encoladas — workers las procesarán en segundo plano")
     except Exception as e:
-        print(f"⚠️ No se pudo iniciar MusicBrainz: {e}")
+        print(f"⚠️ No se pudieron encolar tareas: {e}")
+        import threading
+        th = threading.Thread(target=lambda: (
+            descargar_letras_segundo_plano(batch_size=10),
+            enriquecer_artistas_sin_mbid(limite=200)
+        ), daemon=True)
+        th.start()
     
     return resumen
 

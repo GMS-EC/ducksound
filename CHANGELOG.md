@@ -3,6 +3,60 @@
 Todos los cambios notables de DuckSound serán documentados en este archivo.
 El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/).
 
+## [1.2.0] - 2026-05-10
+
+### 🎯 Deduplicación 100% de Artistas y Álbumes
+- **MusicBrainz ID**: Integración con MusicBrainz API para identificar artistas por UUID único.
+- **Rate limiting**: Respeto de 1 request/segundo con User-Agent obligatorio.
+- **nombre_normalizado**: Nueva columna que almacena el nombre canónico del artista.
+- **Fuzzy matching**: Búsqueda por similitud (`token_set_ratio >= 80%`) como respaldo.
+- **UNIQUE constraints**: Índices en BD para `musicbrainz_id` y `nombre_normalizado`.
+- **Romanización automática**: Artistas en japonés/chino/coreano se convierten a su nombre latino vía MusicBrainz sort_name/aliases.
+- **`merge_duplicates.py`**: Script con 3 niveles de fusión (MBID → nombre_normalizado → fuzzy 75%).
+
+### 🔄 Sistema de Tareas Background Escalable
+- **Redis + RQ**: Tareas post-escaneo (letras + MusicBrainz) ahora se encolan en Redis.
+- **Worker dedicado**: Nuevo servicio `worker` en docker-compose para procesar colas.
+- **Fallback automático**: Si Redis no está disponible, usa hilos como respaldo.
+- **Entrypoint inteligente**: `entrypoint.sh web|worker|migrate-only` con migraciones automáticas al iniciar.
+- **Migraciones automáticas**: WAL mode, columnas MBID, índices UNIQUE — todo se ejecuta solo.
+- **Arquitectura multi-servicio**: docker-compose con 3 servicios (redis + web + worker).
+
+### 🎨 Interfaz Spotify-Style
+- **Rediseño completo del tracklist**: Grid `40px 40px 1fr 1fr 60px`, cover, hover effects.
+- **Equalizer animado**: Barras verdes animadas reemplazan el número de pista al reproducir.
+- **Indicador dinámico**: La clase `playing` se mueve automáticamente al cambiar de canción.
+- **Up next mejorado**: Muestra hasta 20 canciones, incluye la canción actual como referencia.
+- **Similares rediseñados**: Mismo estilo visual que las listas de canciones, con badge de porcentaje.
+- **Panel derecho independiente**: Ya no se reemplaza durante navegación SPA — nunca pierde estado.
+- **Traductor siempre visible**: Botón de traducir en el toolbar de letras, con check "Auto" tipo switch.
+
+### 🚀 Optimizaciones de Rendimiento
+- **Commits más frecuentes**: Batch size reducido de 100 a 50 canciones para write locks más cortos.
+- **Caché de letras en RAM**: Las letras se cachean en memoria con TTL de 1 hora — segunda carga instantánea.
+- **Timeouts de seguridad**: Traducción con timeout de 12 segundos para evitar botones trabados.
+- **Arranque sin bloqueos**: Background tasks ya no bloquean el servidor web.
+
+### 🐛 Correcciones
+- **Botón de repeat fijo**: `fa-repeat-1` era un icono Pro inexistente. Reemplazado por badge CSS "1".
+- **Normalización de artistas**: Separación por `, & / vs` + protección contra falsos como "Blade And Bath".
+- **Unificación de "The"**: "Smith, The" → "The Smith" para evitar duplicados.
+- **Scan no funcionaba**: Corregido error sintáctico al eliminar código legacy.
+
+### 🧹 Limpieza
+- **Código muerto eliminado**: `player.js`, `like_button_dynamic.js`, `global_gmsec.css`.
+- **Funciones obsoletas**: `_extraer_metadatos_mutagen_legacy`, `descargar_letra_lrc`, `normalizar_titulo`.
+- **Imports no usados**: `json`, `defaultdict`, `math`, `os` eliminados.
+- **CSS duplicado**: `.lyrics-toolbar`, `.btn` repetidos eliminados.
+
+### 🐳 Docker
+- **Entrypoint automático**: `entrypoint.sh` ejecuta migraciones y configura el servicio.
+- **Modos de inicio**: `web` (Gunicorn), `worker` (RQ), `migrate-only`.
+- **Gunicorn con gthread**: 4 workers × 2 hilos para mejor concurrencia.
+- **Healthcheck en Redis**: docker-compose espera a que Redis esté listo antes de iniciar web/worker.
+
+---
+
 ## [1.1.0] - 2026-05-08
 
 ### 🚀 Optimizaciones de Rendimiento

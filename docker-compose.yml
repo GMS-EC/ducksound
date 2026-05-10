@@ -1,17 +1,52 @@
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: ducksound_redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   web:
     build: .
     container_name: ducksound_web
-    working_dir: /app
-    command: python /app/app.py
+    depends_on:
+      redis:
+        condition: service_healthy
     volumes:
       - ${MUSIC_PATH}:/music:ro
       - ducksound_data:/data
     environment:
       - ADMIN_SECRET_TOKEN=${ADMIN_SECRET_TOKEN}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - PORT=8604
     ports:
       - '8604:8604'
+    restart: unless-stopped
+
+  worker:
+    build: .
+    container_name: ducksound_worker
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ${MUSIC_PATH}:/music:ro
+      - ducksound_data:/data
+    environment:
+      - ADMIN_SECRET_TOKEN=${ADMIN_SECRET_TOKEN}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    command: ["worker"]
+    restart: unless-stopped
 
 volumes:
   ducksound_data:
+    driver: local
+  redis_data:
     driver: local

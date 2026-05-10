@@ -14,3 +14,7 @@ soundfile>=0.12
 # Servidores WSGI
 gunicorn>=21.2.0
 waitress>=2.1.0
+
+# Task queue para background jobs
+rq>=1.16.0
+redis>=5.0.0

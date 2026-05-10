@@ -1197,3 +1197,25 @@ def api_lyrics_progress():
         return jsonify({'error': str(e), 'active': False, 'finished': True}), 500
 
 
+# ========== API PARA PROGRESO DE MUSICBRAINZ ==========
+
+@api_bp.route('/api/mb-progress', methods=['GET'])
+def api_mb_progress():
+    """Devuelve el progreso actual del enriquecimiento MusicBrainz."""
+    try:
+        from musicbrainz_client import get_mb_progress
+        p = get_mb_progress()
+        return jsonify({
+            'active': p['active'],
+            'finished': p['finished'],
+            'total': p['total'],
+            'completed': p['completed'],
+            'found': p['found'],
+            'current_artist': p['current_artist'],
+            'message': p['message'],
+            'percent': int((p['completed'] / p['total']) * 100) if p['total'] > 0 else 0
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e), 'active': False, 'finished': True}), 500
+
+
