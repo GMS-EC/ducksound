@@ -479,24 +479,111 @@ def user_stats():
 @app.route('/api/related/artists/<int:artist_id>')
 def related_artists(artist_id):
     artist = Artista.query.get_or_404(artist_id)
-    # Artistas del mismo género (comparten canciones del mismo género)
+    related_ids = set()
+    related = []
+    limit = 8
+
+    # ---- ESTRATEGIA 1: Mismo género ----
     genres = db.session.query(Cancion.genero).filter(
         Cancion.artista_id == artist_id, Cancion.genero.isnot(None)
     ).distinct().all()
     genre_list = [g[0] for g in genres if g[0]]
 
-    related = []
     if genre_list:
-        related = db.session.query(Artista).join(Cancion).filter(
+        genre_matches = db.session.query(Artista).join(Cancion).filter(
             Cancion.genero.in_(genre_list),
             Artista.id != artist_id
-        ).distinct().limit(6).all()
+        ).distinct().all()
+        for a in genre_matches:
+            if a.id not in related_ids:
+                related_ids.add(a.id)
+                related.append(a)
 
-    return jsonify([{
-        'id': a.id, 'nombre': a.nombre,
-        'foto': a.foto_url or '',
-        'album_count': len(a.albums)
-    } for a in related])
+    # ---- ESTRATEGIA 2: Mismos álbumes (compilaciones / artistas compartidos) ----
+    if len(related) < limit:
+        album_ids = db.session.query(Album.id).filter(Album.artista_id == artist_id).subquery()
+        same_album_artists = db.session.query(Artista).join(Album).join(Cancion).filter(
+            Album.id.in_(db.session.query(Cancion.album_id).filter(
+                Cancion.album_id.in_(album_ids),
+                Cancion.artista_id != artist_id
+            )),
+            Artista.id != artist_id
+        ).distinct().all()
+        for a in same_album_artists:
+            if a.id not in related_ids:
+                related_ids.add(a.id)
+                related.append(a)
+                if len(related) >= limit:
+                    break
+
+    # ---- ESTRATEGIA 3: Perfil acústico similar (misma BPM, rango dinámico similar) ----
+    if len(related) < limit:
+        # Obtener perfil acústico promedio del artista actual
+        avg_profile = db.session.query(
+            db.func.avg(Cancion.bpm),
+            db.func.avg(Cancion.dynamic_range),
+            db.func.avg(Cancion.rms_level)
+        ).filter(Cancion.artista_id == artist_id).first()
+
+        if avg_profile and avg_profile[0] is not None:
+            bpm, dyn, rms = avg_profile
+            tolerance_bpm = 20
+            tolerance_dyn = 5
+            # Buscar artistas con perfil acústico similar
+            acoustic_matches = db.session.query(
+                Artista,
+                db.func.count(Cancion.id).label('song_count')
+            ).join(Cancion).filter(
+                Cancion.bpm.between(bpm - tolerance_bpm, bpm + tolerance_bpm),
+                Cancion.dynamic_range.between(dyn - tolerance_dyn, dyn + tolerance_dyn),
+                Artista.id != artist_id
+            ).group_by(Artista.id).order_by(db.func.count(Cancion.id).desc()).limit(limit).all()
+
+            for a, _ in acoustic_matches:
+                if a.id not in related_ids:
+                    related_ids.add(a.id)
+                    related.append(a)
+                    if len(related) >= limit:
+                        break
+
+    # ---- ESTRATEGIA 4: Fallback - artistas populares (más canciones) ----
+    if len(related) < 4:
+        popular = db.session.query(Artista).join(Cancion).filter(
+            Artista.id != artist_id
+        ).group_by(Artista.id).order_by(
+            db.func.count(Cancion.id).desc()
+        ).limit(limit - len(related)).all()
+        for a in popular:
+            if a.id not in related_ids:
+                related_ids.add(a.id)
+                related.append(a)
+                if len(related) >= limit:
+                    break
+
+    # Serializar
+    result = []
+    for a in related:
+        # Calcular similitud basada en géneros compartidos
+        similarity_pct = None
+        a_genres = db.session.query(Cancion.genero).filter(
+            Cancion.artista_id == a.id, Cancion.genero.isnot(None)
+        ).distinct().all()
+        a_genre_list = set(g[0] for g in a_genres if g[0])
+        if genre_list and a_genre_list:
+            common = len(set(genre_list) & a_genre_list)
+            total = len(set(genre_list) | a_genre_list)
+            if total > 0:
+                similarity_pct = round(common / total * 100)
+
+        result.append({
+            'id': a.id,
+            'nombre': a.nombre,
+            'foto': a.foto_url or '',
+            'album_count': len(a.albums),
+            'similarity': similarity_pct
+        })
+
+    return jsonify(result)
 
 
 # ============================================

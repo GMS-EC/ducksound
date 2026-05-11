@@ -129,9 +129,7 @@
         </div>
     </section>
 </div>
-{% endblock %}
 
-{% block extra_js %}
 <script>
 // Cargar artistas relacionados
 (function(){
@@ -151,10 +149,16 @@
                     '</div>' +
                     '<div class="artist-card-info">' +
                         '<h3 class="artist-card-name">' + a.nombre + '</h3>' +
-                        '<p class="artist-card-meta">' + a.album_count + ' álbumes</p>' +
+                        '<p class="artist-card-meta">' + a.album_count + ' álbumes' +
+                            (a.similarity ? ' · <span class="artist-card-similarity">' + a.similarity + '%</span>' : '') +
+                        '</p>' +
                     '</div>' +
                 '</a>'
             ).join('');
+        })
+        .catch(() => {
+            const grid = document.getElementById('related-artists-grid');
+            if (grid) grid.innerHTML = '<p class="muted" style="grid-column:1/-1">No se pudieron cargar artistas relacionados</p>';
         });
 })();
 </script>
