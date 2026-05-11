@@ -285,30 +285,48 @@ def admin_panel():
     """Panel de administración con acciones disponibles."""
     if not _is_admin_request():
         return jsonify({'error': 'Unauthorized'}), 401
-
-    # Parsear CHANGELOG.md para mostrarlo en el admin
+    
+    # Parsear CHANGELOG para mostrarlo en el admin
     import re as _re
+    import requests as _requests
     from config import Config, BASE_DIR
-    changelog_path = os.path.join(BASE_DIR, 'CHANGELOG.md')
+    
     versions = []
+    cl_content = ""
+    
+    # 1. Intentar obtener el changelog desde GitHub (para tener siempre la versión más reciente)
     try:
-        with open(changelog_path, 'r', encoding='utf-8') as f:
-            cl_content = f.read()
-        
-        # Dividir por secciones de versión (## [v.v.v])
+        github_url = 'https://raw.githubusercontent.com/GamersEC/ducksound/main/CHANGELOG.md'
+        resp = _requests.get(github_url, timeout=5)
+        if resp.status_code == 200:
+            cl_content = resp.text
+    except Exception as e:
+        print(f"Error fetching remote changelog: {e}")
+
+    # 2. Si falló GitHub, intentar con el archivo local
+    if not cl_content:
+        changelog_path = os.path.join(BASE_DIR, 'CHANGELOG.md')
+        try:
+            if os.path.exists(changelog_path):
+                with open(changelog_path, 'r', encoding='utf-8') as f:
+                    cl_content = f.read()
+        except Exception as e:
+            print(f"Error reading local changelog: {e}")
+
+    # 3. Parsear el contenido obtenido
+    if cl_content:
         version_blocks = _re.split(r'^##\s+', cl_content, flags=_re.MULTILINE)
         if len(version_blocks) > 1:
-            # El primer elemento es el preámbulo, lo saltamos
             for block in version_blocks[1:]:
                 lines = block.strip().split('\n')
                 if not lines: continue
                 
                 header = lines[0].strip()
-                # Formato esperado: [1.2.0] - 2026-05-10
-                m = _re.match(r'\[?([\d\.]+)\]?\s*-\s*(.+)', header)
+                # Soporta: [1.2.0] - fecha, 1.2.0 - fecha, o solo [1.2.0]
+                m = _re.match(r'\[?([\d\.]+)\]?(\s*-\s*(.+))?', header)
                 if m:
                     number = m.group(1)
-                    date = m.group(2).strip()
+                    date = m.group(3).strip() if m.group(3) else ''
                 else:
                     number = header
                     date = ''
@@ -333,12 +351,12 @@ def admin_panel():
                         if current_section:
                             sections.append(current_section)
                         current_section = {'title': line_s[5:].strip(), 'entries': []}
-                    elif line_s.startswith('- ') and current_section is not None:
-                        current_section['entries'].append(line_s[2:])
                     elif line_s.startswith('- '):
-                        if not current_section:
-                            current_section = {'title': 'Cambios', 'entries': []}
-                        current_section['entries'].append(line_s[2:])
+                        entry_text = line_s[2:].strip()
+                        if current_section:
+                            current_section['entries'].append(entry_text)
+                        else:
+                            current_section = {'title': 'Cambios', 'entries': [entry_text]}
                 
                 if current_section:
                     sections.append(current_section)
@@ -349,11 +367,7 @@ def admin_panel():
                     'title': title,
                     'sections': sections
                 })
-    except FileNotFoundError:
-        print(f"Error: No se encontró el changelog en {changelog_path}")
-    except Exception as e:
-        print(f"Error leyendo changelog: {e}")
-
+    
     return render_template('admin.html', changelog_versions=versions)
 
 
