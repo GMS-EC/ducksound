@@ -481,7 +481,7 @@ def related_artists(artist_id):
     artist = Artista.query.get_or_404(artist_id)
     related_ids = set()
     related = []
-    limit = 8
+    limit = 4
 
     # ---- ESTRATEGIA 1: Mismo género ----
     genres = db.session.query(Cancion.genero).filter(
@@ -560,30 +560,13 @@ def related_artists(artist_id):
                 if len(related) >= limit:
                     break
 
-    # Serializar
-    result = []
-    for a in related:
-        # Calcular similitud basada en géneros compartidos
-        similarity_pct = None
-        a_genres = db.session.query(Cancion.genero).filter(
-            Cancion.artista_id == a.id, Cancion.genero.isnot(None)
-        ).distinct().all()
-        a_genre_list = set(g[0] for g in a_genres if g[0])
-        if genre_list and a_genre_list:
-            common = len(set(genre_list) & a_genre_list)
-            total = len(set(genre_list) | a_genre_list)
-            if total > 0:
-                similarity_pct = round(common / total * 100)
-
-        result.append({
-            'id': a.id,
-            'nombre': a.nombre,
-            'foto': a.foto_url or '',
-            'album_count': len(a.albums),
-            'similarity': similarity_pct
-        })
-
-    return jsonify(result)
+    return jsonify([{
+        'id': a.id,
+        'nombre': a.nombre,
+        'nombre_normalizado': a.nombre_normalizado,
+        'foto': a.foto_url or '',
+        'album_count': len(a.albums)
+    } for a in related[:limit]])
 
 
 # ============================================

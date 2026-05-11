@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 
-{% block title %}{{ artist.nombre }} - DuckSound{% endblock %}
+{% block title %}{{ artist.nombre_normalizado or artist.nombre }} - DuckSound{% endblock %}
+
+{% set display_name = artist.nombre_normalizado or artist.nombre %}
 
 {% block content %}
 <div class="artist-detail">
@@ -8,16 +10,16 @@
     <div class="artist-header">
         <div class="artist-header-cover">
             {% if artist.foto_url %}
-            <img src="{{ artist.foto_url }}" alt="{{ artist.nombre }}">
+            <img src="{{ artist.foto_url }}" alt="{{ display_name }}">
             {% elif albums_data and albums_data[0].cover_url %}
-            <img src="{{ albums_data[0].cover_url }}" alt="{{ artist.nombre }}">
+            <img src="{{ albums_data[0].cover_url }}" alt="{{ display_name }}">
             {% else %}
-            <div class="artist-header-placeholder">{{ artist.nombre[:1] }}</div>
+            <div class="artist-header-placeholder">{{ display_name[:1] }}</div>
             {% endif %}
         </div>
         <div class="artist-header-info">
             <span class="artist-header-label">ARTISTA</span>
-            <h1 class="artist-header-title">{{ artist.nombre }}</h1>
+            <h1 class="artist-header-title">{{ display_name }}</h1>
             {% if artist.biografia %}
             <p class="artist-bio">{{ artist.biografia }}</p>
             {% endif %}
@@ -76,7 +78,7 @@
                  data-lyrics="{{ url_for('servir_lyrics', cancion_id=s.id) }}"
                  data-cover="{{ artist.foto_url if artist.foto_url else url_for('servir_album_art', cancion_id=s.id) }}"
                  data-titulo="{{ s.titulo }}"
-                 data-artista="{{ artist.nombre }}"
+                 data-artista="{{ display_name }}"
                  data-context="artist" data-artist-id="{{ artist.id }}">
                 <button class="track-play-btn" title="Reproducir"><i class="fa-solid fa-play"></i></button>
                 <span class="track-num">
@@ -96,7 +98,7 @@
                 </div>
                 <div class="track-info">
                     <span class="track-title">{{ s.titulo }}</span>
-                    <span class="track-artist-mobile">{{ artist.nombre }}</span>
+                    <span class="track-artist-mobile">{{ display_name }}</span>
                 </div>
                 <span class="track-album-col">
                     {% if s.album_obj %}
@@ -145,13 +147,11 @@
             grid.innerHTML = data.map(a =>
                 '<a class="artist-card" href="/artists/' + a.id + '">' +
                     '<div class="artist-card-cover">' +
-                        (a.foto ? '<img src="' + a.foto + '" alt="">' : '<div class="artist-card-placeholder">' + a.nombre[0] + '</div>') +
+                        (a.foto ? '<img src="' + a.foto + '" alt="">' : '<div class="artist-card-placeholder">' + (a.nombre_normalizado || a.nombre)[0] + '</div>') +
                     '</div>' +
                     '<div class="artist-card-info">' +
-                        '<h3 class="artist-card-name">' + a.nombre + '</h3>' +
-                        '<p class="artist-card-meta">' + a.album_count + ' álbumes' +
-                            (a.similarity ? ' · <span class="artist-card-similarity">' + a.similarity + '%</span>' : '') +
-                        '</p>' +
+                        '<h3 class="artist-card-name">' + (a.nombre_normalizado || a.nombre) + '</h3>' +
+                        '<p class="artist-card-meta">' + a.album_count + ' álbumes</p>' +
                     '</div>' +
                 '</a>'
             ).join('');

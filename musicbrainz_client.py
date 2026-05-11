@@ -111,16 +111,25 @@ def buscar_album(titulo, artista_mbid):
 
 def enriquecer_artistas_sin_mbid(limite=100):
     """Busca MBID en MusicBrainz para artistas que no tienen uno.
-    Ejecutar en segundo plano. Rate-limited a 1 req/s."""
+    Ejecutar en segundo plano. Rate-limited a 1 req/s.
+    También asigna 'nombre_normalizado' romanizado para artistas con nombre no latino."""
     from models import db, Artista
+    from unidecode import unidecode
+    from metadata_normalizer import normalizar_artista
     
     _progress(active=True, finished=False, message='Consultando artistas sin MBID...')
     
     artistas = Artista.query.filter(Artista.musicbrainz_id.is_(None)).limit(limite).all()
     if not artistas:
-        print("Todos los artistas ya tienen MBID")
-        _progress(active=False, finished=True, message='Todos los artistas ya tienen MBID', total=0, completed=0)
-        return 0
+        # Si no hay artistas sin MBID, procesar los que no tienen nombre_normalizado
+        artistas = Artista.query.filter(
+            Artista.nombre_normalizado.is_(None),
+            ~Artista.musicbrainz_id.is_(None)
+        ).limit(limite).all()
+        if not artistas:
+            print("Todos los artistas ya tienen MBID y nombre_normalizado")
+            _progress(active=False, finished=True, message='Todos los artistas ya tienen MBID y nombre_normalizado', total=0, completed=0)
+            return 0
     
     total = len(artistas)
     _progress(total=total, completed=0, found=0, message=f'Enriqueciendo {total} artistas...')
@@ -128,21 +137,33 @@ def enriquecer_artistas_sin_mbid(limite=100):
     
     actualizados = 0
     for idx, a in enumerate(artistas, start=1):
-        _progress(completed=idx, current_artist=a.nombre, message=f'Buscando MBID para {a.nombre} ({idx}/{total})')
+        _progress(completed=idx, current_artist=a.nombre, message=f'Procesando {a.nombre} ({idx}/{total})')
         
-        resultado = buscar_artista(a.nombre)
-        if resultado:
-            a.musicbrainz_id = resultado['mbid']
-            norm_name = resultado.get('nombre_norm')
-            if norm_name and norm_name != a.nombre:
-                a.nombre_normalizado = norm_name
-            actualizados += 1
-            _progress(found=actualizados)
+        actualizado = False
         
-        if actualizados % 20 == 0 or idx == total:
+        # Si no tiene MBID, buscar en MusicBrainz
+        if not a.musicbrainz_id:
+            resultado = buscar_artista(a.nombre)
+            if resultado:
+                a.musicbrainz_id = resultado['mbid']
+                norm_name = resultado.get('nombre_norm')
+                if norm_name and norm_name != a.nombre:
+                    a.nombre_normalizado = norm_name
+                    actualizado = True
+                actualizados += 1
+                _progress(found=actualizados)
+        
+        # Si no tiene nombre_normalizado, intentar romanización
+        if not a.nombre_normalizado and not _es_latino(a.nombre):
+            romanizado = normalizar_artista(unidecode(a.nombre))
+            if romanizado and romanizado != a.nombre:
+                a.nombre_normalizado = romanizado
+                actualizado = True
+        
+        if actualizado and idx % 20 == 0:
             db.session.commit()
     
     db.session.commit()
-    _progress(active=False, finished=True, found=actualizados, message=f'MBID actualizados: {actualizados}/{total}')
-    print(f"MBID actualizados: {actualizados}/{total}")
+    _progress(active=False, finished=True, found=actualizados, message=f'Actualizados: {actualizados}/{total}')
+    print(f"Artistas actualizados: {actualizados}/{total}")
     return actualizados

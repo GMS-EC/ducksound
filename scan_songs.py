@@ -22,54 +22,105 @@ AUDIO_EXTENSIONS = {'.mp3', '.flac', '.wav', '.m4a', '.ogg'}
 
 def extraer_metadatos(ruta_archivo):
     """
-    Extrae metadatos del archivo de audio usando TinyTag como fuente principal.
-    Mutagen se conserva solamente para recuperar portadas embebidas.
+    Extrae metadatos del archivo de audio.
+    Usa TinyTag para duración (rápido) y mutagen para texto (encoding correcto).
     """
     from audio_analyzer import analyze_audio
 
     try:
-        tag = TinyTag.get(str(ruta_archivo), image=False)
-        if tag is None:
+        # Usar mutagen como fuente principal para metadatos de texto (encoding robusto)
+        audio_file = File(str(ruta_archivo))
+        
+        def _tag_val(*keys):
+            if audio_file is None or not hasattr(audio_file, 'tags') or audio_file.tags is None:
+                return None
+            for k in keys:
+                if k in audio_file.tags:
+                    v = audio_file.tags[k]
+                    if v is not None:
+                        return str(v).strip()
             return None
+
+        def _tiny_val(attr, *extra_keys):
+            val = getattr(tag, attr, None)
+            if not val:
+                extra = getattr(tag, 'extra', None) or {}
+                for k in extra_keys:
+                    v = extra.get(k)
+                    if isinstance(v, (list, tuple)):
+                        v = v[0] if v else None
+                    if v:
+                        val = v
+                        break
+            return val
+
+        # Extraer texto con mutagen (preferido por su soporte de encoding)
+        titulo = _tag_val('TIT2', 'title') or Path(ruta_archivo).stem
+        artista = _tag_val('TPE1', 'artist')
+        album = _tag_val('TALB', 'album')
+        genero = _tag_val('TCON', 'genre')
+        track_str = _tag_val('TRCK', 'tracknumber', 'track')
+        disc_str = _tag_val('TPOS', 'discnumber', 'disc')
+        
+        # Fallback: si mutagen no dio texto, usar TinyTag
+        if not artista or not titulo:
+            tag = TinyTag.get(str(ruta_archivo), image=False)
+            if tag is None:
+                return None
+
+            def extra_tag(*keys):
+                extra = getattr(tag, 'extra', None) or {}
+                for key in keys:
+                    valor = extra.get(key)
+                    if isinstance(valor, (list, tuple)):
+                        valor = valor[0] if valor else None
+                    if valor:
+                        return valor
+                return None
+
+            if not titulo:
+                titulo = _tiny_val('title', 'TITLE') or Path(ruta_archivo).stem
+            if not artista:
+                artista = _tiny_val('artist', 'ARTIST')
+            if not album:
+                album = _tiny_val('album', 'ALBUM')
+            if not genero:
+                genero = _tiny_val('genre', 'GENRE')
+            if not track_str:
+                t = _tiny_val('track', 'tracknumber', 'TRCK', 'TRACKNUMBER')
+                track_str = str(t) if t else None
+            if not disc_str:
+                d = _tiny_val('disc', 'discnumber', 'DISCNUMBER', 'TPA')
+                disc_str = str(d) if d else None
 
         def parse_track_num(val):
-            if not val:
-                return None
-            try:
-                return int(str(val).split('/')[0])
-            except Exception:
-                return None
+            if not val: return None
+            try: return int(str(val).split('/')[0])
+            except: return None
 
-        def extra_tag(*keys):
-            extra = getattr(tag, 'extra', None) or {}
-            for key in keys:
-                valor = extra.get(key)
-                if isinstance(valor, (list, tuple)):
-                    valor = valor[0] if valor else None
-                if valor:
-                    return valor
-            return None
-
-        artista = getattr(tag, 'artist', None) or extra_tag('artist', 'ARTIST')
-        albumartist = (
-            getattr(tag, 'albumartist', None)
-            or extra_tag('albumartist', 'album artist', 'album_artist', 'ALBUMARTIST', 'ALBUM ARTIST', 'TPE2')
-            or artista
-        )
+        albumartist = _tag_val('TPE2', 'albumartist', 'album artist', 'album_artist', 'ALBUMARTIST', 'ALBUM ARTIST') or artista
 
         metadatos = {
-            'titulo': getattr(tag, 'title', None) or extra_tag('title', 'TITLE'),
+            'titulo': titulo,
             'artista': artista,
             'albumartist': albumartist,
-            'artista_display': artista,  # Original con colaboraciones para display
-            'artista_principal': normalizar_artista(albumartist),  # Artista unificado desde albumartist
-            'album': getattr(tag, 'album', None) or extra_tag('album', 'ALBUM'),
-            'duracion': int(tag.duration) if getattr(tag, 'duration', None) else None,
+            'artista_display': artista,
+            'artista_principal': normalizar_artista(albumartist),
+            'album': album,
+            'duracion': None,
             'ruta_imagen': None,
-            'genero': getattr(tag, 'genre', None) or extra_tag('genre', 'GENRE'),
-            'numero_pista': parse_track_num(getattr(tag, 'track', None) or extra_tag('tracknumber', 'TRACKNUMBER', 'TRCK')),
-            'numero_disco': parse_track_num(getattr(tag, 'disc', None) or extra_tag('discnumber', 'DISCNUMBER', 'TPA')),
+            'genero': genero,
+            'numero_pista': parse_track_num(track_str),
+            'numero_disco': parse_track_num(disc_str),
         }
+
+        # Duración: preferir TinyTag (más rápido y preciso)
+        try:
+            tiny = TinyTag.get(str(ruta_archivo), image=False)
+            if tiny and tiny.duration:
+                metadatos['duracion'] = int(tiny.duration)
+        except:
+            pass
 
         try:
             analisis = analyze_audio(ruta_archivo)
@@ -82,9 +133,9 @@ def extraer_metadatos(ruta_archivo):
         except Exception as e:
             print(f"  ⚠ Error en análisis de audio: {e}")
 
-        try:
-            audio_file = File(ruta_archivo)
-            if audio_file is not None:
+        # Portada embebida (mutagen ya está abierto)
+        if audio_file is not None:
+            try:
                 apic_tags = [
                     picture for key, picture in getattr(audio_file, 'tags', {}).items()
                     if str(key).startswith('APIC')
@@ -93,8 +144,8 @@ def extraer_metadatos(ruta_archivo):
                     metadatos['ruta_imagen'] = guardar_imagen_album(apic_tags[0], ruta_archivo)
                 elif getattr(audio_file, 'pictures', None):
                     metadatos['ruta_imagen'] = guardar_imagen_album(audio_file.pictures[0], ruta_archivo)
-        except Exception as e:
-            print(f"  ⚠ Error al extraer portada embebida: {e}")
+            except Exception as e:
+                print(f"  ⚠ Error al extraer portada embebida: {e}")
 
         if not metadatos.get('ruta_imagen'):
             titulo_b = metadatos.get('titulo') or Path(ruta_archivo).stem
@@ -179,7 +230,17 @@ def obtener_o_crear_artista(nombre, enriquecer=False, mbid=None):
     # 5. Crear nuevo artista
     # Usar sort_name de MusicBrainz como nombre_normalizado si existe (romanización)
     mb_norm_name = mb_result.get('nombre_norm') if mb_result else None
-    final_norm = mb_norm_name or nombre_norm
+    if mb_norm_name:
+        final_norm = mb_norm_name
+    else:
+        # Si el nombre no es latino y no hay MBID, romanizar con unidecode
+        from musicbrainz_client import _es_latino
+        if not _es_latino(nombre_norm):
+            from unidecode import unidecode
+            final_norm = normalizar_artista(unidecode(nombre_norm))
+        else:
+            final_norm = nombre_norm
+
     try:
         artista_obj = Artista(
             nombre=nombre_norm,
