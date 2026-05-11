@@ -8,10 +8,10 @@
     <p class="admin-subtitle">Gestiona tu plataforma de música desde aquí</p>
 
     <!-- Tab Navigation -->
-    <div class="admin-tabs">
-        <button class="admin-tab active" data-tab="panel"><i class="fa-solid fa-gauge-high"></i> Panel</button>
-        <button class="admin-tab" data-tab="actualizaciones"><i class="fa-solid fa-code-branch"></i> Actualizaciones</button>
-    </div>
+<div class="admin-tabs">
+    <button type="button" class="admin-tab active" data-tab="panel"><i class="fa-solid fa-gauge-high"></i> Panel</button>
+    <button type="button" class="admin-tab" data-tab="actualizaciones"><i class="fa-solid fa-code-branch"></i> Actualizaciones</button>
+</div>
 
     <div class="admin-tab-content active" id="tab-panel">
         <div class="admin-actions">
@@ -522,16 +522,21 @@
 <script>
 (function(){
     // ===== Tab switching =====
-    document.querySelectorAll('.admin-tab').forEach(function(btn) {
-        btn.addEventListener('click', function() {
+    const tabsContainer = document.querySelector('.admin-tabs');
+    if (tabsContainer) {
+        tabsContainer.addEventListener('click', function(e) {
+            const btn = e.target.closest('.admin-tab');
+            if (!btn) return;
+
             document.querySelectorAll('.admin-tab').forEach(function(b) { b.classList.remove('active'); });
             document.querySelectorAll('.admin-tab-content').forEach(function(c) { c.classList.remove('active'); });
-            this.classList.add('active');
-            var tabId = this.dataset.tab;
-            var target = document.getElementById('tab-' + tabId);
+            
+            btn.classList.add('active');
+            const tabId = btn.dataset.tab;
+            const target = document.getElementById('tab-' + tabId);
             if (target) target.classList.add('active');
         });
-    });
+    }
 
     // ===== Changelog toggle =====
     const toggle = document.getElementById('changelog-toggle');
