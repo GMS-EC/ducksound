@@ -7,7 +7,14 @@
     <h1><i class="fa-solid fa-gear" style="color:var(--accent);margin-right:8px"></i> Panel de Administración</h1>
     <p class="admin-subtitle">Gestiona tu plataforma de música desde aquí</p>
 
-    <div class="admin-actions">
+    <!-- Tab Navigation -->
+    <div class="admin-tabs">
+        <button class="admin-tab active" data-tab="panel"><i class="fa-solid fa-gauge-high"></i> Panel</button>
+        <button class="admin-tab" data-tab="actualizaciones"><i class="fa-solid fa-code-branch"></i> Actualizaciones</button>
+    </div>
+
+    <div class="admin-tab-content active" id="tab-panel">
+        <div class="admin-actions">
         <div class="admin-action-card" style="cursor:default">
             <div class="admin-action-icon"><i class="fa-solid fa-magnifying-glass"></i></div>
             <div class="admin-action-info" style="flex:1">
@@ -94,8 +101,10 @@
         <div id="mb-current-artist" style="margin-top:8px;font-size:12px;color:rgba(232,234,237,0.8)"></div>
         <div id="mb-summary" style="display:none;margin-top:10px;padding:10px;border-radius:8px;background:rgba(0,0,0,0.2)"></div>
     </div>
+    </div> <!-- /tab-panel -->
 
-    <!-- ===== VERSIÓN Y ACTUALIZACIONES ===== -->
+    <div class="admin-tab-content" id="tab-actualizaciones">
+        <!-- ===== VERSIÓN Y ACTUALIZACIONES ===== -->
     <div class="version-section">
         <h2 class="version-section-title"><i class="fa-solid fa-code-branch"></i> Versión y Actualizaciones</h2>
         
@@ -157,6 +166,7 @@
             </div>
         </div>
     </div>
+    </div> <!-- /tab-actualizaciones -->
 
     <a href="{{ url_for('dashboard') }}" class="admin-back">← Volver al dashboard</a>
 </div>
@@ -449,6 +459,53 @@
     color: var(--text-bright);
     font-weight: 600;
 }
+
+/* ===== ADMIN TABS ===== */
+.admin-tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 2px solid var(--border-color);
+    margin-bottom: 24px;
+}
+.admin-tab {
+    padding: 10px 20px;
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: all var(--transition);
+    font-family: inherit;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.admin-tab:hover {
+    color: var(--text-bright);
+    background: var(--surface-2);
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+.admin-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+.admin-tab i {
+    font-size: 13px;
+}
+.admin-tab-content {
+    display: none;
+}
+.admin-tab-content.active {
+    display: block;
+}
+@media (max-width: 900px) {
+    .admin-tabs {
+        overflow-x: auto;
+    }
+}
 </style>
 {% endblock %}
 
@@ -464,6 +521,18 @@
 {% block extra_js %}
 <script>
 (function(){
+    // ===== Tab switching =====
+    document.querySelectorAll('.admin-tab').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.admin-tab').forEach(function(b) { b.classList.remove('active'); });
+            document.querySelectorAll('.admin-tab-content').forEach(function(c) { c.classList.remove('active'); });
+            this.classList.add('active');
+            var tabId = this.dataset.tab;
+            var target = document.getElementById('tab-' + tabId);
+            if (target) target.classList.add('active');
+        });
+    });
+
     // ===== Changelog toggle =====
     const toggle = document.getElementById('changelog-toggle');
     const collapsible = document.getElementById('changelog-collapsible');

@@ -1,6 +1,8 @@
 import logging
+import re
 import requests
 import time
+from rapidfuzz import fuzz
 from models import db, Artista, Album
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
@@ -13,13 +15,51 @@ REQUEST_TIMEOUT = 10
 RATE_LIMIT_DELAY = 1.0  # segundos entre requests para no saturar la API
 
 
-def buscar_artista_deezer(nombre_artista):
+def _normalizar_nombre(texto):
+    """Normaliza nombre para comparación fuzzy eliminando caracteres especiales."""
+    if not texto:
+        return ''
+    n = texto.lower().strip()
+    n = re.sub(r'[^\w\s]', ' ', n)
+    n = re.sub(r'\s+', ' ', n).strip()
+    return n
+
+
+def buscar_artista_deezer(nombre_artista, mbid=None):
     """
     Busca un artista en Deezer y devuelve sus datos (picture, bio, etc.)
+    Si se proporciona un MBID de MusicBrainz, intenta la búsqueda precisa primero.
     Retorna un dict con 'name', 'picture', 'picture_small', 'nb_album', 'nb_fan' o None.
     """
+    # 1. Búsqueda precisa por MBID de MusicBrainz (evita confusiones con homónimos)
+    if mbid:
+        try:
+            mbid_url = f'https://api.deezer.com/artist/mbid/{mbid}'
+            mbid_resp = requests.get(mbid_url, timeout=REQUEST_TIMEOUT)
+            if mbid_resp.ok:
+                detalle = mbid_resp.json()
+                if detalle and 'id' in detalle and 'error' not in detalle:
+                    result = {
+                        'name': detalle.get('name', nombre_artista),
+                        'picture': (
+                            detalle.get('picture_xl')
+                            or detalle.get('picture_big')
+                            or detalle.get('picture_medium')
+                        ),
+                        'picture_medium': detalle.get('picture_medium'),
+                        'picture_small': detalle.get('picture_small'),
+                        'nb_album': detalle.get('nb_album', 0),
+                        'nb_fan': detalle.get('nb_fan', 0),
+                        'deezer_url': detalle.get('link', ''),
+                    }
+                    logging.info(f"Encontrado en Deezer (vía MBID): {result['name']}")
+                    return result
+        except Exception as e:
+            logging.warning(f"Error al buscar por MBID {mbid} en Deezer: {e}")
+
+    # 2. Fallback: búsqueda por nombre con coincidencia fuzzy
     try:
-        params = {'q': nombre_artista, 'limit': 3}
+        params = {'q': nombre_artista, 'limit': 5}
         resp = requests.get(DEEZER_SEARCH_URL, params=params, timeout=REQUEST_TIMEOUT)
         resp.raise_for_status()
         data = resp.json()
@@ -28,46 +68,52 @@ def buscar_artista_deezer(nombre_artista):
             logging.warning(f"No se encontró artista en Deezer: {nombre_artista}")
             return None
 
-        # Buscar el que mejor coincida (exacto o primero)
-        mejor = None
-        nombre_lower = nombre_artista.lower()
+        nombre_normalizado = _normalizar_nombre(nombre_artista)
+        mejor_resultado = None
+        mejor_puntaje = 0
+
         for artista in data['data']:
-            if artista.get('name', '').lower() == nombre_lower:
-                mejor = artista
-                break
-        if not mejor:
-            mejor = data['data'][0]
+            nombre_resultado = artista.get('name', '')
+            if not nombre_resultado:
+                continue
+            nombre_resultado_norm = _normalizar_nombre(nombre_resultado)
+            puntaje = fuzz.token_set_ratio(nombre_normalizado, nombre_resultado_norm)
+            if puntaje > mejor_puntaje:
+                mejor_puntaje = puntaje
+                mejor_resultado = artista
+
+        UMBRAL_CONFIANZA = 85
+        if not mejor_resultado or mejor_puntaje < UMBRAL_CONFIANZA:
+            logging.warning(
+                f"No se encontró coincidencia segura en Deezer para '{nombre_artista}' "
+                f"(mejor puntaje: {mejor_puntaje}, umbral: {UMBRAL_CONFIANZA})"
+            )
+            return None
 
         # Obtener detalles completos del artista
-        artist_id = mejor['id']
-        detail_resp = requests.get(DEEZER_ARTIST_URL.format(artist_id), timeout=REQUEST_TIMEOUT)
+        artist_id = mejor_resultado['id']
+        detail_resp = requests.get(
+            DEEZER_ARTIST_URL.format(artist_id),
+            timeout=REQUEST_TIMEOUT
+        )
         detail_resp.raise_for_status()
-        detalles = detail_resp.json()
-
-        # Intentar obtener biografía desde Deezer (radio/channel)
-        bio = None
-        try:
-            radio_url = f'https://api.deezer.com/artist/{artist_id}/radio'
-            radio_resp = requests.get(radio_url, timeout=REQUEST_TIMEOUT)
-            if radio_resp.ok:
-                radio_data = radio_resp.json()
-                if radio_data.get('data'):
-                    # La bio no viene en Deezer directamente, usamos la descripción del artista
-                    pass
-        except Exception:
-            pass
+        detalle = detail_resp.json()
 
         result = {
-            'name': detalles.get('name', nombre_artista),
-            'picture': detalles.get('picture_xl') or detalles.get('picture_big') or detalles.get('picture_medium'),
-            'picture_medium': detalles.get('picture_medium'),
-            'picture_small': detalles.get('picture_small'),
-            'nb_album': detalles.get('nb_album', 0),
-            'nb_fan': detalles.get('nb_fan', 0),
-            'deezer_url': detalles.get('link', ''),
+            'name': detalle.get('name', nombre_artista),
+            'picture': (
+                detalle.get('picture_xl')
+                or detalle.get('picture_big')
+                or detalle.get('picture_medium')
+            ),
+            'picture_medium': detalle.get('picture_medium'),
+            'picture_small': detalle.get('picture_small'),
+            'nb_album': detalle.get('nb_album', 0),
+            'nb_fan': detalle.get('nb_fan', 0),
+            'deezer_url': detalle.get('link', ''),
         }
 
-        logging.info(f"Encontrado en Deezer: {result['name']}")
+        logging.info(f"Encontrado en Deezer: {result['name']} (confianza: {mejor_puntaje}%)")
         return result
 
     except requests.exceptions.RequestException as e:
@@ -78,13 +124,13 @@ def buscar_artista_deezer(nombre_artista):
         return None
 
 
-def buscar_biografia_deezer(nombre_artista):
+def buscar_biografia_deezer(nombre_artista, mbid=None):
     """
     Obtiene datos biográficos de un artista desde Deezer.
     Construye una reseña con información disponible (discografía, popularidad).
     """
     try:
-        deezer_data = buscar_artista_deezer(nombre_artista)
+        deezer_data = buscar_artista_deezer(nombre_artista, mbid=mbid)
         if not deezer_data:
             return None
 
@@ -129,18 +175,18 @@ def enrich_artist(artista_obj, commit=True):
 
     actualizado = False
 
-    # 1. Foto desde Deezer
+    # 1. Foto desde Deezer (con MBID si está disponible para búsqueda precisa)
     if not artista_obj.foto_url:
-        deezer_data = buscar_artista_deezer(artista_obj.nombre)
+        deezer_data = buscar_artista_deezer(artista_obj.nombre, mbid=artista_obj.musicbrainz_id)
         if deezer_data and deezer_data.get('picture'):
             artista_obj.foto_url = deezer_data['picture']
             logging.info(f"✅ Foto obtenida para {artista_obj.nombre}")
             actualizado = True
         time.sleep(RATE_LIMIT_DELAY)
 
-    # 2. Biografía desde Deezer
+    # 2. Biografía desde Deezer (con MBID si está disponible para búsqueda precisa)
     if not artista_obj.biografia:
-        bio = buscar_biografia_deezer(artista_obj.nombre)
+        bio = buscar_biografia_deezer(artista_obj.nombre, mbid=artista_obj.musicbrainz_id)
         if bio:
             artista_obj.biografia = bio
             logging.info(f"✅ Biografía obtenida para {artista_obj.nombre}")

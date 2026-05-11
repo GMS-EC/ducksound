@@ -6,189 +6,262 @@
     <p class="page-subtitle">Administra tu cuenta y mira tus estadísticas de escucha</p>
 </div>
 
-<div class="profile-dashboard">
-    <!-- COLUMNA IZQUIERDA: Ajustes y Cuenta -->
-    <div class="profile-settings-col">
-        <!-- Info del usuario -->
-        <div style="display:flex;align-items:center;gap:18px;padding:20px 24px;background:var(--surface-2);border-radius:var(--radius-lg);border:1px solid var(--border-color);margin-bottom:24px">
-            <div style="width:56px;height:56px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0">
-                <i class="fa-solid fa-user"></i>
-            </div>
-            <div>
-                <div style="font-size:18px;font-weight:700;color:var(--text-bright)">{{ usuario.display_name() }}</div>
-                <div style="font-size:13px;color:var(--muted)">@{{ usuario.nombre_usuario }} · 
-                    <span class="role-badge" style="display:inline-block;padding:2px 10px;border-radius:999px;font-size:11px;font-weight:600;background:{% if is_admin %}var(--accent-soft){% else %}var(--surface-3){% endif %};color:{% if is_admin %}var(--accent){% else %}var(--muted){% endif %}">
-                        {{ 'Administrador' if is_admin else 'Usuario' }}
-                    </span>
-                </div>
-                <div style="font-size:12px;color:var(--muted);margin-top:4px">
-                    <i class="fa-regular fa-calendar"></i> Miembro desde {{ usuario.fecha_creacion.strftime('%d/%m/%Y') if usuario.fecha_creacion else '—' }}
-                </div>
-            </div>
-        </div>
-
-        <!-- Formulario -->
-        <form id="profile-form" style="display:flex;flex-direction:column;gap:20px">
-            <!-- Nombre público -->
-            <div class="form-group">
-                <label class="form-label"><i class="fa-regular fa-id-card" style="margin-right:6px"></i> Nombre público</label>
-                <input type="text" class="form-input" name="nombre_publico" value="{{ usuario.nombre_publico or '' }}" placeholder="Cómo quieres aparecer">
-                <small style="color:var(--muted);font-size:12px">Si lo dejas vacío, se usará tu nombre de usuario</small>
-            </div>
-
-            <!-- Cambiar contraseña -->
-            <div class="form-group">
-                <label class="form-label"><i class="fa-solid fa-lock" style="margin-right:6px"></i> Nueva contraseña</label>
-                <input type="password" class="form-input" name="password" placeholder="Dejar vacío para mantener actual" autocomplete="new-password">
-            </div>
-
-            <hr style="border:none;border-top:1px solid var(--border-color);margin:4px 0">
-
-            <!-- Preferencias -->
-            <div style="font-size:13px;font-weight:700;color:var(--text-bright);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">
-                <i class="fa-solid fa-sliders" style="margin-right:6px"></i> Preferencias
-            </div>
-
-            <!-- Idioma preferido -->
-            <div class="form-group">
-                <label class="form-label"><i class="fa-solid fa-language" style="margin-right:6px"></i> Idioma para traducciones</label>
-                <select class="form-input" name="idioma_preferido" style="cursor:pointer">
-                    <option value="es" {% if usuario.idioma_preferido == 'es' %}selected{% endif %}>Español</option>
-                    <option value="en" {% if usuario.idioma_preferido == 'en' %}selected{% endif %}>Inglés</option>
-                    <option value="fr" {% if usuario.idioma_preferido == 'fr' %}selected{% endif %}>Francés</option>
-                    <option value="de" {% if usuario.idioma_preferido == 'de' %}selected{% endif %}>Alemán</option>
-                    <option value="it" {% if usuario.idioma_preferido == 'it' %}selected{% endif %}>Italiano</option>
-                    <option value="pt" {% if usuario.idioma_preferido == 'pt' %}selected{% endif %}>Portugués</option>
-                    <option value="ja" {% if usuario.idioma_preferido == 'ja' %}selected{% endif %}>Japonés</option>
-                </select>
-            </div>
-
-            <!-- Crossfade toggle -->
-            <label class="toggle-row" style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--surface-2);border-radius:var(--radius);border:1px solid var(--border-light);cursor:pointer;transition:all var(--transition)">
-                <div style="width:36px;height:36px;border-radius:var(--radius-sm);background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0">
-                    <i class="fa-solid fa-wave-square"></i>
-                </div>
-                <div style="flex:1;min-width:0">
-                    <div style="font-weight:600;font-size:14px;color:var(--text-bright)">Crossfade</div>
-                    <div style="font-size:12px;color:var(--muted)">Transición suave entre canciones</div>
-                </div>
-                <div class="toggle-switch" style="position:relative;width:44px;height:24px;flex-shrink:0">
-                    <input type="checkbox" name="crossfade_enabled" {% if usuario.crossfade_enabled %}checked{% endif %} style="opacity:0;width:0;height:0;position:absolute">
-                    <span class="toggle-slider" style="position:absolute;inset:0;background:{% if usuario.crossfade_enabled %}var(--accent){% else %}var(--surface-3){% endif %};border-radius:999px;transition:all .25s;cursor:pointer"></span>
-                    <span class="toggle-knob" style="position:absolute;top:2px;left:{% if usuario.crossfade_enabled %}22px{% else %}2px{% endif %};width:20px;height:20px;background:#fff;border-radius:50%;transition:all .25s"></span>
-                </div>
-            </label>
-
-            <!-- Activity tracking toggle -->
-            <label class="toggle-row" style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--surface-2);border-radius:var(--radius);border:1px solid var(--border-light);cursor:pointer;transition:all var(--transition)">
-                <div style="width:36px;height:36px;border-radius:var(--radius-sm);background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0">
-                    <i class="fa-solid fa-chart-line"></i>
-                </div>
-                <div style="flex:1;min-width:0">
-                    <div style="font-weight:600;font-size:14px;color:var(--text-bright)">Actividad</div>
-                    <div style="font-size:12px;color:var(--muted)">Registrar mi historial de reproducciones</div>
-                </div>
-                <div class="toggle-switch" style="position:relative;width:44px;height:24px;flex-shrink:0">
-                    <input type="checkbox" name="activity_tracking" {% if usuario.activity_tracking %}checked{% endif %} style="opacity:0;width:0;height:0;position:absolute">
-                    <span class="toggle-slider" style="position:absolute;inset:0;background:{% if usuario.activity_tracking %}var(--accent){% else %}var(--surface-3){% endif %};border-radius:999px;transition:all .25s;cursor:pointer"></span>
-                    <span class="toggle-knob" style="position:absolute;top:2px;left:{% if usuario.activity_tracking %}22px{% else %}2px{% endif %};width:20px;height:20px;background:#fff;border-radius:50%;transition:all .25s"></span>
-                </div>
-            </label>
-
-            <!-- Acciones -->
-            <div class="profile-btn-row">
-                <button type="submit" class="btn btn-accent"><i class="fa-solid fa-floppy-disk"></i> Guardar</button>
-                {% if is_admin %}
-                <a href="{{ url_for('admin.admin_panel') }}" class="btn"><i class="fa-solid fa-gear"></i> Admin</a>
-                <a href="https://app.takenos.com/pay/b6515307-a660-446d-8117-3214a4a89a80" target="_blank" rel="noopener noreferrer" class="btn btn-donation">
-                    <i class="fa-solid fa-heart"></i> Apoyar
-                </a>
-                {% endif %}
-                <a href="{{ url_for('logout') }}" class="btn btn-logout"><i class="fa-solid fa-right-from-bracket"></i> Salir</a>
-            </div>
-            
-            <div id="profile-msg" style="display:none;padding:12px 16px;border-radius:var(--radius);font-size:14px"></div>
-        </form>
+<!-- User info card - always visible -->
+<div class="profile-user-card">
+    <div style="width:56px;height:56px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0">
+        <i class="fa-solid fa-user"></i>
     </div>
-
-    <!-- COLUMNA DERECHA: Estadísticas -->
-    <div class="profile-stats-col">
-        <h2 style="font-size:18px;margin-top:0;margin-bottom:16px;color:var(--text-bright);display:flex;align-items:center;gap:8px">
-            <i class="fa-solid fa-chart-simple" style="color:var(--accent)"></i> Estadísticas
-        </h2>
-
-        <!-- Stats top cards -->
-        <div class="stats-cards-row">
-            <div class="stat-card">
-                <div class="stat-icon"><i class="fa-solid fa-headphones"></i></div>
-                <div class="stat-value">{{ total_plays }}</div>
-                <div class="stat-label">Total Plays</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon"><i class="fa-regular fa-clock"></i></div>
-                <div class="stat-value">{{ total_hours }}h</div>
-                <div class="stat-label">Listening Time</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon"><i class="fa-solid fa-bolt"></i></div>
-                <div class="stat-value">{{ last_24h }}</div>
-                <div class="stat-label">Last 24h</div>
-            </div>
+    <div>
+        <div style="font-size:18px;font-weight:700;color:var(--text-bright)">{{ usuario.display_name() }}</div>
+        <div style="font-size:13px;color:var(--muted)">@{{ usuario.nombre_usuario }} · 
+            <span class="role-badge" style="display:inline-block;padding:2px 10px;border-radius:999px;font-size:11px;font-weight:600;background:{% if is_admin %}var(--accent-soft){% else %}var(--surface-3){% endif %};color:{% if is_admin %}var(--accent){% else %}var(--muted){% endif %}">
+                {{ 'Administrador' if is_admin else 'Usuario' }}
+            </span>
         </div>
-
-        <div class="stats-lists-row">
-            <!-- Top Canciones -->
-            <section class="stats-section">
-                <h3 class="stats-section-title"><i class="fa-solid fa-arrow-trend-up"></i> Top Canciones</h3>
-                {% if top_songs %}
-                <div class="tracklist mini-tracklist">
-                    {% for cancion, plays in top_songs %}
-                    <div class="track-item" style="grid-template-columns:24px minmax(0,1fr) 50px;padding:8px;font-size:13px">
-                        <span class="track-num" style="font-size:12px">{{ loop.index }}</span>
-                        <div class="track-info">
-                            <span class="track-title">{{ cancion.titulo }}</span>
-                            <span class="track-artist-mobile" style="display:block;font-size:11px">{{ cancion.artista_obj.nombre if cancion.artista_obj else '' }}</span>
-                        </div>
-                        <span class="track-duration" style="text-align:right;font-size:11px">{{ plays }}</span>
-                    </div>
-                    {% endfor %}
-                </div>
-                {% else %}
-                <p class="muted" style="font-size:13px;padding:12px">Aún no hay datos</p>
-                {% endif %}
-            </section>
-
-            <!-- Top Artistas -->
-            <section class="stats-section">
-                <h3 class="stats-section-title"><i class="fa-solid fa-user-group"></i> Top Artistas</h3>
-                {% if top_artists %}
-                <div class="tracklist mini-tracklist">
-                    {% for row in top_artists %}
-                    <div class="track-item" style="grid-template-columns:24px minmax(0,1fr) 50px;padding:8px;font-size:13px">
-                        <span class="track-num" style="font-size:12px">{{ loop.index }}</span>
-                        <div class="track-info">
-                            <span class="track-title">{{ row[0] }}</span>
-                        </div>
-                        <span class="track-duration" style="text-align:right;font-size:11px">{{ row[2] }}</span>
-                    </div>
-                    {% endfor %}
-                </div>
-                {% else %}
-                <p class="muted" style="font-size:13px;padding:12px">Aún no hay datos</p>
-                {% endif %}
-            </section>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">
+            <i class="fa-regular fa-calendar"></i> Miembro desde {{ usuario.fecha_creacion.strftime('%d/%m/%Y') if usuario.fecha_creacion else '—' }}
         </div>
     </div>
 </div>
 
+<!-- Tab Navigation -->
+<div class="profile-tabs">
+    <button class="profile-tab active" data-tab="perfil"><i class="fa-solid fa-user"></i> Perfil</button>
+    <button class="profile-tab" data-tab="seguridad"><i class="fa-solid fa-lock"></i> Seguridad</button>
+    <button class="profile-tab" data-tab="actividad"><i class="fa-solid fa-chart-simple"></i> Actividad</button>
+</div>
+
+<!-- TAB: Perfil -->
+<div class="profile-tab-content active" id="tab-perfil">
+    <form id="profile-form" style="display:flex;flex-direction:column;gap:20px;max-width:600px">
+        <!-- Nombre público -->
+        <div class="form-group">
+            <label class="form-label"><i class="fa-regular fa-id-card" style="margin-right:6px"></i> Nombre público</label>
+            <input type="text" class="form-input" name="nombre_publico" value="{{ usuario.nombre_publico or '' }}" placeholder="Cómo quieres aparecer">
+            <small style="color:var(--muted);font-size:12px">Si lo dejas vacío, se usará tu nombre de usuario</small>
+        </div>
+
+        <hr style="border:none;border-top:1px solid var(--border-color);margin:4px 0">
+
+        <!-- Preferencias -->
+        <div style="font-size:13px;font-weight:700;color:var(--text-bright);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">
+            <i class="fa-solid fa-sliders" style="margin-right:6px"></i> Preferencias
+        </div>
+
+        <!-- Idioma preferido -->
+        <div class="form-group">
+            <label class="form-label"><i class="fa-solid fa-language" style="margin-right:6px"></i> Idioma para traducciones</label>
+            <select class="form-input" name="idioma_preferido" style="cursor:pointer">
+                <option value="es" {% if usuario.idioma_preferido == 'es' %}selected{% endif %}>Español</option>
+                <option value="en" {% if usuario.idioma_preferido == 'en' %}selected{% endif %}>Inglés</option>
+                <option value="fr" {% if usuario.idioma_preferido == 'fr' %}selected{% endif %}>Francés</option>
+                <option value="de" {% if usuario.idioma_preferido == 'de' %}selected{% endif %}>Alemán</option>
+                <option value="it" {% if usuario.idioma_preferido == 'it' %}selected{% endif %}>Italiano</option>
+                <option value="pt" {% if usuario.idioma_preferido == 'pt' %}selected{% endif %}>Portugués</option>
+                <option value="ja" {% if usuario.idioma_preferido == 'ja' %}selected{% endif %}>Japonés</option>
+            </select>
+        </div>
+
+        <!-- Crossfade toggle -->
+        <label class="toggle-row" style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--surface-2);border-radius:var(--radius);border:1px solid var(--border-light);cursor:pointer;transition:all var(--transition)">
+            <div style="width:36px;height:36px;border-radius:var(--radius-sm);background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                <i class="fa-solid fa-wave-square"></i>
+            </div>
+            <div style="flex:1;min-width:0">
+                <div style="font-weight:600;font-size:14px;color:var(--text-bright)">Crossfade</div>
+                <div style="font-size:12px;color:var(--muted)">Transición suave entre canciones</div>
+            </div>
+            <div class="toggle-switch" style="position:relative;width:44px;height:24px;flex-shrink:0">
+                <input type="checkbox" name="crossfade_enabled" {% if usuario.crossfade_enabled %}checked{% endif %} style="opacity:0;width:0;height:0;position:absolute">
+                <span class="toggle-slider" style="position:absolute;inset:0;background:{% if usuario.crossfade_enabled %}var(--accent){% else %}var(--surface-3){% endif %};border-radius:999px;transition:all .25s;cursor:pointer"></span>
+                <span class="toggle-knob" style="position:absolute;top:2px;left:{% if usuario.crossfade_enabled %}22px{% else %}2px{% endif %};width:20px;height:20px;background:#fff;border-radius:50%;transition:all .25s"></span>
+            </div>
+        </label>
+
+        <!-- Activity tracking toggle -->
+        <label class="toggle-row" style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--surface-2);border-radius:var(--radius);border:1px solid var(--border-light);cursor:pointer;transition:all var(--transition)">
+            <div style="width:36px;height:36px;border-radius:var(--radius-sm);background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                <i class="fa-solid fa-chart-line"></i>
+            </div>
+            <div style="flex:1;min-width:0">
+                <div style="font-weight:600;font-size:14px;color:var(--text-bright)">Actividad</div>
+                <div style="font-size:12px;color:var(--muted)">Registrar mi historial de reproducciones</div>
+            </div>
+            <div class="toggle-switch" style="position:relative;width:44px;height:24px;flex-shrink:0">
+                <input type="checkbox" name="activity_tracking" {% if usuario.activity_tracking %}checked{% endif %} style="opacity:0;width:0;height:0;position:absolute">
+                <span class="toggle-slider" style="position:absolute;inset:0;background:{% if usuario.activity_tracking %}var(--accent){% else %}var(--surface-3){% endif %};border-radius:999px;transition:all .25s;cursor:pointer"></span>
+                <span class="toggle-knob" style="position:absolute;top:2px;left:{% if usuario.activity_tracking %}22px{% else %}2px{% endif %};width:20px;height:20px;background:#fff;border-radius:50%;transition:all .25s"></span>
+            </div>
+        </label>
+
+        <!-- Acciones -->
+        <div class="profile-btn-row">
+            <button type="submit" class="btn btn-accent"><i class="fa-solid fa-floppy-disk"></i> Guardar</button>
+            {% if is_admin %}
+            <a href="{{ url_for('admin.admin_panel') }}" class="btn"><i class="fa-solid fa-gear"></i> Admin</a>
+            <a href="https://app.takenos.com/pay/b6515307-a660-446d-8117-3214a4a89a80" target="_blank" rel="noopener noreferrer" class="btn btn-donation">
+                <i class="fa-solid fa-heart"></i> Apoyar
+            </a>
+            {% endif %}
+            <a href="{{ url_for('logout') }}" class="btn btn-logout"><i class="fa-solid fa-right-from-bracket"></i> Salir</a>
+        </div>
+        
+        <div id="profile-msg" style="display:none;padding:12px 16px;border-radius:var(--radius);font-size:14px"></div>
+    </form>
+</div>
+
+<!-- TAB: Seguridad -->
+<div class="profile-tab-content" id="tab-seguridad">
+    <div class="security-card" style="max-width:600px">
+        <h3 style="font-size:18px;font-weight:700;color:var(--text-bright);margin:0 0 16px 0;display:flex;align-items:center;gap:8px">
+            <i class="fa-solid fa-lock" style="color:var(--accent)"></i> Cambiar contraseña
+        </h3>
+        <div class="form-group">
+            <label class="form-label"><i class="fa-solid fa-key" style="margin-right:6px"></i> Nueva contraseña</label>
+            <input type="password" class="form-input" id="security-password" placeholder="Ingresa tu nueva contraseña" autocomplete="new-password">
+        </div>
+        <div style="margin-top:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <button id="btn-change-password" class="btn btn-accent"><i class="fa-solid fa-floppy-disk"></i> Cambiar contraseña</button>
+            <span id="security-hint" style="font-size:12px;color:var(--muted)">Mínimo 6 caracteres</span>
+        </div>
+        <div id="security-msg" style="display:none;padding:12px 16px;border-radius:var(--radius);font-size:14px;margin-top:16px"></div>
+    </div>
+</div>
+
+<!-- TAB: Actividad -->
+<div class="profile-tab-content" id="tab-actividad">
+    <h2 style="font-size:18px;margin-top:0;margin-bottom:16px;color:var(--text-bright);display:flex;align-items:center;gap:8px">
+        <i class="fa-solid fa-chart-simple" style="color:var(--accent)"></i> Estadísticas
+    </h2>
+
+    <!-- Stats top cards -->
+    <div class="stats-cards-row">
+        <div class="stat-card">
+            <div class="stat-icon"><i class="fa-solid fa-headphones"></i></div>
+            <div class="stat-value">{{ total_plays }}</div>
+            <div class="stat-label">Total Plays</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon"><i class="fa-regular fa-clock"></i></div>
+            <div class="stat-value">{{ total_hours }}h</div>
+            <div class="stat-label">Listening Time</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon"><i class="fa-solid fa-bolt"></i></div>
+            <div class="stat-value">{{ last_24h }}</div>
+            <div class="stat-label">Last 24h</div>
+        </div>
+    </div>
+
+    <div class="stats-lists-row">
+        <!-- Top Canciones -->
+        <section class="stats-section">
+            <h3 class="stats-section-title"><i class="fa-solid fa-arrow-trend-up"></i> Top Canciones</h3>
+            {% if top_songs %}
+            <div class="tracklist mini-tracklist">
+                {% for cancion, plays in top_songs %}
+                <div class="track-item" style="grid-template-columns:24px minmax(0,1fr) 50px;padding:8px;font-size:13px">
+                    <span class="track-num" style="font-size:12px">{{ loop.index }}</span>
+                    <div class="track-info">
+                        <span class="track-title">{{ cancion.titulo }}</span>
+                        <span class="track-artist-mobile" style="display:block;font-size:11px">{{ cancion.artista_obj.nombre if cancion.artista_obj else '' }}</span>
+                    </div>
+                    <span class="track-duration" style="text-align:right;font-size:11px">{{ plays }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="muted" style="font-size:13px;padding:12px">Aún no hay datos</p>
+            {% endif %}
+        </section>
+
+        <!-- Top Artistas -->
+        <section class="stats-section">
+            <h3 class="stats-section-title"><i class="fa-solid fa-user-group"></i> Top Artistas</h3>
+            {% if top_artists %}
+            <div class="tracklist mini-tracklist">
+                {% for row in top_artists %}
+                <div class="track-item" style="grid-template-columns:24px minmax(0,1fr) 50px;padding:8px;font-size:13px">
+                    <span class="track-num" style="font-size:12px">{{ loop.index }}</span>
+                    <div class="track-info">
+                        <span class="track-title">{{ row[0] }}</span>
+                    </div>
+                    <span class="track-duration" style="text-align:right;font-size:11px">{{ row[2] }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="muted" style="font-size:13px;padding:12px">Aún no hay datos</p>
+            {% endif %}
+        </section>
+    </div>
+</div>
+
 <style>
-/* Dashboard Layout */
-.profile-dashboard {
-    display: grid;
-    grid-template-columns: 1fr 1.2fr;
-    gap: 40px;
-    align-items: start;
-    max-width: 1200px;
+/* User info card */
+.profile-user-card {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 20px 24px;
+    background: var(--surface-2);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-color);
+    margin-bottom: 24px;
+    max-width: 800px;
+}
+
+/* Tab Navigation */
+.profile-tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 2px solid var(--border-color);
+    margin-bottom: 24px;
+    max-width: 800px;
+}
+.profile-tab {
+    padding: 10px 20px;
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: all var(--transition);
+    font-family: inherit;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.profile-tab:hover {
+    color: var(--text-bright);
+    background: var(--surface-2);
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+.profile-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+.profile-tab i {
+    font-size: 13px;
+}
+
+/* Tab Content */
+.profile-tab-content {
+    display: none;
+}
+.profile-tab-content.active {
+    display: block;
+}
+
+/* Security Card */
+.security-card {
+    background: var(--surface-2);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 24px;
 }
 
 /* Stats Styles */
@@ -273,18 +346,30 @@
 
 /* Responsiveness */
 @media (max-width: 900px) {
-    .profile-dashboard {
-        grid-template-columns: 1fr;
-        gap: 32px;
-    }
     .stats-lists-row {
         grid-template-columns: 1fr;
+    }
+    .profile-tabs {
+        overflow-x: auto;
     }
 }
 </style>
 
 <script>
 (function(){
+    // ===== Tab switching =====
+    document.querySelectorAll('.profile-tab').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.profile-tab').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.profile-tab-content').forEach(c => c.classList.remove('active'));
+            this.classList.add('active');
+            const tabId = this.dataset.tab;
+            const target = document.getElementById('tab-' + tabId);
+            if (target) target.classList.add('active');
+        });
+    });
+
+    // ===== Profile form =====
     const form = document.getElementById('profile-form');
     const msg = document.getElementById('profile-msg');
 
@@ -312,7 +397,6 @@
         e.preventDefault();
         const data = {
             nombre_publico: form.nombre_publico.value,
-            password: form.password.value,
             crossfade_enabled: form.crossfade_enabled.checked,
             activity_tracking: form.activity_tracking.checked,
             idioma_preferido: form.idioma_preferido.value
@@ -331,7 +415,6 @@
                 msg.style.border = '1px solid rgba(74,222,128,0.2)';
                 msg.style.color = '#4ade80';
                 msg.innerHTML = '<i class="fa-regular fa-circle-check"></i> Cambios guardados correctamente';
-                form.password.value = '';
                 setTimeout(() => msg.style.display = 'none', 3000);
                 // Notificar al reproductor del cambio de crossfade
                 const pf = document.getElementById('player-frame');
@@ -358,6 +441,56 @@
             msg.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Error de conexión';
         });
     });
+
+    // ===== Security tab: password change =====
+    const btnChangePwd = document.getElementById('btn-change-password');
+    const pwdInput = document.getElementById('security-password');
+    const secMsg = document.getElementById('security-msg');
+
+    if (btnChangePwd) {
+        btnChangePwd.addEventListener('click', function() {
+            const password = pwdInput.value;
+            if (!password || password.length < 6) {
+                secMsg.style.display = 'block';
+                secMsg.style.background = 'rgba(255,80,80,0.1)';
+                secMsg.style.border = '1px solid rgba(255,80,80,0.2)';
+                secMsg.style.color = '#ff6b6b';
+                secMsg.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> La contraseña debe tener al menos 6 caracteres';
+                return;
+            }
+
+            fetch('/api/profile/update', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({password: password})
+            })
+            .then(r => r.json())
+            .then(d => {
+                if (d.ok) {
+                    secMsg.style.display = 'block';
+                    secMsg.style.background = 'rgba(74,222,128,0.1)';
+                    secMsg.style.border = '1px solid rgba(74,222,128,0.2)';
+                    secMsg.style.color = '#4ade80';
+                    secMsg.innerHTML = '<i class="fa-regular fa-circle-check"></i> Contraseña cambiada correctamente';
+                    pwdInput.value = '';
+                    setTimeout(() => secMsg.style.display = 'none', 3000);
+                } else {
+                    secMsg.style.display = 'block';
+                    secMsg.style.background = 'rgba(255,80,80,0.1)';
+                    secMsg.style.border = '1px solid rgba(255,80,80,0.2)';
+                    secMsg.style.color = '#ff6b6b';
+                    secMsg.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Error: ' + (d.error || 'desconocido');
+                }
+            })
+            .catch(() => {
+                secMsg.style.display = 'block';
+                secMsg.style.background = 'rgba(255,80,80,0.1)';
+                secMsg.style.border = '1px solid rgba(255,80,80,0.2)';
+                secMsg.style.color = '#ff6b6b';
+                secMsg.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Error de conexión';
+            });
+        });
+    }
 })();
 </script>
 {% endblock %}
