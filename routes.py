@@ -294,48 +294,61 @@ def admin_panel():
     try:
         with open(changelog_path, 'r', encoding='utf-8') as f:
             cl_content = f.read()
-        version_blocks = _re.split(r'^## ', cl_content, flags=_re.MULTILINE)[1:]
-        for block in version_blocks:
-            lines = block.strip().split('\n')
-            header = lines[0].strip()
-            m = _re.match(r'\[(.+?)\]\s*-\s*(.+)', header)
-            if m:
-                number = m.group(1)
-                date = m.group(2).strip()
-            else:
-                number = header
-                date = ''
-            title = ''
-            sections = []
-            current_section = None
-            for line in lines[1:]:
-                line_s = line.strip()
-                if line_s.startswith('### '):
-                    title_text = line_s[4:].strip()
-                    if not title:
-                        title = title_text
-                    else:
+        
+        # Dividir por secciones de versión (## [v.v.v])
+        version_blocks = _re.split(r'^##\s+', cl_content, flags=_re.MULTILINE)
+        if len(version_blocks) > 1:
+            # El primer elemento es el preámbulo, lo saltamos
+            for block in version_blocks[1:]:
+                lines = block.strip().split('\n')
+                if not lines: continue
+                
+                header = lines[0].strip()
+                # Formato esperado: [1.2.0] - 2026-05-10
+                m = _re.match(r'\[?([\d\.]+)\]?\s*-\s*(.+)', header)
+                if m:
+                    number = m.group(1)
+                    date = m.group(2).strip()
+                else:
+                    number = header
+                    date = ''
+                
+                title = ''
+                sections = []
+                current_section = None
+                
+                for line in lines[1:]:
+                    line_s = line.strip()
+                    if not line_s: continue
+                    
+                    if line_s.startswith('### '):
+                        title_text = line_s[4:].strip()
+                        if not title:
+                            title = title_text
+                        else:
+                            if current_section:
+                                sections.append(current_section)
+                            current_section = None
+                    elif line_s.startswith('#### '):
                         if current_section:
                             sections.append(current_section)
-                        current_section = None
-                elif line_s.startswith('#### '):
-                    if current_section:
-                        sections.append(current_section)
-                    current_section = {'title': line_s[5:].strip(), 'entries': []}
-                elif line_s.startswith('- ') and current_section is not None:
-                    current_section['entries'].append(line_s[2:])
-                elif line_s.startswith('- '):
-                    if not current_section:
-                        current_section = {'title': 'Cambios', 'entries': []}
-                    current_section['entries'].append(line_s[2:])
-            if current_section:
-                sections.append(current_section)
-            versions.append({
-                'number': number,
-                'date': date,
-                'title': title,
-                'sections': sections
-            })
+                        current_section = {'title': line_s[5:].strip(), 'entries': []}
+                    elif line_s.startswith('- ') and current_section is not None:
+                        current_section['entries'].append(line_s[2:])
+                    elif line_s.startswith('- '):
+                        if not current_section:
+                            current_section = {'title': 'Cambios', 'entries': []}
+                        current_section['entries'].append(line_s[2:])
+                
+                if current_section:
+                    sections.append(current_section)
+                
+                versions.append({
+                    'number': number,
+                    'date': date,
+                    'title': title,
+                    'sections': sections
+                })
     except FileNotFoundError:
         print(f"Error: No se encontró el changelog en {changelog_path}")
     except Exception as e:
