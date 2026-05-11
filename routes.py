@@ -294,16 +294,16 @@ def admin_panel():
     versions = []
     cl_content = ""
     
-    # 1. Intentar obtener el changelog desde GitHub (para tener siempre la versión más reciente)
+    # 1. Intentar obtener el changelog desde GitHub
     try:
         github_url = 'https://raw.githubusercontent.com/GamersEC/ducksound/main/CHANGELOG.md'
         resp = _requests.get(github_url, timeout=5)
         if resp.status_code == 200:
             cl_content = resp.text
     except Exception as e:
-        print(f"Error fetching remote changelog: {e}")
+        print(f"Remote changelog fetch failed: {e}")
 
-    # 2. Si falló GitHub, intentar con el archivo local
+    # 2. Fallback al archivo local
     if not cl_content:
         changelog_path = os.path.join(BASE_DIR, 'CHANGELOG.md')
         try:
@@ -311,62 +311,69 @@ def admin_panel():
                 with open(changelog_path, 'r', encoding='utf-8') as f:
                     cl_content = f.read()
         except Exception as e:
-            print(f"Error reading local changelog: {e}")
+            print(f"Local changelog read failed: {e}")
 
-    # 3. Parsear el contenido obtenido
+    # 3. Parseo robusto línea por línea
     if cl_content:
-        version_blocks = _re.split(r'^##\s+', cl_content, flags=_re.MULTILINE)
-        if len(version_blocks) > 1:
-            for block in version_blocks[1:]:
-                lines = block.strip().split('\n')
-                if not lines: continue
-                
-                header = lines[0].strip()
-                # Soporta: [1.2.0] - fecha, 1.2.0 - fecha, o solo [1.2.0]
+        lines = cl_content.splitlines()
+        current_version = None
+        current_section = None
+        
+        for line in lines:
+            stripped = line.strip()
+            if not stripped: continue
+            
+            # Detectar inicio de versión: ## [1.2.0] ...
+            if stripped.startswith('## '):
+                header = stripped[3:].strip()
                 m = _re.match(r'\[?([\d\.]+)\]?(\s*-\s*(.+))?', header)
                 if m:
                     number = m.group(1)
                     date = m.group(3).strip() if m.group(3) else ''
-                else:
-                    number = header
-                    date = ''
-                
-                title = ''
-                sections = []
-                current_section = None
-                
-                for line in lines[1:]:
-                    line_s = line.strip()
-                    if not line_s: continue
                     
-                    if line_s.startswith('### '):
-                        title_text = line_s[4:].strip()
-                        if not title:
-                            title = title_text
-                        else:
-                            if current_section:
-                                sections.append(current_section)
-                            current_section = None
-                    elif line_s.startswith('#### '):
-                        if current_section:
-                            sections.append(current_section)
-                        current_section = {'title': line_s[5:].strip(), 'entries': []}
-                    elif line_s.startswith('- '):
-                        entry_text = line_s[2:].strip()
-                        if current_section:
-                            current_section['entries'].append(entry_text)
-                        else:
-                            current_section = {'title': 'Cambios', 'entries': [entry_text]}
+                    current_version = {
+                        'number': number,
+                        'date': date,
+                        'title': '',
+                        'sections': []
+                    }
+                    versions.append(current_version)
+                    current_section = None
+                continue
+            
+            if not current_version: continue
+            
+            # Detectar sección: ### Título
+            if stripped.startswith('### '):
+                title_text = stripped[4:].strip()
+                # Si es el primer ###, es el título de la versión
+                if not current_version['title']:
+                    current_version['title'] = title_text
+                else:
+                    # Si ya hay título, es una sección de cambios
+                    if current_section:
+                        current_version['sections'].append(current_section)
+                    current_section = {'title': title_text, 'entries': []}
+                continue
                 
+            # Detectar subsección: #### Subtítulo
+            if stripped.startswith('#### '):
                 if current_section:
-                    sections.append(current_section)
+                    current_version['sections'].append(current_section)
+                current_section = {'title': stripped[5:].strip(), 'entries': []}
+                continue
                 
-                versions.append({
-                    'number': number,
-                    'date': date,
-                    'title': title,
-                    'sections': sections
-                })
+            # Detectar entrada: - Cambio
+            if stripped.startswith('- '):
+                entry = stripped[2:].strip()
+                if not current_section:
+                    # Crear sección por defecto si no hay una
+                    current_section = {'title': 'Cambios', 'entries': []}
+                current_section['entries'].append(entry)
+        
+        # Añadir última sección si existe
+        if current_version and current_section:
+            current_version['sections'].append(current_section)
     
     return render_template('admin.html', changelog_versions=versions)
 
