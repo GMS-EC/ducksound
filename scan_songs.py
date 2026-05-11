@@ -24,16 +24,138 @@ def extraer_metadatos(ruta_archivo):
     """
     Extrae metadatos del archivo de audio.
     Usa TinyTag para duración (rápido) y mutagen para texto (encoding correcto).
+    Incluye heurística de recuperación para nombres corruptos (????).
     """
     from audio_analyzer import analyze_audio
+    from pathlib import Path
+
+    def es_corrupto(texto):
+        if not texto: return False
+        # Si el texto tiene más de 3 '?' seguidos o el 50% son '?', es corrupto
+        if '???' in texto or (len(texto) > 0 and texto.count('?') / len(texto) > 0.5):
+            return True
+        return False
+
+    def recuperar_desde_ruta(ruta):
+        """Intenta extraer el nombre del artista de la ruta del archivo."""
+        # Ejemplo: /musica/Miki Matsubara/Album/cancion.mp3
+        partes = Path(ruta).parts
+        if len(partes) >= 2:
+            # Normalmente la carpeta raíz de la música es la primera, la segunda es el artista
+            # Pero depende de la estructura. Intentamos tomar el nombre de la carpeta superior al álbum
+            return partes[-3] if len(partes) >= 3 else partes[-2]
+        return None
 
     try:
-        # Usar mutagen como fuente principal para metadatos de texto (encoding robusto)
         audio_file = File(str(ruta_archivo))
         
         def _tag_val(*keys):
             if audio_file is None or not hasattr(audio_file, 'tags') or audio_file.tags is None:
                 return None
+            for k in keys:
+                if k in audio_file.tags:
+                    v = audio_file.tags[k]
+                    if v is not None:
+                        if isinstance(v, (list, tuple)):
+                            v = v[0] if v else None
+                        return str(v).strip() if v is not None else None
+            return None
+        
+        def _tiny_val(attr, *extra_keys):
+            val = getattr(tag, attr, None)
+            if not val:
+                extra = getattr(tag, 'extra', None) or {}
+                for k in extra_keys:
+                    v = extra.get(k)
+                    if isinstance(v, (list, tuple)):
+                        v = v[0] if v else None
+                    if v:
+                        val = v
+                        break
+            return val
+
+        # Extraer texto con mutagen
+        titulo = _tag_val('TIT2', 'title') or Path(ruta_archivo).stem
+        artista = _tag_val('TPE1', 'artist')
+        album = _tag_val('TALB', 'album')
+        genero = _tag_val('TCON', 'genre')
+        track_str = _tag_val('TRCK', 'tracknumber', 'track')
+        disc_str = _tag_val('TPOS', 'discnumber', 'disc')
+        
+        # --- HEURÍSTICA DE RECUPERACIÓN ---
+        if es_corrupto(artista):
+            recuperado = recuperar_desde_ruta(ruta_archivo)
+            if recuperado:
+                artista = recuperado
+        # ---------------------------------
+        
+        # Fallback: si mutagen no dio texto o sigue siendo corrupto, usar TinyTag
+        if not artista or es_corrupto(artista) or not titulo:
+            tag = TinyTag.get(str(ruta_archivo), image=False)
+            if tag is None:
+                return None
+            
+            if not titulo:
+                titulo = _tiny_val('title', 'TITLE') or Path(ruta_archivo).stem
+            if not artista or es_corrupto(artista):
+                artista = _tiny_val('artist', 'ARTIST')
+                # Si TinyTag también falla, intentar ruta
+                if not artista or es_corrupto(artista):
+                    artista = recuperar_desde_ruta(ruta_archivo)
+            if not album:
+                album = _tiny_val('album', 'ALBUM')
+            if not genero:
+                genero = _tiny_val('genre', 'GENRE')
+            if not track_str:
+                t = _tiny_val('track', 'tracknumber', 'TRCK', 'TRACKNUMBER')
+                track_str = str(t) if t else None
+            if not disc_str:
+                d = _tiny_val('disc', 'discnumber', 'DISCNUMBER', 'TPA')
+                disc_str = str(d) if d else None
+        
+        def parse_track_num(val):
+            if not val: return None
+            try: return int(str(val).split('/')[0])
+            except: return None
+        
+        albumartist = _tag_val('TPE2', 'albumartist', 'album artist', 'album_artist', 'ALBUMARTIST', 'ALBUM ARTIST') or artista
+        # También aplicar recuperación al albumartist si es corrupto
+        if es_corrupto(albumartist):
+            albumartist = recuperar_desde_ruta(ruta_archivo) or artista
+
+        metadatos = {
+            'titulo': titulo,
+            'artista': artista,
+            'albumartist': albumartist,
+            'artista_display': artista,
+            'artista_principal': normalizar_artista(albumartist),
+            'album': album,
+            'duracion': None,
+            'ruta_imagen': None,
+            'genero': genero,
+            'numero_pista': parse_track_num(track_str),
+            'numero_disco': parse_track_num(disc_str),
+        }
+        
+        # Duración
+        try:
+            tiny = TinyTag.get(str(ruta_archivo), image=False)
+            if tiny and tiny.duration:
+                metadatos['duracion'] = int(tiny.duration)
+        except:
+            pass
+        
+        try:
+            analisis = analyze_audio(ruta_archivo)
+            if analisis:
+                metadatos['analisis'] = analisis
+        except:
+            pass
+            
+        return metadatos
+    except Exception as e:
+        logging.error(f"Error extrayendo metadatos de {ruta_archivo}: {e}")
+        return None
             for k in keys:
                 if k in audio_file.tags:
                     v = audio_file.tags[k]
