@@ -20,9 +20,41 @@ db.init_app(app)
 # Crear las tablas si no existen
 with app.app_context():
     db.create_all()
-
+    
+    # --- LIMPIEZA TEMPORAL DE DB ---
+    from models import Artista, Cancion
+    from metadata_normalizer import normalizar_artista
+    
+    # 1. Limpiar corchetes ['...']
+    corchetes = Artista.query.filter(
+        (Artista.nombre.like('[\'%') & Artista.nombre.like('%\']')) |
+        (Artista.nombre_normalizado.like('[\'%') & Artista.nombre_normalizado.like('%\']'))
+    ).all()
+    for a in corchetes:
+        def fix(t):
+            if t and t.startswith('[') and t.endswith(']'):
+                c = t[1:-1].strip()
+                if (c.startswith("'") and c.endswith("'")) or (c.startswith('"') and c.endswith('"')):
+                    c = c[1:-1]
+                return c
+            return t
+        a.nombre = fix(a.nombre)
+        a.nombre_normalizado = fix(a.nombre_normalizado)
+    
+    # 2. Unificar Ghost
+    principal = Artista.query.filter(Artista.nombre_normalizado == 'Ghost').first()
+    if principal:
+        for a in Artista.query.filter(Artista.id != principal.id).all():
+            if normalizar_artista(a.nombre) == 'Ghost':
+                Cancion.query.filter_by(artista_id=a.id).update({'artista_id': principal.id})
+                db.session.delete(a)
+    
+    db.session.commit()
+    # -------------------------------
+    
     # Crear usuario administrador si no existe ninguno
     if Usuario.query.count() == 0:
+
         admin_user = Usuario(
             nombre_usuario='ducksound',
             role='admin'
