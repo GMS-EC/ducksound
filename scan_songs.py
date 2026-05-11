@@ -38,7 +38,9 @@ def extraer_metadatos(ruta_archivo):
                 if k in audio_file.tags:
                     v = audio_file.tags[k]
                     if v is not None:
-                        return str(v).strip()
+                        if isinstance(v, (list, tuple)):
+                            v = v[0] if v else None
+                        return str(v).strip() if v is not None else None
             return None
 
         def _tiny_val(attr, *extra_keys):
@@ -169,20 +171,105 @@ def extraer_metadatos(ruta_archivo):
 def obtener_o_crear_artista(nombre, enriquecer=False, mbid=None):
     if not nombre:
         return None
-
+    
+    from metadata_normalizer import normalizar_artista
+    # Normalizar el nombre de entrada inmediatamente para evitar duplicados (ej: Ghost B.C. -> Ghost)
     nombre_norm = normalizar_artista(nombre)
     if not nombre_norm:
-        return None
+        nombre_norm = nombre
     
+    from models import db, Artista
     from sqlalchemy import func
     from rapidfuzz import fuzz
     UMBRAL_FUZZY = 80
+    
+    # Protección contra nombres corruptos (evitar que "????" sea tratado como nombre válido)
+    if nombre_norm.strip() == '?' * len(nombre_norm.strip()) or '???' in nombre_norm:
+        # Si el nombre es corrupto, intentar usar el nombre original sin normalizar para MusicBrainz
+        # o marcarlo para revisión. Aquí forzamos a que no coincida por nombre_normalizado
+        # para obligar a MusicBrainz a intentar encontrar el artista real.
+        nombre_norm_busqueda = nombre 
+    else:
+        nombre_norm_busqueda = nombre_norm
 
     # 1. Buscar por musicbrainz_id si se proporcionó (desde metadatos del archivo)
     if mbid:
         artista_obj = Artista.query.filter_by(musicbrainz_id=mbid).first()
         if artista_obj:
             return artista_obj
+    
+    # 2. Buscar por nombre_normalizado
+    artista_obj = Artista.query.filter(
+        func.lower(func.trim(Artista.nombre_normalizado)) == nombre_norm.lower().strip()
+    ).first()
+    if artista_obj:
+        return artista_obj
+    
+    # 3. Buscar en MusicBrainz API
+    from musicbrainz_client import buscar_artista
+    mb_result = buscar_artista(nombre_norm_busqueda)
+    if mb_result:
+        # Usar sort_name como nombre_normalizado (romanizado si es diferente)
+        mb_nombre_raw = mb_result['nombre']
+        mb_sort = mb_result['sort_name']
+        mb_nombre_norm = normalizar_artista(mb_sort if mb_sort and mb_sort != mb_nombre_raw else mb_nombre_raw)
+        
+        # Buscar por MBID en BD
+        artista_obj = Artista.query.filter_by(musicbrainz_id=mb_result['mbid']).first()
+        if artista_obj:
+            return artista_obj
+        
+        # Buscar por nombre_normalizado de MusicBrainz
+        if mb_nombre_norm:
+            artista_obj = Artista.query.filter(
+                func.lower(func.trim(Artista.nombre_normalizado)) == mb_nombre_norm.lower().strip()
+            ).first()
+            if artista_obj:
+                return artista_obj
+        
+        # Actualizar mb_result con el normalized name correcto
+        mb_result['nombre_norm'] = mb_nombre_norm
+    
+    # 4. Fuzzy matching contra artistas existentes que NO tengan MBID
+    mejor_ratio = 0
+    mejor_artista = None
+    for a in Artista.query.filter(Artista.musicbrainz_id.is_(None)).all():
+        ratio = fuzz.token_set_ratio(nombre_norm.lower(), a.nombre.lower())
+        if ratio > mejor_ratio:
+            mejor_ratio = ratio
+            mejor_artista = a
+    if mejor_ratio >= UMBRAL_FUZZY and mejor_artista:
+        return mejor_artista
+    
+    # 5. Crear nuevo artista
+    # Usar sort_name de MusicBrainz como nombre_normalizado si existe (romanización)
+    mb_norm_name = mb_result.get('nombre_norm') if mb_result else None
+    if mb_norm_name:
+        final_norm = mb_norm_name
+    else:
+        # Si el nombre no es latino y no hay MBID, romanizar con unidecode
+        from musicbrainz_client import _es_latino
+        if not _es_latino(nombre_norm):
+            from unidecode import unidecode
+            final_norm = normalizar_artista(unidecode(nombre_norm))
+        else:
+            final_norm = nombre_norm
+    
+    try:
+        artista_obj = Artista(
+            nombre=nombre,
+            nombre_normalizado=final_norm,
+            musicbrainz_id=mb_result['mbid'] if mb_result else None
+        )
+        db.session.add(artista_obj)
+        db.session.flush()
+        return artista_obj
+    except Exception:
+        db.session.rollback()
+        artista_obj = Artista.query.filter(
+            func.lower(func.trim(Artista.nombre_normalizado)) == nombre_norm.lower().strip()
+        ).first()
+        return artista_obj
 
     # 2. Buscar por nombre_normalizado
     artista_obj = Artista.query.filter(
