@@ -91,6 +91,10 @@
 .artist-row.editing .artist-mbid-display { display: none !important; }
 .artist-row.editing .artist-name-input,
 .artist-row.editing .artist-mbid-input { display: inline-block !important; }
+.artist-row.editing .btn-edit-artist,
+.artist-row.editing .btn-lookup-mbid { display: none !important; }
+.artist-row.editing .btn-save-artist,
+.artist-row.editing .btn-cancel-artist { display: inline-flex !important; }
 .btn-sm { border: 1px solid var(--border-light); background: var(--surface-2); color: var(--text); cursor: pointer; border-radius: var(--radius-sm); transition: all 0.15s; }
 .btn-sm:hover { background: var(--surface-3); }
 .btn-sm.btn-accent { border-color: var(--accent); background: rgba(217, 88, 64, 0.15); color: var(--accent); }
@@ -102,10 +106,6 @@ document.querySelectorAll('.btn-edit-artist').forEach(btn => {
     btn.addEventListener('click', function() {
         const row = this.closest('.artist-row');
         row.classList.add('editing');
-        row.querySelector('.btn-edit-artist').style.display = 'none';
-        row.querySelector('.btn-lookup-mbid').style.display = 'none';
-        row.querySelector('.btn-save-artist').style.display = 'inline-flex';
-        row.querySelector('.btn-cancel-artist').style.display = 'inline-flex';
     });
 });
 
@@ -113,10 +113,6 @@ document.querySelectorAll('.btn-cancel-artist').forEach(btn => {
     btn.addEventListener('click', function() {
         const row = this.closest('.artist-row');
         row.classList.remove('editing');
-        row.querySelector('.btn-edit-artist').style.display = 'inline-flex';
-        row.querySelector('.btn-lookup-mbid').style.display = 'inline-flex';
-        row.querySelector('.btn-save-artist').style.display = 'none';
-        row.querySelector('.btn-cancel-artist').style.display = 'none';
         row.querySelector('.artist-name-input').value = row.querySelector('.artist-name-display').textContent.trim();
         row.querySelector('.artist-mbid-input').value = row.querySelector('.artist-mbid-display').textContent.trim() === '—' ? '' : row.querySelector('.artist-mbid-display').textContent.trim();
     });
