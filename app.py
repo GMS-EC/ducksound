@@ -1,4 +1,5 @@
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, send_file
+from flask_compress import Compress
 from config import Config
 from models import db, Usuario, Artista, Cancion, Favorito, HistorialEscucha, DailyMix, Coleccion, Album
 from datetime import datetime, date, timedelta
@@ -14,8 +15,18 @@ if sys.platform == 'win32':
 app = Flask(__name__)
 app.config.from_object(Config)
 
+compress = Compress()
+compress.init_app(app)
+
 # Inicializar la base de datos
 db.init_app(app)
+
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    return response
 
 # Crear las tablas si no existen
 with app.app_context():
@@ -145,7 +156,11 @@ def dashboard():
         return redirect(url_for('login'))
     
     # Ordenamos por título (artista queda disponible vía relación artista_obj)
-    canciones = Cancion.query.order_by(Cancion.titulo).all()
+    from sqlalchemy.orm import joinedload
+    canciones = Cancion.query.options(
+        joinedload(Cancion.artista_obj),
+        joinedload(Cancion.album_obj)
+    ).order_by(Cancion.titulo).all()
     usuario_obj = db.session.get(Usuario, session['user_id'])
     is_admin = usuario_obj.is_admin() if usuario_obj else False
     
@@ -325,22 +340,28 @@ def _generate_daily_mixes(usuario_id):
     ).group_by(Cancion.genero).order_by(db.desc('cnt')).limit(3).all()
     top_generos_list = [g[0] for g in top_generos if g[0]]
 
-    # Canciones con análisis acústico (BPM, energía, etc.)
-    todas_canciones = {c.id: c for c in Cancion.query.all()}
-
     # === 2. FUNCIÓN AUXILIAR: OBTENER CANCIONES POR VIBE ===
+    def _random_ids(limit, extra_filters=None):
+        """Obtiene IDs aleatorios de canciones eficientemente."""
+        base = Cancion.query.with_entities(Cancion.id)
+        if extra_filters:
+            for f in extra_filters:
+                base = base.filter(f)
+        ids = [r[0] for r in base.all()]
+        if not ids:
+            return []
+        return random.sample(ids, min(limit, len(ids)))
+
     def canciones_por_vibe(max_bpm=None, min_bpm=None, excluir_ids=None, limit=25):
         """Filtra canciones por rango de BPM."""
         excluir = set(excluir_ids or [])
-        query = Cancion.query
+        filters = []
         if min_bpm is not None:
-            query = query.filter(Cancion.bpm >= min_bpm)
+            filters.append(Cancion.bpm >= min_bpm)
         if max_bpm is not None:
-            query = query.filter(Cancion.bpm <= max_bpm)
-        # Preferir canciones con BPM conocido
-        query = query.order_by(Cancion.bpm.desc().nullslast(), db.func.random())
-        candidatos = query.limit(limit * 3).all()
-        return [c.id for c in candidatos if c.id not in excluir][:limit]
+            filters.append(Cancion.bpm <= max_bpm)
+        candidatos_ids = _random_ids(limit * 3, filters)
+        return [c for c in candidatos_ids if c not in excluir][:limit]
 
     def obtener_similares_a(song_ids, top_k=8):
         """Obtiene canciones similares a un conjunto de canciones."""
@@ -425,19 +446,17 @@ def _generate_daily_mixes(usuario_id):
         # Pool 3: Exploración del género (canciones no escuchadas)
         if top_generos_list:
             genre = top_generos_list[(hash(name) % len(top_generos_list))]
-            explorar_ids = [
-                c.id for c in Cancion.query.filter(
-                    Cancion.genero.ilike(f'%{genre}%'),
-                    ~Cancion.id.in_(excluir_ids_set) if excluir_ids_set else db.true()
-                ).order_by(db.func.random()).limit(30).all()
-            ]
+            explorar_ids = _random_ids(30, [
+                Cancion.genero.ilike(f'%{genre}%'),
+                ~Cancion.id.in_(excluir_ids_set) if excluir_ids_set else db.true()
+            ])
             if explorar_ids:
                 pools.append(explorar_ids)
                 excluir_ids_set.update(explorar_ids)
 
         # Fallback si no hay suficientes
         if not pools or sum(len(p) for p in pools) < 5:
-            fallback_ids = [c.id for c in Cancion.query.order_by(db.func.random()).limit(30).all()]
+            fallback_ids = _random_ids(30)
             fallback_ids = [c for c in fallback_ids if c not in excluir_ids_set]
             pools = [fallback_ids]
 
@@ -446,7 +465,7 @@ def _generate_daily_mixes(usuario_id):
 
         # Si aún así está vacío, fallback total
         if not mix_canciones_ids:
-            mix_canciones_ids = [c.id for c in Cancion.query.order_by(db.func.random()).limit(20).all()]
+            mix_canciones_ids = _random_ids(20)
 
         # === 4. GUARDAR MIX ===
         # Limpiar mixes viejos del mismo nombre para este usuario (opcional)
@@ -758,12 +777,17 @@ def player_frame():
 @app.context_processor
 def inject_user_info():
     """Inyecta información del usuario en todos los templates"""
+    from flask import g
     is_admin = False
     usuario_obj = None
     if 'user_id' in session:
-        usuario_obj = db.session.get(Usuario, session['user_id'])
-        if usuario_obj:
-            is_admin = usuario_obj.is_admin()
+        if 'user_info' not in g:
+            usuario_obj = db.session.get(Usuario, session['user_id'])
+            g.user_info = usuario_obj
+            g.user_is_admin = usuario_obj.is_admin() if usuario_obj else False
+        else:
+            usuario_obj = g.user_info
+        is_admin = g.user_is_admin
     return dict(is_admin=is_admin, es_favoritos=False, current_user=usuario_obj, app_version=Config.APP_VERSION)
 
 
@@ -792,7 +816,7 @@ def servir_audio(cancion_id):
 
     if os.path.exists(original_path):
         print(f"Serving audio (original): {original_path}")
-        return send_file(original_path, mimetype=_mime_for(original_path))
+        return send_file(original_path, mimetype=_mime_for(original_path), conditional=True, max_age=86400)
 
     # Si la ruta no existe, intentar convertir rutas Windows como 'G:\\...' a la ruta montada '/music/...'
     try:
@@ -807,7 +831,7 @@ def servir_audio(cancion_id):
             tried_paths.append(alt)
             if os.path.exists(alt):
                 print(f"Serving audio (mapped from {original_path} -> {alt})")
-                return send_file(alt, mimetype=_mime_for(alt))
+                return send_file(alt, mimetype=_mime_for(alt), conditional=True, max_age=86400)
     except Exception as e:
         print('Error mapping audio path:', e)
 
@@ -816,7 +840,7 @@ def servir_audio(cancion_id):
     tried_paths.append(rel)
     if os.path.exists(rel):
         print(f"Serving audio (relative): {rel}")
-        return send_file(rel, mimetype=_mime_for(rel))
+        return send_file(rel, mimetype=_mime_for(rel), conditional=True, max_age=86400)
 
     print(f"Audio not found for id={cancion_id}. Tried: {tried_paths}")
     return "Archivo de audio no encontrado", 404
@@ -834,15 +858,17 @@ def servir_lyrics(cancion_id):
     
     if resultado and resultado.get('letra'):
         # Devolver el contenido como texto plano
-        from flask import Response
-        return Response(resultado['letra'], mimetype='text/plain; charset=utf-8')
+        from flask import Response, make_response
+        response = make_response(Response(resultado['letra'], mimetype='text/plain; charset=utf-8'))
+        response.headers['Cache-Control'] = 'public, max-age=3600'
+        return response
     
     # Si lyrics_fetcher no pudo obtenerla, intentar servir el archivo directamente (fallback)
     original_path = cancion.ruta_archivo_lrc
     tried_paths = [original_path]
 
     if original_path and os.path.exists(original_path):
-        return send_file(original_path, mimetype='text/plain')
+        return send_file(original_path, mimetype='text/plain', max_age=3600)
 
     # Intentar mapear rutas Windows montadas en Docker (ej: G:\...) a /music/...
     try:
@@ -869,6 +895,28 @@ def servir_lyrics(cancion_id):
     return "Archivo de letras no encontrado", 404
 
 
+def _extract_cover_from_file(audio_path):
+    """Extrae portada embebida de FLAC (pictures) o MP3 (APIC tags)."""
+    if not audio_path or not os.path.exists(audio_path):
+        return None
+    try:
+        from mutagen import File as MFile
+        from mutagen.id3 import ID3, APIC
+        af = MFile(audio_path)
+        if af is None:
+            return None
+        # FLAC, Ogg, etc. usan .pictures
+        if hasattr(af, 'pictures') and af.pictures:
+            return af.pictures[0].data
+        # MP3 usa APIC frames en ID3 tags
+        if hasattr(af, 'tags') and af.tags is not None:
+            apic = af.tags.getall('APIC')
+            if apic:
+                return apic[0].data
+    except Exception:
+        pass
+    return None
+
 @app.route('/album-art/<int:cancion_id>')
 def servir_album_art(cancion_id):
     """Sirve la imagen del álbum de una canción"""
@@ -887,7 +935,7 @@ def servir_album_art(cancion_id):
 
     if original_path and os.path.exists(original_path):
         mimetype = _image_mime_for(original_path)
-        return send_file(original_path, mimetype=mimetype)
+        return send_file(original_path, mimetype=mimetype, max_age=86400)
 
     # Intentar en ALBUM_ART_FOLDER (nueva ubicación persistente)
     if original_path:
@@ -938,38 +986,18 @@ def servir_album_art(cancion_id):
         return send_file(rel, mimetype=mimetype)
 
     # Último recurso: extraer portada directamente del archivo de audio
-    try:
-        audio_path = cancion.ruta_archivo_audio
-        if audio_path and os.path.exists(audio_path):
-            from mutagen import File as MFile
-            af = MFile(audio_path)
-            if af and hasattr(af, 'pictures') and af.pictures:
-                pic = af.pictures[0]
-                img_data = pic.data
-                import io
-                return send_file(io.BytesIO(img_data), mimetype='image/jpeg')
-    except Exception as e:
-        print(f"Error extracting cover from audio file: {e}")
-
-    # Intentar extraer desde la ruta de audio alternativa en Docker
-    try:
-        audio_path = cancion.ruta_archivo_audio
-        if audio_path:
-            p = audio_path.replace('\\\\', '/').replace(':/', ':/')
-            import re
-            m = re.match(r'^([A-Za-z]):/(.*)', p)
-            if m:
-                alt_audio = '/music/' + m.group(2)
-                tried_paths.append(f"audio_fallback:{alt_audio}")
-                if os.path.exists(alt_audio):
-                    from mutagen import File as MFile
-                    af = MFile(alt_audio)
-                    if af and hasattr(af, 'pictures') and af.pictures:
-                        pic = af.pictures[0]
-                        import io
-                        return send_file(io.BytesIO(pic.data), mimetype='image/jpeg')
-    except Exception as e:
-        print(f"Error extracting cover from Docker audio path: {e}")
+    img_data = _extract_cover_from_file(cancion.ruta_archivo_audio)
+    if img_data is None and cancion.ruta_archivo_audio:
+        p = cancion.ruta_archivo_audio.replace('\\\\', '/').replace(':/', ':/')
+        import re
+        m = re.match(r'^([A-Za-z]):/(.*)', p)
+        if m:
+            alt = '/music/' + m.group(2)
+            tried_paths.append(f"audio_fallback:{alt}")
+            img_data = _extract_cover_from_file(alt)
+    if img_data:
+        import io
+        return send_file(io.BytesIO(img_data), mimetype='image/jpeg')
 
     print(f"Album art not found for id={cancion_id}. Tried: {tried_paths}")
     # Devolver placeholder SVG con icono de nota musical (sólido, sin emoji)
@@ -984,8 +1012,12 @@ def servir_album_art(cancion_id):
 @app.route('/service-worker.js')
 def service_worker():
     """Sirve el service worker desde la raíz para que tenga scope sobre toda la app"""
-    from flask import send_from_directory
-    return send_from_directory('static/js', 'service-worker.js', mimetype='application/javascript')
+    from flask import send_from_directory, make_response
+    response = make_response(send_from_directory('static/js', 'service-worker.js', mimetype='application/javascript'))
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 @app.route('/api/canciones')
 def api_canciones():

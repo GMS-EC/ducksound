@@ -272,12 +272,24 @@ def _descargar_letras_impl(batch_size):
     print("=" * 60)
     
     # Obtener canciones sin letra o con ruta inválida
-    canciones_sin_letra = []
-    todas_canciones = Cancion.query.all()
+    from models import Cancion
+    import os
     
-    for c in todas_canciones:
-        if not c.ruta_archivo_lrc or not Path(c.ruta_archivo_lrc).exists():
-            canciones_sin_letra.append(c)
+    canciones_sin_letra = Cancion.query.filter(
+        db.or_(
+            Cancion.ruta_archivo_lrc.is_(None),
+            Cancion.ruta_archivo_lrc == '',
+            Cancion.ruta_archivo_lrc.notin_(
+                db.session.query(Cancion.ruta_archivo_lrc).filter(
+                    Cancion.ruta_archivo_lrc.isnot(None),
+                    Cancion.ruta_archivo_lrc != ''
+                ).all()
+            )
+        )
+    ).all()
+    
+    # Filtrar los que realmente no existen en disco
+    canciones_sin_letra = [c for c in canciones_sin_letra if not c.ruta_archivo_lrc or not os.path.exists(c.ruta_archivo_lrc)]
     
     if not canciones_sin_letra:
         print("✅ Todas las canciones ya tienen letra local")

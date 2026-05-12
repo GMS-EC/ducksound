@@ -641,7 +641,7 @@ def _album_cover_url(album):
     if album.portada_url:
         return album.portada_url  # URL directa de Deezer
     primer_cancion = Cancion.query.filter_by(album_id=album.id).first()
-    if primer_cancion and primer_cancion.ruta_imagen_album:
+    if primer_cancion:
         return url_for('servir_album_art', cancion_id=primer_cancion.id)
     return None
 

@@ -29,13 +29,13 @@
     <!-- Font Awesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <!-- Favicon -->
-    <link rel="icon" href="{{ url_for('static', filename='img/favicon.png') }}" type="image/png">
+    <link rel="icon" href="{{ url_for('static', filename='img/favicon.png') }}?v={{ app_version }}" type="image/png">
     <!-- PWA Manifest -->
-    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}?v={{ app_version }}">
     <meta name="theme-color" content="#0f0f0f">
 
     <!-- Estilos CSS -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ app_version }}">
     
     {% block extra_css %}{% endblock %}
 </head>
@@ -253,8 +253,8 @@
     })();
     </script>
 
-    <script src="{{ url_for('static', filename='js/player_parent.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/album_card_player.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/player_parent.js') }}?v={{ app_version }}"></script>
+    <script src="{{ url_for('static', filename='js/album_card_player.js') }}?v={{ app_version }}"></script>
     <script>
     // SPA-lite navigation to keep persistent player alive
     (function(){
@@ -469,7 +469,7 @@
     // Registrar Service Worker para PWA
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-            navigator.serviceWorker.register('/service-worker.js')
+            navigator.serviceWorker.register('/service-worker.js?v={{ app_version }}')
                 .then(registration => {
                     console.log('Service Worker registrado con éxito:', registration.scope);
                 })

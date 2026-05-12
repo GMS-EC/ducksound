@@ -56,17 +56,6 @@
                 </span>
             </span>
         </div>
-        <div class="track-info">
-            <span class="track-title">{{ cancion.titulo }}</span>
-            <span class="track-artist-mobile">{{ cancion.artista_obj.nombre if cancion.artista_obj else '' }}</span>
-        </div>
-        <span class="track-artist-col">{{ cancion.artista_obj.nombre if cancion.artista_obj else '' }}</span>
-        <span class="track-duration">
-            <span class="duration-text">
-                {% if cancion.duracion %}{{ (cancion.duracion // 60) }}:{{ '%02d' % (cancion.duracion % 60) }}{% else %}--:--{% endif %}
-            </span>
-        </span>
-    </div>
     {% endfor %}
 </div>
 {% else %}

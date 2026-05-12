@@ -157,108 +157,6 @@ def extraer_metadatos(ruta_archivo):
         logging.error(f"Error extrayendo metadatos de {ruta_archivo}: {e}")
         return None
 
-        if not artista or not titulo:
-            tag = TinyTag.get(str(ruta_archivo), image=False)
-            if tag is None:
-                return None
-
-            def extra_tag(*keys):
-                extra = getattr(tag, 'extra', None) or {}
-                for key in keys:
-                    valor = extra.get(key)
-                    if isinstance(valor, (list, tuple)):
-                        valor = valor[0] if valor else None
-                    if valor:
-                        return valor
-                return None
-
-            if not titulo:
-                titulo = _tiny_val('title', 'TITLE') or Path(ruta_archivo).stem
-            if not artista:
-                artista = _tiny_val('artist', 'ARTIST')
-            if not album:
-                album = _tiny_val('album', 'ALBUM')
-            if not genero:
-                genero = _tiny_val('genre', 'GENRE')
-            if not track_str:
-                t = _tiny_val('track', 'tracknumber', 'TRCK', 'TRACKNUMBER')
-                track_str = str(t) if t else None
-            if not disc_str:
-                d = _tiny_val('disc', 'discnumber', 'DISCNUMBER', 'TPA')
-                disc_str = str(d) if d else None
-
-        def parse_track_num(val):
-            if not val: return None
-            try: return int(str(val).split('/')[0])
-            except: return None
-
-        albumartist = _tag_val('TPE2', 'albumartist', 'album artist', 'album_artist', 'ALBUMARTIST', 'ALBUM ARTIST') or artista
-
-        metadatos = {
-            'titulo': titulo,
-            'artista': artista,
-            'albumartist': albumartist,
-            'artista_display': artista,
-            'artista_principal': normalizar_artista(albumartist),
-            'album': album,
-            'duracion': None,
-            'ruta_imagen': None,
-            'genero': genero,
-            'numero_pista': parse_track_num(track_str),
-            'numero_disco': parse_track_num(disc_str),
-        }
-
-        # Duración: preferir TinyTag (más rápido y preciso)
-        try:
-            tiny = TinyTag.get(str(ruta_archivo), image=False)
-            if tiny and tiny.duration:
-                metadatos['duracion'] = int(tiny.duration)
-        except:
-            pass
-
-        try:
-            analisis = analyze_audio(ruta_archivo)
-            if analisis:
-                if analisis.get('duration'):
-                    metadatos['duracion'] = int(analisis['duration'])
-                if analisis.get('genero') and not metadatos['genero']:
-                    metadatos['genero'] = analisis['genero']
-                metadatos['audio_analysis'] = analisis
-        except Exception as e:
-            print(f"  ⚠ Error en análisis de audio: {e}")
-
-        # Portada embebida (mutagen ya está abierto)
-        if audio_file is not None:
-            try:
-                apic_tags = [
-                    picture for key, picture in getattr(audio_file, 'tags', {}).items()
-                    if str(key).startswith('APIC')
-                ]
-                if apic_tags:
-                    metadatos['ruta_imagen'] = guardar_imagen_album(apic_tags[0], ruta_archivo)
-                elif getattr(audio_file, 'pictures', None):
-                    metadatos['ruta_imagen'] = guardar_imagen_album(audio_file.pictures[0], ruta_archivo)
-            except Exception as e:
-                print(f"  ⚠ Error al extraer portada embebida: {e}")
-
-        if not metadatos.get('ruta_imagen'):
-            titulo_b = metadatos.get('titulo') or Path(ruta_archivo).stem
-            artista_b = metadatos.get('albumartist') or metadatos.get('artista') or ''
-            album_b = metadatos.get('album') or ''
-            if titulo_b and artista_b:
-                print(f"  Buscando portada en internet para: {titulo_b}")
-                cover_url = fetch_cover_from_itunes(artista_b, album_b, titulo_b)
-                if cover_url:
-                    ruta_img = descargar_y_guardar_portada(cover_url, ruta_archivo)
-                    if ruta_img:
-                        metadatos['ruta_imagen'] = ruta_img
-                        print(f"  ✅ Portada descargada desde internet.")
-
-        return metadatos
-    except Exception as e:
-        print(f"  ⚠ Error al leer metadatos: {e}")
-        return None
-
 
 def obtener_o_crear_artista(nombre, enriquecer=False, mbid=None):
     if not nombre:
@@ -678,22 +576,24 @@ def normalizar_biblioteca(progress_callback=None, percent_start=90, percent_end=
     return resumen
 
 
-def guardar_imagen_album(picture, ruta_audio):
+def guardar_imagen_album(picture, ruta_audio, album_artist=None, album_name=None):
     """
     Guarda la imagen del álbum en la carpeta media/album_art.
+    Usa hash del artista + álbum para evitar colisiones entre álbumes.
     Retorna la ruta de la imagen guardada o None.
     """
     try:
-        # Usar ALBUM_ART_FOLDER del config (escribe en ubicación persistente)
+        import hashlib
         carpeta_album_art = Config.ALBUM_ART_FOLDER
         carpeta_album_art.mkdir(exist_ok=True)
         
-        # Generar nombre de archivo basado en el nombre del audio
+        # Usar artista + álbum + filename stem para nombre único
         nombre_base = Path(ruta_audio).stem
+        unique = f"{album_artist or ''}/{album_name or ''}/{nombre_base}"
+        hash_str = hashlib.md5(unique.encode('utf-8')).hexdigest()[:12]
         extension = '.jpg' if picture.mime == 'image/jpeg' else '.png'
-        ruta_imagen = carpeta_album_art / f"{nombre_base}{extension}"
+        ruta_imagen = carpeta_album_art / f"{hash_str}{extension}"
         
-        # Guardar la imagen
         with open(ruta_imagen, 'wb') as f:
             f.write(picture.data)
         
@@ -702,7 +602,7 @@ def guardar_imagen_album(picture, ruta_audio):
         print(f"  ⚠ Error al guardar imagen del álbum: {e}")
         return None
 
-def descargar_y_guardar_portada(url, ruta_audio):
+def descargar_y_guardar_portada(url, ruta_audio, album_artist=None, album_name=None):
     try:
         resp = requests.get(url, timeout=5)
         if resp.status_code == 200:
@@ -712,7 +612,7 @@ def descargar_y_guardar_portada(url, ruta_audio):
                     self.mime = mime
             content_type = resp.headers.get('Content-Type', 'image/jpeg')
             picture = FakePicture(resp.content, content_type)
-            return guardar_imagen_album(picture, ruta_audio)
+            return guardar_imagen_album(picture, ruta_audio, album_artist, album_name)
     except Exception:
         pass
     return None
@@ -1276,9 +1176,6 @@ def escaneo_rapido(progress_callback=None):
                 db.session.delete(cancion)
                 canciones_eliminadas += 1
         db.session.commit()
-        limpiar_entidades_vacias()
-        db.session.commit()
-
         limpiar_entidades_vacias()
         db.session.commit()
 
