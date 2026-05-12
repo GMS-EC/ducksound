@@ -124,11 +124,37 @@ def buscar_artista_deezer(nombre_artista, mbid=None):
         return None
 
 
+from musicbrainz_client import get_artista_bio
+
+
+def buscar_biografia(nombre_artista, mbid=None):
+    """
+    Obtiene la biografía de un artista. 
+    Intenta primero MusicBrainz (alta calidad) y luego Deezer como fallback.
+    """
+    # 1. Intentar MusicBrainz primero si tenemos MBID
+    if mbid:
+        try:
+            bio_mb = get_artista_bio(mbid)
+            if bio_mb:
+                logging.info(f"✅ Biografía obtenida de MusicBrainz para {nombre_artista}")
+                return bio_mb
+        except Exception as e:
+            logging.warning(f"Error consultando MusicBrainz bio para {nombre_artista}: {e}")
+
+    # 2. Fallback a Deezer
+    try:
+        bio_deezer = buscar_biografia_deezer(nombre_artista, mbid=mbid)
+        if bio_deezer:
+            logging.info(f"✅ Biografía obtenida de Deezer para {nombre_artista}")
+            return bio_deezer
+    except Exception as e:
+        logging.error(f"Error al obtener biografía de Deezer para '{nombre_artista}': {e}")
+        
+    return None
+
+
 def buscar_biografia_deezer(nombre_artista, mbid=None):
-    """
-    Obtiene datos biográficos de un artista desde Deezer.
-    Construye una reseña con información disponible (discografía, popularidad).
-    """
     try:
         deezer_data = buscar_artista_deezer(nombre_artista, mbid=mbid)
         if not deezer_data:
@@ -184,9 +210,14 @@ def enrich_artist(artista_obj, commit=True):
             actualizado = True
         time.sleep(RATE_LIMIT_DELAY)
 
-    # 2. Biografía desde Deezer (con MBID si está disponible para búsqueda precisa)
-    if not artista_obj.biografia:
-        bio = buscar_biografia_deezer(artista_obj.nombre, mbid=artista_obj.musicbrainz_id)
+    # 2. Biografía desde fuentes públicas (MB prioritario)
+    bio_exists = artista_obj.biografia
+    # Si la bio contiene "en Deezer", la consideramos "vacía" para intentar mejorarla con MusicBrainz
+    if bio_exists and 'en Deezer' in bio_exists:
+        bio_exists = None
+
+    if not bio_exists:
+        bio = buscar_biografia(artista_obj.nombre, mbid=artista_obj.musicbrainz_id)
         if bio:
             artista_obj.biografia = bio
             logging.info(f"✅ Biografía obtenida para {artista_obj.nombre}")
@@ -203,11 +234,13 @@ def enrich_artist(artista_obj, commit=True):
 
 def enrich_all_artists(commit=True):
     """
-    Enriquece todos los artistas que no tengan foto o biografía.
+    Enriquece todos los artistas que no tengan foto o biografía (o tengan una bio básica de Deezer).
     Retorna (actualizados, total).
     """
     artistas = Artista.query.filter(
-        (Artista.foto_url.is_(None)) | (Artista.biografia.is_(None))
+        (Artista.foto_url.is_(None)) | 
+        (Artista.biografia.is_(None)) | 
+        (Artista.biografia.ilike('%en Deezer%'))
     ).all()
     total = len(artistas)
     actualizados = 0
