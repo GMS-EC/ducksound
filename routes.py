@@ -440,6 +440,66 @@ def admin_enrich_artists():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@admin_bp.route('/admin/artistas')
+def admin_artistas():
+    """Panel para gestionar artistas (MBID, nombres, etc.)."""
+    if not _is_admin_request():
+        return redirect(url_for('login'))
+    query = request.args.get('q', '').strip()
+    if query:
+        artistas = Artista.query.filter(Artista.nombre.ilike(f'%{query}%')).order_by(Artista.nombre).all()
+    else:
+        artistas = Artista.query.order_by(Artista.nombre).all()
+    total = Artista.query.count()
+    con_mbid = Artista.query.filter(Artista.musicbrainz_id.isnot(None)).count()
+    return render_template('admin_artistas.html', artistas=artistas, total=total, con_mbid=con_mbid, query=query)
+
+
+@admin_bp.route('/admin/artistas/<int:artist_id>/update-mbid', methods=['POST'])
+def admin_update_artist_mbid(artist_id):
+    if not _is_admin_request():
+        return jsonify({'error': 'Unauthorized'}), 401
+    artista = db.session.get(Artista, artist_id)
+    if not artista:
+        return jsonify({'error': 'Artista no encontrado'}), 404
+    data = request.get_json()
+    mbid = (data.get('mbid') or '').strip()
+    nombre = (data.get('nombre') or '').strip()
+    if mbid and len(mbid) != 36:
+        return jsonify({'error': 'MBID debe tener 36 caracteres (formato UUID)'}), 400
+    if mbid:
+        existing = Artista.query.filter(Artista.musicbrainz_id == mbid, Artista.id != artist_id).first()
+        if existing:
+            return jsonify({'error': f'El MBID ya pertenece a {existing.nombre}'}), 400
+    artista.musicbrainz_id = mbid or None
+    if nombre:
+        artista.nombre = nombre
+    db.session.commit()
+    return jsonify({'success': True, 'message': f'Artista "{artista.nombre}" actualizado'})
+
+
+@admin_bp.route('/admin/artistas/<int:artist_id>/lookup-mbid', methods=['POST'])
+def admin_lookup_artist_mbid(artist_id):
+    if not _is_admin_request():
+        return jsonify({'error': 'Unauthorized'}), 401
+    artista = db.session.get(Artista, artist_id)
+    if not artista:
+        return jsonify({'error': 'Artista no encontrado'}), 404
+    from musicbrainz_client import buscar_artista
+    try:
+        resultado = buscar_artista(artista.nombre)
+        if resultado:
+            return jsonify({
+                'success': True,
+                'mbid': resultado['mbid'],
+                'nombre': resultado['nombre'],
+                'disambiguation': resultado.get('disambiguation', '')
+            })
+        return jsonify({'success': False, 'message': 'No se encontró en MusicBrainz'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @admin_bp.route('/admin/estadisticas')
 def admin_estadisticas():
     """Panel de estadísticas básicas de la plataforma."""

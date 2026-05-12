@@ -50,6 +50,14 @@
                 <p>Visualiza las estadísticas de uso de la plataforma</p>
             </div>
         </a>
+
+        <a href="{{ url_for('admin.admin_artistas') }}" class="admin-action-card">
+            <div class="admin-action-icon"><i class="fa-solid fa-user-group"></i></div>
+            <div class="admin-action-info">
+                <h3>Gestionar artistas</h3>
+                <p>Edita nombres y asigna MusicBrainz IDs</p>
+            </div>
+        </a>
     </div>
 
     <div id="scan-progress-panel" style="display:none;margin-top:20px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:14px">

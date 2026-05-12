@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+
+{% block title %}Gestionar Artistas - DuckSound{% endblock %}
+
+{% block content %}
+<div class="admin-container">
+    <div class="admin-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:12px">
+        <div>
+            <h1><i class="fa-solid fa-user-group" style="color:var(--accent);margin-right:8px"></i> Gestionar Artistas</h1>
+            <p class="admin-subtitle">{{ con_mbid }} de {{ total }} artistas tienen MusicBrainz ID</p>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center">
+            <form method="GET" style="display:flex;gap:8px;align-items:center">
+                <input type="text" name="q" placeholder="Buscar artista..." value="{{ query }}"
+                    style="background:var(--surface-2);border:1px solid var(--border-light);color:var(--text);padding:8px 14px;border-radius:var(--radius-sm);font-size:13px;width:220px;outline:none">
+                <button type="submit" class="btn" style="padding:8px 14px"><i class="fa-solid fa-search"></i></button>
+                {% if query %}<a href="{{ url_for('admin.admin_artistas') }}" class="btn" style="padding:8px 14px"><i class="fa-solid fa-xmark"></i></a>{% endif %}
+            </form>
+        </div>
+    </div>
+
+    <div style="background:var(--surface);border:1px solid var(--border-color);border-radius:var(--radius-lg);overflow:hidden">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead>
+                <tr style="background:var(--surface-2);border-bottom:1px solid var(--border-color)">
+                    <th style="padding:12px 16px;text-align:left;color:var(--muted);font-weight:500">ID</th>
+                    <th style="padding:12px 16px;text-align:left;color:var(--muted);font-weight:500">Nombre</th>
+                    <th style="padding:12px 16px;text-align:left;color:var(--muted);font-weight:500">MBID</th>
+                    <th style="padding:12px 16px;text-align:left;color:var(--muted);font-weight:500">Álbumes</th>
+                    <th style="padding:12px 16px;text-align:left;color:var(--muted);font-weight:500">Canciones</th>
+                    <th style="padding:12px 16px;text-align:right;color:var(--muted);font-weight:500">Acción</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for a in artistas %}
+                <tr class="artist-row" data-id="{{ a.id }}"
+                    style="border-bottom:1px solid var(--border-light);transition:background 0.15s">
+                    <td style="padding:10px 16px;color:var(--muted);font-size:12px">{{ a.id }}</td>
+                    <td style="padding:10px 16px">
+                        <span class="artist-name-display">{{ a.nombre }}</span>
+                        <input class="artist-name-input" type="text" value="{{ a.nombre }}"
+                            style="display:none;background:var(--surface-2);border:1px solid var(--border-light);color:var(--text);padding:4px 8px;border-radius:4px;font-size:13px;width:200px">
+                    </td>
+                    <td style="padding:10px 16px">
+                        <code class="artist-mbid-display" style="font-size:12px;color:{% if a.musicbrainz_id %}var(--accent){% else %}var(--muted){% endif %}">
+                            {{ a.musicbrainz_id or '—' }}
+                        </code>
+                        <input class="artist-mbid-input" type="text" value="{{ a.musicbrainz_id or '' }}" placeholder="UUID..."
+                            style="display:none;background:var(--surface-2);border:1px solid var(--border-light);color:var(--text);padding:4px 8px;border-radius:4px;font-size:12px;width:200px;font-family:monospace">
+                    </td>
+                    <td style="padding:10px 16px;color:var(--muted)">{{ a.albums|length }}</td>
+                    <td style="padding:10px 16px;color:var(--muted)">{{ a.canciones|length }}</td>
+                    <td style="padding:10px 16px;text-align:right;white-space:nowrap">
+                        <div class="artist-actions">
+                            <button class="btn-edit-artist btn btn-sm" style="padding:4px 10px;font-size:12px"><i class="fa-solid fa-pen"></i></button>
+                            <button class="btn-lookup-mbid btn btn-sm" style="padding:4px 10px;font-size:12px" title="Buscar en MusicBrainz"><i class="fa-solid fa-music"></i></button>
+                            <button class="btn-save-artist btn btn-sm btn-accent" style="display:none;padding:4px 10px;font-size:12px"><i class="fa-solid fa-check"></i></button>
+                            <button class="btn-cancel-artist btn btn-sm" style="display:none;padding:4px 10px;font-size:12px"><i class="fa-solid fa-xmark"></i></button>
+                            <span class="save-spinner" style="display:none;color:var(--muted);font-size:12px"><i class="fa-solid fa-spinner fa-spin"></i></span>
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" style="padding:40px;text-align:center;color:var(--muted)">
+                        <i class="fa-solid fa-inbox" style="font-size:24px;display:block;margin-bottom:8px"></i>
+                        {% if query %}No se encontraron artistas para "{{ query }}"{% else %}No hay artistas en la biblioteca{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<style>
+.artist-row:hover { background: rgba(255,255,255,0.02); }
+.artist-row.editing .artist-name-display,
+.artist-row.editing .artist-mbid-display { display: none !important; }
+.artist-row.editing .artist-name-input,
+.artist-row.editing .artist-mbid-input { display: inline-block !important; }
+.btn-sm { border: 1px solid var(--border-light); background: var(--surface-2); color: var(--text); cursor: pointer; border-radius: var(--radius-sm); transition: all 0.15s; }
+.btn-sm:hover { background: var(--surface-3); }
+.btn-sm.btn-accent { border-color: var(--accent); background: rgba(217, 88, 64, 0.15); color: var(--accent); }
+.btn-sm.btn-accent:hover { background: rgba(217, 88, 64, 0.25); }
+</style>
+
+<script>
+document.querySelectorAll('.btn-edit-artist').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const row = this.closest('.artist-row');
+        row.classList.add('editing');
+        row.querySelector('.btn-edit-artist').style.display = 'none';
+        row.querySelector('.btn-lookup-mbid').style.display = 'none';
+        row.querySelector('.btn-save-artist').style.display = 'inline-flex';
+        row.querySelector('.btn-cancel-artist').style.display = 'inline-flex';
+    });
+});
+
+document.querySelectorAll('.btn-cancel-artist').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const row = this.closest('.artist-row');
+        row.classList.remove('editing');
+        row.querySelector('.btn-edit-artist').style.display = 'inline-flex';
+        row.querySelector('.btn-lookup-mbid').style.display = 'inline-flex';
+        row.querySelector('.btn-save-artist').style.display = 'none';
+        row.querySelector('.btn-cancel-artist').style.display = 'none';
+        row.querySelector('.artist-name-input').value = row.querySelector('.artist-name-display').textContent.trim();
+        row.querySelector('.artist-mbid-input').value = row.querySelector('.artist-mbid-display').textContent.trim() === '—' ? '' : row.querySelector('.artist-mbid-display').textContent.trim();
+    });
+});
+
+document.querySelectorAll('.btn-save-artist').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const row = this.closest('.artist-row');
+        const id = row.dataset.id;
+        const nombre = row.querySelector('.artist-name-input').value.trim();
+        const mbid = row.querySelector('.artist-mbid-input').value.trim();
+        const spinner = row.querySelector('.save-spinner');
+        spinner.style.display = 'inline-block';
+        fetch('/admin/artistas/' + id + '/update-mbid', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({mbid: mbid, nombre: nombre})
+        })
+        .then(r => r.json())
+        .then(d => {
+            spinner.style.display = 'none';
+            if (d.success) {
+                row.querySelector('.artist-name-display').textContent = nombre;
+                row.querySelector('.artist-mbid-display').textContent = mbid || '—';
+                row.querySelector('.artist-mbid-display').style.color = mbid ? 'var(--accent)' : 'var(--muted)';
+                row.querySelector('.btn-cancel-artist').click();
+            } else {
+                alert('Error: ' + (d.error || d.message));
+            }
+        })
+        .catch(e => { spinner.style.display = 'none'; alert('Error de red'); });
+    });
+});
+
+document.querySelectorAll('.btn-lookup-mbid').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const row = this.closest('.artist-row');
+        const id = row.dataset.id;
+        const nombre = row.querySelector('.artist-name-display').textContent.trim();
+        const spinner = row.querySelector('.save-spinner');
+        spinner.style.display = 'inline-block';
+        fetch('/admin/artistas/' + id + '/lookup-mbid', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({})
+        })
+        .then(r => r.json())
+        .then(d => {
+            spinner.style.display = 'none';
+            if (d.success && d.mbid) {
+                row.querySelector('.artist-mbid-input').value = d.mbid;
+                row.querySelector('.artist-mbid-display').textContent = d.mbid;
+                row.querySelector('.artist-mbid-display').style.color = 'var(--accent)';
+                if (!row.classList.contains('editing')) {
+                    row.querySelector('.btn-edit-artist').click();
+                }
+            } else {
+                alert('No se encontró en MusicBrainz: ' + (d.message || ''));
+            }
+        })
+        .catch(e => { spinner.style.display = 'none'; alert('Error de red'); });
+    });
+});
+</script>
+{% endblock %}
