@@ -24,6 +24,31 @@ def _cleanup_old_tasks():
     pass
 
 
+# In-memory fallback para progreso de enriquecimiento (sin Redis)
+_enrich_progress_store = {}
+
+def _set_enrich_progress(task_id, **kwargs):
+    data = _enrich_progress_store.get(task_id, {'status': 'started', 'percent': 0, 'message': ''})
+    data.update(kwargs)
+    data['percent'] = min(data.get('percent', 0), 100)
+    _enrich_progress_store[task_id] = data
+    try:
+        from task_queue import progress_set
+        progress_set(f'enrich:{task_id}', data)
+    except Exception:
+        pass
+
+def _get_enrich_progress(task_id):
+    try:
+        from task_queue import progress_get
+        data = progress_get(f'enrich:{task_id}')
+        if data:
+            return data
+    except Exception:
+        pass
+    return _enrich_progress_store.get(task_id, {'status': 'not_found', 'message': 'Tarea no encontrada', 'percent': 0})
+
+
 # Caché en memoria simple para endpoints (evita saturar APIs externas)
 _route_cache = {}
 
@@ -457,92 +482,91 @@ def admin_artistas():
 
 @admin_bp.route('/admin/artistas/<int:artist_id>/update-mbid', methods=['POST'])
 def admin_update_artist_mbid(artist_id):
-    if not _is_admin_request():
-        return jsonify({'error': 'Unauthorized'}), 401
-    artista = db.session.get(Artista, artist_id)
-    if not artista:
-        return jsonify({'error': 'Artista no encontrado'}), 404
-    data = request.get_json()
-    mbid = (data.get('mbid') or '').strip()
-    nombre = (data.get('nombre') or '').strip()
-    enrich = data.get('enrich', False)
-    if mbid and len(mbid) != 36:
-        return jsonify({'error': 'MBID debe tener 36 caracteres (formato UUID)'}), 400
-    if mbid:
-        existing = Artista.query.filter(Artista.musicbrainz_id == mbid, Artista.id != artist_id).first()
-        if existing:
-            return jsonify({'error': f'El MBID ya pertenece a {existing.nombre}'}), 400
-    old_mbid = artista.musicbrainz_id
-    artista.musicbrainz_id = mbid or None
-    if nombre:
-        artista.nombre = nombre
-    db.session.commit()
-
-    updated_metadata = {}
-    if mbid and mbid != old_mbid:
-        try:
-            from musicbrainz_client import get_artista_name
-            mb_name = get_artista_name(mbid)
-            if mb_name:
-                artista.nombre = mb_name
-                updated_metadata['nombre'] = mb_name
-                db.session.commit()
-        except Exception as e:
-            current_app.logger.exception('Error fetching artist name from MusicBrainz')
-
-    enrich_task_id = None
-    if enrich and mbid and mbid != old_mbid:
-        artista.foto_url = None
-        artista.biografia = None
+    try:
+        if not _is_admin_request():
+            return jsonify({'error': 'Unauthorized'}), 401
+        artista = db.session.get(Artista, artist_id)
+        if not artista:
+            return jsonify({'error': 'Artista no encontrado'}), 404
+        data = request.get_json(force=True)
+        if not data:
+            return jsonify({'error': 'Datos inválidos'}), 400
+        mbid = (data.get('mbid') or '').strip()
+        nombre = (data.get('nombre') or '').strip()
+        enrich = data.get('enrich', False)
+        if mbid and len(mbid) != 36:
+            return jsonify({'error': 'MBID debe tener 36 caracteres (formato UUID)'}), 400
+        if mbid:
+            existing = Artista.query.filter(Artista.musicbrainz_id == mbid, Artista.id != artist_id).first()
+            if existing:
+                return jsonify({'error': f'El MBID ya pertenece a {existing.nombre}'}), 400
+        old_mbid = artista.musicbrainz_id
+        artista.musicbrainz_id = mbid or None
+        if nombre:
+            artista.nombre = nombre
         db.session.commit()
 
-        enrich_task_id = str(uuid.uuid4())
-        from task_queue import progress_set
-        progress_set(f'enrich:{enrich_task_id}', {
-            'status': 'started',
-            'message': 'Iniciando búsqueda de metadata...',
-            'percent': 0
-        })
+        updated_metadata = {}
+        if mbid and mbid != old_mbid:
+            try:
+                from musicbrainz_client import get_artista_name
+                mb_name = get_artista_name(mbid)
+                if mb_name:
+                    artista.nombre = mb_name
+                    updated_metadata['nombre'] = mb_name
+                    db.session.commit()
+            except Exception as e:
+                current_app.logger.exception('Error fetching artist name from MusicBrainz')
 
-        def _run_enrich(task_id, artist_id):
-            from app import app
-            with app.app_context():
-                from task_queue import progress_update
-                from metadata_fetcher import enrich_artist
-                from models import Artista as ArtistaModel, db
-                try:
-                    progress_update(f'enrich:{task_id}', status='running', message='Buscando foto...', percent=30)
-                    a = db.session.get(ArtistaModel, artist_id)
-                    if a:
-                        enriquecido = enrich_artist(a, commit=True)
-                        if enriquecido:
-                            progress_update(f'enrich:{task_id}', status='done', message='Metadata actualizada', percent=100,
-                                            foto_url=a.foto_url, biografia=a.biografia, nombre=a.nombre)
+        enrich_task_id = None
+        if enrich and mbid and mbid != old_mbid:
+            artista.foto_url = None
+            artista.biografia = None
+            db.session.commit()
+
+            enrich_task_id = str(uuid.uuid4())
+            _set_enrich_progress(enrich_task_id, status='started', message='Iniciando búsqueda de metadata...', percent=0)
+
+            def _run_enrich(task_id, artist_id):
+                from app import app
+                with app.app_context():
+                    from metadata_fetcher import enrich_artist
+                    from models import Artista as ArtistaModel, db
+                    try:
+                        _set_enrich_progress(task_id, status='running', message='Buscando foto...', percent=30)
+                        a = db.session.get(ArtistaModel, artist_id)
+                        if a:
+                            enriquecido = enrich_artist(a, commit=True)
+                            if enriquecido:
+                                _set_enrich_progress(task_id, status='done', message='Metadata actualizada', percent=100,
+                                                     foto_url=a.foto_url, biografia=a.biografia, nombre=a.nombre)
+                            else:
+                                _set_enrich_progress(task_id, status='done', message='No se encontró nueva metadata', percent=100)
                         else:
-                            progress_update(f'enrich:{task_id}', status='done', message='No se encontró nueva metadata', percent=100)
-                    else:
-                        progress_update(f'enrich:{task_id}', status='done', message='Artista no encontrado', percent=100)
-                except Exception as e:
-                    progress_update(f'enrich:{task_id}', status='error', message=f'Error: {e}', percent=100)
+                            _set_enrich_progress(task_id, status='done', message='Artista no encontrado', percent=100)
+                    except Exception as e:
+                        _set_enrich_progress(task_id, status='error', message=f'Error: {e}', percent=100)
 
-        import threading
-        t = threading.Thread(target=_run_enrich, args=(enrich_task_id, artist_id))
-        t.start()
+            import threading
+            t = threading.Thread(target=_run_enrich, args=(enrich_task_id, artist_id))
+            t.start()
 
-    return jsonify({
-        'success': True,
-        'message': f'Artista "{artista.nombre}" actualizado',
-        'metadata': updated_metadata,
-        'enrich_task_id': enrich_task_id
-    })
+        return jsonify({
+            'success': True,
+            'message': f'Artista "{artista.nombre}" actualizado',
+            'metadata': updated_metadata,
+            'enrich_task_id': enrich_task_id
+        })
+    except Exception as e:
+        current_app.logger.exception('Error in admin_update_artist_mbid')
+        return jsonify({'error': str(e)}), 500
 
 
 @admin_bp.route('/admin/artistas/enrich-progress/<task_id>', methods=['GET'])
 def admin_enrich_artist_progress(task_id):
     if not _is_admin_request():
         return jsonify({'error': 'Unauthorized'}), 401
-    from task_queue import progress_get
-    data = progress_get(f'enrich:{task_id}') or {'status': 'not_found', 'message': 'Tarea no encontrada', 'percent': 0}
+    data = _get_enrich_progress(task_id)
     return jsonify(data)
 
 
