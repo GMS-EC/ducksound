@@ -156,37 +156,7 @@ def extraer_metadatos(ruta_archivo):
     except Exception as e:
         logging.error(f"Error extrayendo metadatos de {ruta_archivo}: {e}")
         return None
-            for k in keys:
-                if k in audio_file.tags:
-                    v = audio_file.tags[k]
-                    if v is not None:
-                        if isinstance(v, (list, tuple)):
-                            v = v[0] if v else None
-                        return str(v).strip() if v is not None else None
-            return None
 
-        def _tiny_val(attr, *extra_keys):
-            val = getattr(tag, attr, None)
-            if not val:
-                extra = getattr(tag, 'extra', None) or {}
-                for k in extra_keys:
-                    v = extra.get(k)
-                    if isinstance(v, (list, tuple)):
-                        v = v[0] if v else None
-                    if v:
-                        val = v
-                        break
-            return val
-
-        # Extraer texto con mutagen (preferido por su soporte de encoding)
-        titulo = _tag_val('TIT2', 'title') or Path(ruta_archivo).stem
-        artista = _tag_val('TPE1', 'artist')
-        album = _tag_val('TALB', 'album')
-        genero = _tag_val('TCON', 'genre')
-        track_str = _tag_val('TRCK', 'tracknumber', 'track')
-        disc_str = _tag_val('TPOS', 'discnumber', 'disc')
-        
-        # Fallback: si mutagen no dio texto, usar TinyTag
         if not artista or not titulo:
             tag = TinyTag.get(str(ruta_archivo), image=False)
             if tag is None:
