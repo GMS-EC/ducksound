@@ -388,6 +388,7 @@
             } else if (cmd === 'shuffle'){
                 isShuffled = !isShuffled;
                 parent.postMessage({type:'shuffleChange', shuffled: isShuffled}, window.location.origin);
+                postState();
             } else if (cmd === 'repeat'){
                 const modes = ['none', 'one', 'all'];
                 const curIdx = modes.indexOf(repeatMode);

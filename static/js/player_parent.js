@@ -304,7 +304,7 @@
         }
 
         // Shuffle/Repeat updates
-        if (data.type === 'shuffleChange') updateShuffleRepeatUI(data.shuffled, null);
+            if (data.type === 'shuffleChange') updateShuffleRepeatUI(data.shuffled, null);
         if (data.type === 'repeatChange') updateShuffleRepeatUI(null, data.repeat);
 
         // Player State updates

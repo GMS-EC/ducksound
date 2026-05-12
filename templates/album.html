@@ -124,6 +124,20 @@
 {% block extra_js %}
 <script>
 (function(){
+    function playPlaylist(playlist, idx){
+        if (!playlist || playlist.length === 0) return;
+        const song = playlist[Math.max(0, Math.min(idx || 0, playlist.length - 1))];
+        const iframe = document.getElementById('player-frame');
+        if (iframe && iframe.contentWindow) {
+            iframe.contentWindow.postMessage({type: 'setPlaylist', playlist: playlist}, window.location.origin);
+            if (song) {
+                setTimeout(() => {
+                    iframe.contentWindow.postMessage({type: 'playSong', song: song}, window.location.origin);
+                }, 100);
+            }
+        }
+    }
+
     // Play all button
     function playTrack(item) {
         const allTracks = Array.from(document.querySelectorAll('.track-item'));
@@ -136,16 +150,7 @@
             lyrics: t.dataset.lyrics || null
         }));
         const idx = allTracks.indexOf(item);
-        const song = idx >= 0 ? playlist[idx] : playlist[0];
-        const iframe = document.getElementById('player-frame');
-        if (iframe && iframe.contentWindow) {
-            iframe.contentWindow.postMessage({type: 'setPlaylist', playlist: playlist}, window.location.origin);
-            if (song) {
-                setTimeout(() => {
-                    iframe.contentWindow.postMessage({type: 'playSong', song: song}, window.location.origin);
-                }, 100);
-            }
-        }
+        playPlaylist(playlist, idx >= 0 ? idx : 0);
         document.querySelectorAll('.track-item').forEach(t => t.classList.remove('playing'));
         item.classList.add('playing');
     }
@@ -163,7 +168,20 @@
         shuffleBtn.addEventListener('click', function() {
             const tracks = Array.from(document.querySelectorAll('.track-item'));
             if (tracks.length === 0) return;
-            playTrack(tracks[Math.floor(Math.random() * tracks.length)]);
+            // Shuffle local playlist and play first
+            const playlist = tracks.map(t => ({
+                id: parseInt(t.dataset.cancionId),
+                titulo: t.dataset.titulo,
+                artista: t.dataset.artista,
+                audio: t.dataset.audio,
+                cover: t.dataset.cover || null,
+                lyrics: t.dataset.lyrics || null
+            }));
+            for (let i = playlist.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [playlist[i], playlist[j]] = [playlist[j], playlist[i]];
+            }
+            playPlaylist(playlist, 0);
         });
     }
     // Track click to play (solo desde el botón play)
