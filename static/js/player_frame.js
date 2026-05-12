@@ -64,6 +64,8 @@
     let crossfadeDuration = 3; // seconds
     let nextSongPrepared = false;
     let crossfadeTriggered = false;
+    let _seekTo = 0;
+    let _seekListener = null;
 
     masterGain.gain.value = _volume * _volume; // Curva exponencial
 
@@ -172,6 +174,12 @@
 
         // Fetch ReplayGain offset
         const replayGainValue = await fetchReplayGain(s.id);
+
+        // Remover listener de seek que se adjuntó al restaurar estado (evita que busque la posición vieja)
+        if (_seekListener) {
+            activeAudio.removeEventListener('loadedmetadata', _seekListener);
+            _seekListener = null;
+        }
 
         if (!isCrossfading) {
             // Hard stop current
@@ -445,14 +453,13 @@
                 
                 // Restaurar tiempo de reproducción si estaba guardado
                 if (typeof st.currentTime === 'number' && st.currentTime > 0) {
-                    const seekTo = st.currentTime;
-                    const onMeta = () => {
-                        activeAudio.removeEventListener('loadedmetadata', onMeta);
+                    _seekTo = st.currentTime;
+                    _seekListener = () => {
                         try{
-                            activeAudio.currentTime = Math.min(seekTo, activeAudio.duration || 0);
+                            activeAudio.currentTime = Math.min(_seekTo, activeAudio.duration || 0);
                         }catch(e){}
                     };
-                    activeAudio.addEventListener('loadedmetadata', onMeta);
+                    activeAudio.addEventListener('loadedmetadata', _seekListener);
                 }
                 
                 // No reproducir automáticamente al recargar la página
