@@ -480,6 +480,9 @@ def admin_update_artist_mbid(artist_id):
 
     updated_metadata = {}
     if enrich and mbid and mbid != old_mbid:
+        artista.foto_url = None
+        artista.biografia = None
+        db.session.commit()
         try:
             from metadata_fetcher import enrich_artist
             enriquecido = enrich_artist(artista, commit=True)
