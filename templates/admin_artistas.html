@@ -10,10 +10,6 @@
             <p class="admin-subtitle">{{ con_mbid }} de {{ total }} artistas tienen MusicBrainz ID</p>
         </div>
         <div style="display:flex;gap:10px;align-items:center">
-            <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text);cursor:pointer">
-                <input type="checkbox" id="auto-enrich" checked style="accent-color:var(--accent)">
-                <span>Enriquecer metadata al guardar MBID</span>
-            </label>
             <form method="GET" style="display:flex;gap:8px;align-items:center">
                 <input type="text" name="q" placeholder="Buscar artista..." value="{{ query }}"
                     style="background:var(--surface-2);border:1px solid var(--border-light);color:var(--text);padding:8px 14px;border-radius:var(--radius-sm);font-size:13px;width:220px;outline:none">
@@ -38,24 +34,19 @@
             </thead>
             <tbody>
                 {% for a in artistas %}
-                <tr class="artist-row" data-id="{{ a.id }}"
+                <tr class="artist-row" data-id="{{ a.id }}" data-nombre="{{ a.nombre }}" data-mbid="{{ a.musicbrainz_id or '' }}"
+                    data-foto="{{ a.foto_url or '' }}" data-bio="{{ a.biografia or '' }}"
                     style="border-bottom:1px solid var(--border-light);transition:background 0.15s">
                     <td style="padding:10px 16px;color:var(--muted);font-size:12px">{{ a.id }}</td>
-                    <td style="padding:10px 16px;cursor:pointer" onclick="this.closest('tr').classList.contains('editing') ? null : this.closest('tr').querySelector('.btn-edit-artist').click()">
-                        <span class="artist-name-display">{{ a.nombre }}</span>
-                        <input class="artist-name-input" type="text" value="{{ a.nombre }}"
-                            style="background:var(--surface-2);border:1px solid var(--border-light);color:var(--text);padding:4px 8px;border-radius:4px;font-size:13px;width:200px">
-                    </td>
-                    <td style="padding:10px 16px;cursor:pointer" onclick="this.closest('tr').classList.contains('editing') ? null : this.closest('tr').querySelector('.btn-edit-artist').click()">
+                    <td style="padding:10px 16px"><span class="artist-name-display">{{ a.nombre }}</span></td>
+                    <td style="padding:10px 16px">
                         <code class="artist-mbid-display" style="font-size:12px;color:{% if a.musicbrainz_id %}var(--accent){% else %}var(--muted){% endif %}">
                             {{ a.musicbrainz_id or '—' }}
                         </code>
-                        <input class="artist-mbid-input" type="text" value="{{ a.musicbrainz_id or '' }}" placeholder="UUID..."
-                            style="background:var(--surface-2);border:1px solid var(--border-light);color:var(--text);padding:4px 8px;border-radius:4px;font-size:12px;width:200px;font-family:monospace">
                     </td>
                     <td style="padding:10px 16px">
                         {% if a.foto_url %}<img src="{{ a.foto_url }}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:4px">{% endif %}
-                        <span class="artist-info" style="font-size:11px;color:var(--muted)">
+                        <span style="font-size:11px;color:var(--muted)">
                             {% if a.biografia %}<i class="fa-solid fa-align-left" title="Tiene biografía"></i>{% endif %}
                             {% if a.foto_url %}<i class="fa-solid fa-image" title="Tiene foto"></i>{% endif %}
                         </span>
@@ -63,13 +54,7 @@
                     <td style="padding:10px 16px;color:var(--muted)">{{ a.albums|length }}</td>
                     <td style="padding:10px 16px;color:var(--muted)">{{ a.canciones|length }}</td>
                     <td style="padding:10px 16px;text-align:right;white-space:nowrap">
-                        <div class="artist-actions">
-                            <button type="button" class="btn-edit-artist btn btn-sm"><i class="fa-solid fa-pen"></i></button>
-                            <button type="button" class="btn-lookup-mbid btn btn-sm" title="Buscar en MusicBrainz"><i class="fa-solid fa-music"></i></button>
-                            <button type="button" class="btn-save-artist btn btn-sm btn-accent"><i class="fa-solid fa-check"></i></button>
-                            <button type="button" class="btn-cancel-artist btn btn-sm"><i class="fa-solid fa-xmark"></i></button>
-                            <span class="save-spinner"><i class="fa-solid fa-spinner fa-spin"></i></span>
-                        </div>
+                        <button type="button" class="btn-edit-artist btn btn-sm"><i class="fa-solid fa-pen"></i></button>
                     </td>
                 </tr>
                 {% else %}
@@ -85,132 +70,243 @@
     </div>
 </div>
 
+<div id="artist-modal" class="modal-overlay" style="display:none">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2><i class="fa-solid fa-user-pen" style="color:var(--accent);margin-right:8px"></i>Editar Artista</h2>
+            <button type="button" class="modal-close" onclick="cerrarModal()"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <div class="modal-foto">
+                <img id="modal-foto-preview" src="" style="width:80px;height:80px;border-radius:50%;object-fit:cover;display:none">
+                <div id="modal-foto-placeholder" style="width:80px;height:80px;border-radius:50%;background:var(--surface-2);display:flex;align-items:center;justify-content:center;font-size:28px;color:var(--muted)"><i class="fa-solid fa-user"></i></div>
+            </div>
+            <div class="modal-campos">
+                <label>Nombre del artista</label>
+                <input type="text" id="modal-nombre" class="modal-input" placeholder="Nombre del artista">
+                
+                <label>MusicBrainz ID <span style="color:var(--muted);font-size:11px">(UUID de 36 caracteres)</span></label>
+                <div style="display:flex;gap:8px">
+                    <input type="text" id="modal-mbid" class="modal-input" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" style="font-family:monospace;flex:1">
+                    <button type="button" id="btn-lookup" class="btn btn-sm" title="Buscar en MusicBrainz"><i class="fa-solid fa-music"></i></button>
+                </div>
+                
+                <div id="modal-metadata-info" style="font-size:12px;color:var(--muted);margin-top:8px;display:none">
+                    <i class="fa-solid fa-align-left" id="modal-bio-icon" style="display:none"></i> <span id="modal-bio-text"></span>
+                    <i class="fa-solid fa-image" id="modal-foto-icon" style="display:none;margin-left:8px"></i> <span id="modal-foto-text"></span>
+                </div>
+
+                <div class="modal-enrich">
+                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
+                        <input type="checkbox" id="modal-enrich" checked style="accent-color:var(--accent)">
+                        Enriquecer metadata (foto, biografía) al guardar
+                    </label>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <span id="modal-spinner" style="display:none;color:var(--muted);font-size:13px"><i class="fa-solid fa-spinner fa-spin"></i> Guardando...</span>
+            <span id="modal-error" style="display:none;color:var(--accent);font-size:13px"></span>
+            <button type="button" class="btn" onclick="cerrarModal()">Cancelar</button>
+            <button type="button" id="btn-save" class="btn btn-accent"><i class="fa-solid fa-check"></i> Guardar</button>
+        </div>
+    </div>
+</div>
+
 <style>
+.modal-overlay {
+    position: fixed; top:0; left:0; right:0; bottom:0;
+    background:rgba(0,0,0,0.6); z-index:1000;
+    display:flex; align-items:center; justify-content:center;
+    backdrop-filter:blur(2px);
+}
+.modal-content {
+    background:var(--surface); border:1px solid var(--border-color);
+    border-radius:var(--radius-lg); width:480px; max-width:90vw;
+    box-shadow:0 20px 60px rgba(0,0,0,0.5);
+}
+.modal-header {
+    display:flex; justify-content:space-between; align-items:center;
+    padding:16px 20px; border-bottom:1px solid var(--border-light);
+}
+.modal-header h2 { margin:0; font-size:16px; }
+.modal-close {
+    background:none; border:none; color:var(--muted); cursor:pointer;
+    font-size:20px; padding:4px 8px; border-radius:var(--radius-sm);
+}
+.modal-close:hover { color:var(--text); background:var(--surface-2); }
+.modal-body {
+    padding:20px; display:flex; gap:16px;
+}
+.modal-campos { flex:1; min-width:0; }
+.modal-campos label {
+    display:block; font-size:13px; color:var(--muted); margin-bottom:4px; margin-top:12px;
+}
+.modal-campos label:first-child { margin-top:0; }
+.modal-input {
+    width:100%; box-sizing:border-box; padding:8px 12px; border-radius:var(--radius-sm);
+    border:1px solid var(--border-light); background:var(--surface-2); color:var(--text);
+    font-size:13px; outline:none;
+}
+.modal-input:focus { border-color:var(--accent); }
+.modal-enrich { margin-top:16px; padding-top:12px; border-top:1px solid var(--border-light); }
+.modal-footer {
+    display:flex; justify-content:flex-end; align-items:center; gap:10px;
+    padding:14px 20px; border-top:1px solid var(--border-light);
+}
+.modal-footer .btn { padding:8px 18px; font-size:13px; }
+.modal-footer .btn-accent {
+    background:var(--accent); color:#fff; border:1px solid var(--accent);
+}
+.modal-footer .btn-accent:hover { opacity:0.9; }
+.btn-sm { border:1px solid var(--border-light); background:var(--surface-2); color:var(--text); cursor:pointer; border-radius:var(--radius-sm); padding:4px 10px; font-size:12px; transition:all 0.15s; }
+.btn-sm:hover { background:var(--surface-3); }
 .artist-row:hover { background: rgba(255,255,255,0.02); }
-
-.artist-row .btn-edit-artist,
-.artist-row .btn-lookup-mbid { display: inline-flex; }
-.artist-row .btn-save-artist,
-.artist-row .btn-cancel-artist,
-.artist-row .save-spinner { display: none; }
-.artist-row .artist-name-input,
-.artist-row .artist-mbid-input { display: none; }
-
-.artist-row.editing .btn-edit-artist,
-.artist-row.editing .btn-lookup-mbid { display: none; }
-.artist-row.editing .btn-save-artist,
-.artist-row.editing .btn-cancel-artist { display: inline-flex; }
-.artist-row.editing .artist-name-display,
-.artist-row.editing .artist-mbid-display { display: none; }
-.artist-row.editing .artist-name-input,
-.artist-row.editing .artist-mbid-input { display: inline-block; }
-
-.btn-sm { border: 1px solid var(--border-light); background: var(--surface-2); color: var(--text); cursor: pointer; border-radius: var(--radius-sm); transition: all 0.15s; padding:4px 10px; font-size:12px; }
-.btn-sm:hover { background: var(--surface-3); }
-.btn-sm.btn-accent { border-color: var(--accent); background: rgba(217, 88, 64, 0.15); color: var(--accent); }
-.btn-sm.btn-accent:hover { background: rgba(217, 88, 64, 0.25); }
-.save-spinner { color:var(--muted); font-size:12px; }
 </style>
 
 <script>
+let artistaActual = null;
+
 document.querySelectorAll('.btn-edit-artist').forEach(btn => {
     btn.addEventListener('click', function() {
         const row = this.closest('.artist-row');
-        row.classList.add('editing');
+        artistaActual = row;
+        const nombre = row.dataset.nombre;
+        const mbid = row.dataset.mbid;
+        const foto = row.dataset.foto;
+        const bio = row.dataset.bio;
+
+        document.getElementById('modal-nombre').value = nombre;
+        document.getElementById('modal-mbid').value = mbid;
+
+        const fotoPreview = document.getElementById('modal-foto-preview');
+        const fotoPlaceholder = document.getElementById('modal-foto-placeholder');
+        if (foto) {
+            fotoPreview.src = foto;
+            fotoPreview.style.display = 'block';
+            fotoPlaceholder.style.display = 'none';
+        } else {
+            fotoPreview.style.display = 'none';
+            fotoPlaceholder.style.display = 'flex';
+        }
+
+        const metaInfo = document.getElementById('modal-metadata-info');
+        const bioIcon = document.getElementById('modal-bio-icon');
+        const bioText = document.getElementById('modal-bio-text');
+        const fotoIcon = document.getElementById('modal-foto-icon');
+        const fotoText = document.getElementById('modal-foto-text');
+        if (bio || foto) {
+            metaInfo.style.display = 'block';
+            if (bio) { bioIcon.style.display = 'inline'; bioText.textContent = 'Tiene biografía'; }
+            else { bioIcon.style.display = 'none'; bioText.textContent = ''; }
+            if (foto) { fotoIcon.style.display = 'inline'; fotoText.textContent = 'Tiene foto'; }
+            else { fotoIcon.style.display = 'none'; fotoText.textContent = ''; }
+        } else {
+            metaInfo.style.display = 'none';
+        }
+
+        document.getElementById('modal-error').style.display = 'none';
+        document.getElementById('modal-spinner').style.display = 'none';
+        document.getElementById('artist-modal').style.display = 'flex';
     });
 });
 
-document.querySelectorAll('.btn-cancel-artist').forEach(btn => {
-    btn.addEventListener('click', function() {
-        const row = this.closest('.artist-row');
-        row.classList.remove('editing');
-        row.querySelector('.artist-name-input').value = row.querySelector('.artist-name-display').textContent.trim();
-        row.querySelector('.artist-mbid-input').value = row.querySelector('.artist-mbid-display').textContent.trim() === '—' ? '' : row.querySelector('.artist-mbid-display').textContent.trim();
-    });
+function cerrarModal() {
+    document.getElementById('artist-modal').style.display = 'none';
+    artistaActual = null;
+    document.getElementById('modal-error').style.display = 'none';
+}
+
+document.getElementById('btn-lookup').addEventListener('click', function() {
+    const id = artistaActual.dataset.id;
+    const spinner = document.getElementById('modal-spinner');
+    const error = document.getElementById('modal-error');
+    spinner.style.display = 'inline';
+    error.style.display = 'none';
+    fetch('/admin/artistas/' + id + '/lookup-mbid', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({})
+    })
+    .then(r => {
+        if (r.status === 401) { window.location.href = '/login'; return; }
+        return r.json();
+    })
+    .then(d => {
+        if (!d) return;
+        spinner.style.display = 'none';
+        if (d.success && d.mbid) {
+            document.getElementById('modal-mbid').value = d.mbid;
+        } else {
+            error.textContent = 'No se encontró en MusicBrainz';
+            error.style.display = 'inline';
+        }
+    })
+    .catch(() => { spinner.style.display = 'none'; error.textContent = 'Error de red'; error.style.display = 'inline'; });
 });
 
-document.querySelectorAll('.btn-save-artist').forEach(btn => {
-    btn.addEventListener('click', function() {
-        const row = this.closest('.artist-row');
-        const id = row.dataset.id;
-        const nombre = row.querySelector('.artist-name-input').value.trim();
-        const mbid = row.querySelector('.artist-mbid-input').value.trim();
-        const spinner = row.querySelector('.save-spinner');
-        const autoEnrich = document.getElementById('auto-enrich')?.checked || false;
-        spinner.style.display = 'inline-block';
-        fetch('/admin/artistas/' + id + '/update-mbid', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({mbid: mbid, nombre: nombre, enrich: autoEnrich})
-        })
-        .then(r => {
-            if (r.status === 401) { window.location.href = '/login'; return; }
-            return r.json();
-        })
-        .then(d => {
-            if (!d) return;
-            spinner.style.display = 'none';
-            if (d.success) {
-                row.querySelector('.artist-name-display').textContent = nombre;
-                row.querySelector('.artist-mbid-display').textContent = mbid || '—';
-                row.querySelector('.artist-mbid-display').style.color = mbid ? 'var(--accent)' : 'var(--muted)';
+document.getElementById('btn-save').addEventListener('click', function() {
+    const row = artistaActual;
+    if (!row) return;
+    const id = row.dataset.id;
+    const nombre = document.getElementById('modal-nombre').value.trim();
+    const mbid = document.getElementById('modal-mbid').value.trim();
+    const spinner = document.getElementById('modal-spinner');
+    const error = document.getElementById('modal-error');
+    const enrich = document.getElementById('modal-enrich').checked;
 
-                if (d.metadata && (d.metadata.foto_url || d.metadata.biografia)) {
-                    const infoCell = row.querySelector('td:nth-child(6)');
-                    let infoHtml = '';
-                    if (d.metadata.foto_url) {
-                        infoHtml += '<img src="' + d.metadata.foto_url + '" style="width:32px;height:32px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:4px">';
-                    }
-                    if (d.metadata.biografia) {
-                        infoHtml += '<i class="fa-solid fa-align-left" title="Tiene biografía"></i>';
-                    }
-                    if (d.metadata.foto_url) {
-                        infoHtml += '<i class="fa-solid fa-image" title="Tiene foto"></i>';
-                    }
-                    infoCell.innerHTML = infoHtml;
+    if (!nombre) { error.textContent = 'El nombre es obligatorio'; error.style.display = 'inline'; return; }
+    if (mbid && mbid.length !== 36) { error.textContent = 'MBID debe tener 36 caracteres'; error.style.display = 'inline'; return; }
+
+    spinner.style.display = 'inline';
+    error.style.display = 'none';
+    this.disabled = true;
+
+    fetch('/admin/artistas/' + id + '/update-mbid', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({mbid: mbid, nombre: nombre, enrich: enrich})
+    })
+    .then(r => {
+        if (r.status === 401) { window.location.href = '/login'; return; }
+        return r.json();
+    })
+    .then(d => {
+        if (!d) return;
+        spinner.style.display = 'none';
+        this.disabled = false;
+        if (d.success) {
+            row.dataset.nombre = nombre;
+            row.dataset.mbid = mbid;
+            row.querySelector('.artist-name-display').textContent = nombre;
+            const mbidEl = row.querySelector('.artist-mbid-display');
+            mbidEl.textContent = mbid || '—';
+            mbidEl.style.color = mbid ? 'var(--accent)' : 'var(--muted)';
+
+            if (d.metadata) {
+                if (d.metadata.foto_url) row.dataset.foto = d.metadata.foto_url;
+                if (d.metadata.biografia) row.dataset.bio = d.metadata.biografia;
+                const infoCell = row.querySelector('td:nth-child(4)');
+                let html = '';
+                if (d.metadata.foto_url) {
+                    html += '<img src="' + d.metadata.foto_url + '" style="width:32px;height:32px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:4px">';
                 }
-
-                row.querySelector('.btn-cancel-artist').click();
-            } else {
-                alert('Error: ' + (d.error || d.message));
+                if (d.metadata.biografia) html += '<i class="fa-solid fa-align-left" title="Tiene biografía" style="font-size:11px;color:var(--muted)"></i>';
+                if (d.metadata.foto_url) html += '<i class="fa-solid fa-image" title="Tiene foto" style="font-size:11px;color:var(--muted)"></i>';
+                infoCell.innerHTML = html || '<span style="font-size:11px;color:var(--muted)">—</span>';
             }
-        })
-        .catch(e => { spinner.style.display = 'none'; alert('Error de red'); });
-    });
+
+            cerrarModal();
+        } else {
+            error.textContent = d.error || d.message || 'Error al guardar';
+            error.style.display = 'inline';
+        }
+    })
+    .catch(() => { spinner.style.display = 'none'; this.disabled = false; error.textContent = 'Error de red'; error.style.display = 'inline'; });
 });
 
-document.querySelectorAll('.btn-lookup-mbid').forEach(btn => {
-    btn.addEventListener('click', function() {
-        const row = this.closest('.artist-row');
-        const id = row.dataset.id;
-        const nombre = row.querySelector('.artist-name-display').textContent.trim();
-        const spinner = row.querySelector('.save-spinner');
-        spinner.style.display = 'inline-block';
-        fetch('/admin/artistas/' + id + '/lookup-mbid', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({})
-        })
-        .then(r => {
-            if (r.status === 401) { window.location.href = '/login'; return; }
-            return r.json();
-        })
-        .then(d => {
-            if (!d) return;
-            spinner.style.display = 'none';
-            if (d.success && d.mbid) {
-                row.querySelector('.artist-mbid-input').value = d.mbid;
-                row.querySelector('.artist-mbid-display').textContent = d.mbid;
-                row.querySelector('.artist-mbid-display').style.color = 'var(--accent)';
-                if (!row.classList.contains('editing')) {
-                    row.querySelector('.btn-edit-artist').click();
-                }
-            } else {
-                alert('No se encontró en MusicBrainz: ' + (d.message || ''));
-            }
-        })
-        .catch(e => { spinner.style.display = 'none'; alert('Error de red'); });
-    });
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') cerrarModal();
 });
 </script>
 {% endblock %}
