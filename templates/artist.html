@@ -37,9 +37,19 @@
     <!-- DISCOGRAFÍA -->
     <section class="artist-section">
         <h2 class="section-title">Discografía</h2>
-        <div class="album-grid">
+        <div class="album-carousel" id="album-carousel">
+            <!-- Pestaña "Todas" -->
+            <div class="album-card active" data-album-id="all">
+                <div class="album-card-cover">
+                    <div class="album-card-placeholder"><i class="fa-solid fa-layer-group"></i></div>
+                </div>
+                <div class="album-card-info">
+                    <h3 class="album-card-title">Todas</h3>
+                    <p class="album-card-meta">Todas las canciones</p>
+                </div>
+            </div>
             {% for item in albums_data %}
-            <a class="album-card" href="{{ url_for('browse.album_detail', album_id=item.album.id) }}">
+            <div class="album-card" data-album-id="{{ item.album.id }}">
                 <div class="album-card-cover">
                     {% if item.cover_url %}
                     <img src="{{ item.cover_url }}" alt="{{ item.album.titulo }}" loading="lazy">
@@ -54,13 +64,13 @@
                     <h3 class="album-card-title">{{ item.album.titulo }}</h3>
                     <p class="album-card-meta">{{ item.track_count }} canciones</p>
                 </div>
-            </a>
+            </div>
             {% else %}
             <p class="empty-text" style="grid-column:1/-1">Sin álbumes</p>
             {% endfor %}
         </div>
     </section>
-
+    
     <!-- CANCIONES POPULARES -->
     <section class="artist-section">
         <h2 class="section-title">Canciones</h2>
@@ -74,6 +84,7 @@
         <div class="tracklist spotify-tracklist" id="artist-tracklist">
             {% for s in songs %}
             <div class="track-item" data-cancion-id="{{ s.id }}"
+                 data-album-id="{{ s.album_obj.id if s.album_obj else 'none' }}"
                  data-audio="{{ url_for('servir_audio', cancion_id=s.id) }}"
                  data-lyrics="{{ url_for('servir_lyrics', cancion_id=s.id) }}"
                  data-cover="{{ artist.foto_url if artist.foto_url else url_for('servir_album_art', cancion_id=s.id) }}"
@@ -220,5 +231,37 @@
         });
     });
 });
+</script>
+<script>
+(function() {
+    const albumCards = document.querySelectorAll('#album-carousel .album-card');
+    const trackItems = document.querySelectorAll('#artist-tracklist .track-item');
+
+    function filterTracks(albumId) {
+        trackItems.forEach(item => {
+            const itemAlbumId = item.dataset.albumId;
+            if (albumId === 'all' || itemAlbumId === albumId) {
+                item.style.display = 'grid';
+            } else {
+                item.style.display = 'none';
+            }
+        });
+    }
+
+    albumCards.forEach(card => {
+        card.addEventListener('click', function(e) {
+            // Ignorar si se hizo clic en el botón de play interno
+            if (e.target.closest('.album-card-play')) return;
+
+            // Marcar como activo
+            albumCards.forEach(c => c.classList.remove('active'));
+            this.classList.add('active');
+
+            // Filtrar canciones
+            const albumId = this.dataset.albumId;
+            filterTracks(albumId);
+        });
+    });
+})();
 </script>
 {% endblock %}
