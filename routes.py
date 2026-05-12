@@ -1106,7 +1106,7 @@ def api_mb_progress():
             'found': p['found'],
             'current_artist': p['current_artist'],
             'message': p['message'],
-        }, 200
+        }), 200
     except Exception as e:
         return jsonify({'error': str(e), 'active': False, 'finished': True}), 500
 
