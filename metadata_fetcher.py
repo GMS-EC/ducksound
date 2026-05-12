@@ -191,7 +191,7 @@ def buscar_biografia_deezer(nombre_artista, mbid=None):
 
 def enrich_artist(artista_obj, commit=True):
     """
-    Enriquece un objeto Artista con foto y biografía desde APIs públicas.
+    Enriquece un objeto Artista con foto y biografía desde MusicBrainz.
     - artista_obj: instancia de Artista (debe tener .nombre)
     - commit: si True, hace db.session.commit() al final
     Retorna True si se actualizó algo, False si no.
@@ -201,8 +201,8 @@ def enrich_artist(artista_obj, commit=True):
 
     actualizado = False
 
-    # 1. Foto desde Deezer (con MBID si está disponible para búsqueda precisa)
-    if not artista_obj.foto_url:
+    # Foto: solo desde Deezer usando MBID (búsqueda precisa), sin fallback por nombre
+    if not artista_obj.foto_url and artista_obj.musicbrainz_id:
         deezer_data = buscar_artista_deezer(artista_obj.nombre, mbid=artista_obj.musicbrainz_id)
         if deezer_data and deezer_data.get('picture'):
             artista_obj.foto_url = deezer_data['picture']
@@ -210,17 +210,12 @@ def enrich_artist(artista_obj, commit=True):
             actualizado = True
         time.sleep(RATE_LIMIT_DELAY)
 
-    # 2. Biografía desde fuentes públicas (MB prioritario)
-    bio_exists = artista_obj.biografia
-    # Si la bio contiene "en Deezer", la consideramos "vacía" para intentar mejorarla con MusicBrainz
-    if bio_exists and 'en Deezer' in bio_exists:
-        bio_exists = None
-
-    if not bio_exists:
-        bio = buscar_biografia(artista_obj.nombre, mbid=artista_obj.musicbrainz_id)
+    # Biografía: solo desde MusicBrainz (no Deezer fallback)
+    if artista_obj.musicbrainz_id and not artista_obj.biografia:
+        bio = get_artista_bio(artista_obj.musicbrainz_id)
         if bio:
             artista_obj.biografia = bio
-            logging.info(f"✅ Biografía obtenida para {artista_obj.nombre}")
+            logging.info(f"✅ Biografía obtenida de MusicBrainz para {artista_obj.nombre}")
             actualizado = True
 
     if actualizado:

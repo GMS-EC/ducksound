@@ -465,17 +465,37 @@ def admin_update_artist_mbid(artist_id):
     data = request.get_json()
     mbid = (data.get('mbid') or '').strip()
     nombre = (data.get('nombre') or '').strip()
+    enrich = data.get('enrich', False)
     if mbid and len(mbid) != 36:
         return jsonify({'error': 'MBID debe tener 36 caracteres (formato UUID)'}), 400
     if mbid:
         existing = Artista.query.filter(Artista.musicbrainz_id == mbid, Artista.id != artist_id).first()
         if existing:
             return jsonify({'error': f'El MBID ya pertenece a {existing.nombre}'}), 400
+    old_mbid = artista.musicbrainz_id
     artista.musicbrainz_id = mbid or None
     if nombre:
         artista.nombre = nombre
     db.session.commit()
-    return jsonify({'success': True, 'message': f'Artista "{artista.nombre}" actualizado'})
+
+    updated_metadata = {}
+    if enrich and mbid and mbid != old_mbid:
+        try:
+            from metadata_fetcher import enrich_artist
+            enriquecido = enrich_artist(artista, commit=True)
+            if enriquecido:
+                updated_metadata = {
+                    'foto_url': artista.foto_url,
+                    'biografia': artista.biografia
+                }
+        except Exception as e:
+            current_app.logger.exception('Error enriching artist metadata')
+
+    return jsonify({
+        'success': True,
+        'message': f'Artista "{artista.nombre}" actualizado',
+        'metadata': updated_metadata
+    })
 
 
 @admin_bp.route('/admin/artistas/<int:artist_id>/lookup-mbid', methods=['POST'])

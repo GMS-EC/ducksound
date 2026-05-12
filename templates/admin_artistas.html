@@ -10,6 +10,10 @@
             <p class="admin-subtitle">{{ con_mbid }} de {{ total }} artistas tienen MusicBrainz ID</p>
         </div>
         <div style="display:flex;gap:10px;align-items:center">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text);cursor:pointer">
+                <input type="checkbox" id="auto-enrich" checked style="accent-color:var(--accent)">
+                <span>Enriquecer metadata al guardar MBID</span>
+            </label>
             <form method="GET" style="display:flex;gap:8px;align-items:center">
                 <input type="text" name="q" placeholder="Buscar artista..." value="{{ query }}"
                     style="background:var(--surface-2);border:1px solid var(--border-light);color:var(--text);padding:8px 14px;border-radius:var(--radius-sm);font-size:13px;width:220px;outline:none">
@@ -26,9 +30,10 @@
                     <th style="padding:12px 16px;text-align:left;color:var(--muted);font-weight:500">ID</th>
                     <th style="padding:12px 16px;text-align:left;color:var(--muted);font-weight:500">Nombre</th>
                     <th style="padding:12px 16px;text-align:left;color:var(--muted);font-weight:500">MBID</th>
+                    <th style="padding:12px 16px;text-align:left;color:var(--muted);font-weight:500">Info</th>
                     <th style="padding:12px 16px;text-align:left;color:var(--muted);font-weight:500">Álbumes</th>
                     <th style="padding:12px 16px;text-align:left;color:var(--muted);font-weight:500">Canciones</th>
-                    <th style="padding:12px 16px;text-align:right;color:var(--muted);font-weight:500">Acción</th>
+                    <th style="padding:12px 16px;text-align:left;color:var(--muted);font-weight:500">Acción</th>
                 </tr>
             </thead>
             <tbody>
@@ -48,6 +53,13 @@
                         <input class="artist-mbid-input" type="text" value="{{ a.musicbrainz_id or '' }}" placeholder="UUID..."
                             style="display:none;background:var(--surface-2);border:1px solid var(--border-light);color:var(--text);padding:4px 8px;border-radius:4px;font-size:12px;width:200px;font-family:monospace">
                     </td>
+                    <td style="padding:10px 16px">
+                        {% if a.foto_url %}<img src="{{ a.foto_url }}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:4px">{% endif %}
+                        <span class="artist-info" style="font-size:11px;color:var(--muted)">
+                            {% if a.biografia %}<i class="fa-solid fa-align-left" title="Tiene biografía"></i>{% endif %}
+                            {% if a.foto_url %}<i class="fa-solid fa-image" title="Tiene foto"></i>{% endif %}
+                        </span>
+                    </td>
                     <td style="padding:10px 16px;color:var(--muted)">{{ a.albums|length }}</td>
                     <td style="padding:10px 16px;color:var(--muted)">{{ a.canciones|length }}</td>
                     <td style="padding:10px 16px;text-align:right;white-space:nowrap">
@@ -62,7 +74,7 @@
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="6" style="padding:40px;text-align:center;color:var(--muted)">
+                    <td colspan="7" style="padding:40px;text-align:center;color:var(--muted)">
                         <i class="fa-solid fa-inbox" style="font-size:24px;display:block;margin-bottom:8px"></i>
                         {% if query %}No se encontraron artistas para "{{ query }}"{% else %}No hay artistas en la biblioteca{% endif %}
                     </td>
@@ -117,11 +129,12 @@ document.querySelectorAll('.btn-save-artist').forEach(btn => {
         const nombre = row.querySelector('.artist-name-input').value.trim();
         const mbid = row.querySelector('.artist-mbid-input').value.trim();
         const spinner = row.querySelector('.save-spinner');
+        const autoEnrich = document.getElementById('auto-enrich')?.checked || false;
         spinner.style.display = 'inline-block';
         fetch('/admin/artistas/' + id + '/update-mbid', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({mbid: mbid, nombre: nombre})
+            body: JSON.stringify({mbid: mbid, nombre: nombre, enrich: autoEnrich})
         })
         .then(r => r.json())
         .then(d => {
@@ -130,6 +143,22 @@ document.querySelectorAll('.btn-save-artist').forEach(btn => {
                 row.querySelector('.artist-name-display').textContent = nombre;
                 row.querySelector('.artist-mbid-display').textContent = mbid || '—';
                 row.querySelector('.artist-mbid-display').style.color = mbid ? 'var(--accent)' : 'var(--muted)';
+
+                if (d.metadata && (d.metadata.foto_url || d.metadata.biografia)) {
+                    const infoCell = row.querySelector('td:nth-child(6)');
+                    let infoHtml = '';
+                    if (d.metadata.foto_url) {
+                        infoHtml += '<img src="' + d.metadata.foto_url + '" style="width:32px;height:32px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:4px">';
+                    }
+                    if (d.metadata.biografia) {
+                        infoHtml += '<i class="fa-solid fa-align-left" title="Tiene biografía"></i>';
+                    }
+                    if (d.metadata.foto_url) {
+                        infoHtml += '<i class="fa-solid fa-image" title="Tiene foto"></i>';
+                    }
+                    infoCell.innerHTML = infoHtml;
+                }
+
                 row.querySelector('.btn-cancel-artist').click();
             } else {
                 alert('Error: ' + (d.error || d.message));
