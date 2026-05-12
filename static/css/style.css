@@ -3332,8 +3332,10 @@ body {
   }
   .sidebar.open {
     left: 0 !important;
+  }
 }
 
+/* ALBUM CAROUSEL - GLOBAL */
 .album-carousel {
     display: flex;
     gap: 16px;
@@ -3379,4 +3381,5 @@ body {
 .album-carousel .album-card-overlay {
     display: none;
 }
+
 
