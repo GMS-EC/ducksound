@@ -479,6 +479,16 @@ def admin_update_artist_mbid(artist_id):
     db.session.commit()
 
     updated_metadata = {}
+    if mbid and mbid != old_mbid:
+        try:
+            from musicbrainz_client import get_artista_name
+            mb_name = get_artista_name(mbid)
+            if mb_name:
+                artista.nombre = mb_name
+                updated_metadata['nombre'] = mb_name
+        except Exception as e:
+            current_app.logger.exception('Error fetching artist name from MusicBrainz')
+
     if enrich and mbid and mbid != old_mbid:
         artista.foto_url = None
         artista.biografia = None
@@ -487,12 +497,11 @@ def admin_update_artist_mbid(artist_id):
             from metadata_fetcher import enrich_artist
             enriquecido = enrich_artist(artista, commit=True)
             if enriquecido:
-                updated_metadata = {
-                    'foto_url': artista.foto_url,
-                    'biografia': artista.biografia
-                }
+                updated_metadata['foto_url'] = artista.foto_url
+                updated_metadata['biografia'] = artista.biografia
         except Exception as e:
             current_app.logger.exception('Error enriching artist metadata')
+    db.session.commit()
 
     return jsonify({
         'success': True,

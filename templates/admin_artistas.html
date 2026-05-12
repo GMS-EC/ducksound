@@ -243,9 +243,10 @@ document.getElementById('btn-save').addEventListener('click', function() {
         spinner.style.display = 'none';
         this.disabled = false;
         if (d.success) {
-            row.dataset.nombre = nombre;
+            const nombreFinal = d.metadata?.nombre || nombre;
+            row.dataset.nombre = nombreFinal;
             row.dataset.mbid = mbid;
-            row.querySelector('.artist-name-display').textContent = nombre;
+            row.querySelector('.artist-name-display').textContent = nombreFinal;
             const mbidEl = row.querySelector('.artist-mbid-display');
             mbidEl.textContent = mbid || '—';
             mbidEl.style.color = mbid ? 'var(--accent)' : 'var(--muted)';

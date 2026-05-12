@@ -47,13 +47,11 @@ def get_artista_bio(mbid):
         return None
     url = f'{_MB_BASE}/artist/{mbid}'
     data = _get(url, {'inc': 'bio'})
-    if not data or 'artist' not in data:
+    if not data:
         return None
     
-    artist_data = data['artist']
-    bio_data = artist_data.get('bio', {})
+    bio_data = data.get('bio', {})
     
-    # La bio puede venir como un string o un dict con 'text'
     if isinstance(bio_data, dict):
         text = bio_data.get('text')
     else:
@@ -62,10 +60,23 @@ def get_artista_bio(mbid):
     if not text:
         return None
         
-    # Limpiar etiquetas HTML básicas si existen
     import re
     text = re.sub(r'<[^>]*>', '', text)
     return text.strip()
+
+
+def get_artista_name(mbid):
+    """Obtiene el nombre canónico de un artista desde MusicBrainz usando su MBID."""
+    if not mbid:
+        return None
+    url = f'{_MB_BASE}/artist/{mbid}'
+    data = _get(url, {'inc': 'aliases'})
+    if not data:
+        return None
+    name = data.get('name')
+    if name:
+        return name.strip()
+    return None
 
 
 def buscar_artista(nombre):
