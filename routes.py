@@ -520,7 +520,9 @@ def admin_update_artist_mbid(artist_id):
         old_mbid = artista.musicbrainz_id
         artista.musicbrainz_id = final_mbid or None
         if nombre:
+            from metadata_normalizer import normalizar_artista
             artista.nombre = nombre
+            artista.nombre_normalizado = normalizar_artista(nombre)
         db.session.commit()
 
         updated_metadata = {}
@@ -534,8 +536,18 @@ def admin_update_artist_mbid(artist_id):
                 from musicbrainz_client import get_artista_name
                 mb_name = get_artista_name(final_mbid)
                 if mb_name:
-                    artista.nombre = mb_name
-                    updated_metadata['nombre'] = mb_name
+                    from metadata_normalizer import normalizar_artista
+                    mb_norm = normalizar_artista(mb_name)
+                    conflict = Artista.query.filter(
+                        Artista.id != artist_id,
+                        (Artista.nombre == mb_name) | (Artista.nombre_normalizado == mb_norm)
+                    ).first()
+                    if conflict:
+                        updated_metadata['nombre_conflicto'] = conflict.nombre
+                    else:
+                        artista.nombre = mb_name
+                        artista.nombre_normalizado = mb_norm
+                        updated_metadata['nombre'] = mb_name
                 
                 from metadata_fetcher import enrich_artist
                 enrich_artist(artista, commit=True)
@@ -1263,10 +1275,22 @@ def api_search():
         return jsonify({'songs': [], 'artists': [], 'albums': []})
 
     term = f'%{q}%'
+    try:
+        from unidecode import unidecode
+        q_norm = unidecode(q)
+    except Exception:
+        q_norm = q
+    term_norm = f'%{q_norm}%'
 
-    songs = Cancion.query.filter(Cancion.titulo.ilike(term)).limit(8).all()
-    artists = Artista.query.filter(Artista.nombre.ilike(term)).limit(5).all()
-    albums = Album.query.filter(Album.titulo.ilike(term)).limit(5).all()
+    songs = Cancion.query.filter(
+        Cancion.titulo.ilike(term) | Cancion.titulo.ilike(term_norm)
+    ).limit(8).all()
+    artists = Artista.query.filter(
+        (Artista.nombre.ilike(term)) | (Artista.nombre_normalizado.ilike(term_norm))
+    ).limit(5).all()
+    albums = Album.query.filter(
+        Album.titulo.ilike(term) | Album.titulo.ilike(term_norm)
+    ).limit(5).all()
 
     return jsonify({
         'songs': [{
