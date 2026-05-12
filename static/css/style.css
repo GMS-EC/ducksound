@@ -3373,8 +3373,36 @@ body {
     gap: 20px;
     overflow-x: auto;
     padding: 10px 0 20px;
-    scrollbar-width: none; /* Firefox */
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
 }
+.album-carousel::-webkit-scrollbar {
+    display: none;
+}
+.album-carousel .album-card {
+    flex: 0 0 150px;
+    width: 150px;
+    max-width: 150px;
+    cursor: pointer;
+    transition: transform 0.2s, border-color 0.2s;
+    border: 2px solid transparent;
+    background: var(--surface-2);
+}
+.album-carousel .album-card:hover {
+    transform: translateY(-5px);
+}
+.album-carousel .album-card.active {
+    border-color: var(--accent);
+    background: rgba(255, 64, 64, 0.05);
+}
+.album-carousel .album-card-cover {
+    width: 150px;
+    height: 150px;
+}
+.album-carousel .album-card-overlay {
+    display: none;
+}
+
 .album-carousel::-webkit-scrollbar {
     display: none; /* Chrome, Safari */
 }
