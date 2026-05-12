@@ -458,7 +458,7 @@ def _generate_daily_mixes(usuario_id):
 
         for idx, cid in enumerate(mix_canciones_ids[:20]):
             db.session.execute(
-                db.text("INSERT OR IGNORE INTO daily_mix_canciones (mix_id, cancion_id, orden) VALUES (:m, :c, :o)"),
+                db.text("INSERT INTO daily_mix_canciones (mix_id, cancion_id, orden) VALUES (:m, :c, :o) ON CONFLICT (mix_id, cancion_id) DO NOTHING"),
                 {'m': mix.id, 'c': cid, 'o': idx}
             )
 
