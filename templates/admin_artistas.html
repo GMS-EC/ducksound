@@ -194,6 +194,8 @@ function cerrarModal() {
     document.getElementById('modal-error').style.display = 'none';
 }
 
+document.getElementById('btn-preview').addEventListener('click', function() {
+    if (!artistaActual) return;
     const id = artistaActual.dataset.id;
     const spinner = document.getElementById('modal-spinner');
     const error = document.getElementById('modal-error');
