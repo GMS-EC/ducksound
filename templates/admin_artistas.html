@@ -44,14 +44,14 @@
                     <td style="padding:10px 16px;cursor:pointer" onclick="this.closest('tr').classList.contains('editing') ? null : this.closest('tr').querySelector('.btn-edit-artist').click()">
                         <span class="artist-name-display">{{ a.nombre }}</span>
                         <input class="artist-name-input" type="text" value="{{ a.nombre }}"
-                            style="display:none;background:var(--surface-2);border:1px solid var(--border-light);color:var(--text);padding:4px 8px;border-radius:4px;font-size:13px;width:200px">
+                            style="background:var(--surface-2);border:1px solid var(--border-light);color:var(--text);padding:4px 8px;border-radius:4px;font-size:13px;width:200px">
                     </td>
                     <td style="padding:10px 16px;cursor:pointer" onclick="this.closest('tr').classList.contains('editing') ? null : this.closest('tr').querySelector('.btn-edit-artist').click()">
                         <code class="artist-mbid-display" style="font-size:12px;color:{% if a.musicbrainz_id %}var(--accent){% else %}var(--muted){% endif %}">
                             {{ a.musicbrainz_id or '—' }}
                         </code>
                         <input class="artist-mbid-input" type="text" value="{{ a.musicbrainz_id or '' }}" placeholder="UUID..."
-                            style="display:none;background:var(--surface-2);border:1px solid var(--border-light);color:var(--text);padding:4px 8px;border-radius:4px;font-size:12px;width:200px;font-family:monospace">
+                            style="background:var(--surface-2);border:1px solid var(--border-light);color:var(--text);padding:4px 8px;border-radius:4px;font-size:12px;width:200px;font-family:monospace">
                     </td>
                     <td style="padding:10px 16px">
                         {% if a.foto_url %}<img src="{{ a.foto_url }}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:4px">{% endif %}
@@ -93,6 +93,8 @@
 .artist-row .btn-save-artist,
 .artist-row .btn-cancel-artist,
 .artist-row .save-spinner { display: none; }
+.artist-row .artist-name-input,
+.artist-row .artist-mbid-input { display: none; }
 
 .artist-row.editing .btn-edit-artist,
 .artist-row.editing .btn-lookup-mbid { display: none; }
@@ -139,11 +141,14 @@ document.querySelectorAll('.btn-save-artist').forEach(btn => {
         fetch('/admin/artistas/' + id + '/update-mbid', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            credentials: 'same-origin',
             body: JSON.stringify({mbid: mbid, nombre: nombre, enrich: autoEnrich})
         })
-        .then(r => r.json())
+        .then(r => {
+            if (r.status === 401) { window.location.href = '/login'; return; }
+            return r.json();
+        })
         .then(d => {
+            if (!d) return;
             spinner.style.display = 'none';
             if (d.success) {
                 row.querySelector('.artist-name-display').textContent = nombre;
@@ -184,11 +189,14 @@ document.querySelectorAll('.btn-lookup-mbid').forEach(btn => {
         fetch('/admin/artistas/' + id + '/lookup-mbid', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            credentials: 'same-origin',
             body: JSON.stringify({})
         })
-        .then(r => r.json())
+        .then(r => {
+            if (r.status === 401) { window.location.href = '/login'; return; }
+            return r.json();
+        })
         .then(d => {
+            if (!d) return;
             spinner.style.display = 'none';
             if (d.success && d.mbid) {
                 row.querySelector('.artist-mbid-input').value = d.mbid;
