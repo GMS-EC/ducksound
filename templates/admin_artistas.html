@@ -104,6 +104,15 @@
                 </div>
             </div>
         </div>
+        <div id="modal-progress-area" style="display:none;padding:12px 20px;border-top:1px solid var(--border-light)">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                <span id="modal-progress-msg" style="font-size:13px;color:var(--muted)">Buscando metadata...</span>
+                <span id="modal-progress-pct" style="font-size:12px;color:var(--muted)">0%</span>
+            </div>
+            <div style="width:100%;height:6px;background:var(--surface-2);border-radius:3px;overflow:hidden">
+                <div id="modal-progress-bar" style="width:0%;height:100%;background:var(--accent);border-radius:3px;transition:width 0.3s ease"></div>
+            </div>
+        </div>
         <div style="display:flex;justify-content:flex-end;align-items:center;gap:10px;padding:14px 20px;border-top:1px solid var(--border-light)">
             <span id="modal-spinner" style="display:none;color:var(--muted);font-size:13px"><i class="fa-solid fa-spinner fa-spin"></i> Guardando...</span>
             <span id="modal-error" style="display:none;color:var(--accent);font-size:13px"></span>
@@ -180,8 +189,47 @@ document.querySelectorAll('.btn-edit-artist').forEach(btn => {
 
 function cerrarModal() {
     document.getElementById('artist-modal-overlay').style.display = 'none';
+    document.getElementById('modal-progress-area').style.display = 'none';
+    document.querySelector('.modal-footer').style.display = '';
     artistaActual = null;
     document.getElementById('modal-error').style.display = 'none';
+}
+
+function pollEnrichProgress(taskId, row) {
+    const pb = document.getElementById('modal-progress-bar');
+    const pp = document.getElementById('modal-progress-pct');
+    const pm = document.getElementById('modal-progress-msg');
+    const interval = setInterval(() => {
+        fetch('/admin/artistas/enrich-progress/' + taskId)
+            .then(r => r.json())
+            .then(d => {
+                pb.style.width = d.percent + '%';
+                pp.textContent = d.percent + '%';
+                if (d.message) pm.textContent = d.message;
+
+                if (d.status === 'done' || d.status === 'error') {
+                    clearInterval(interval);
+                    if (d.foto_url || d.biografia) {
+                        if (d.foto_url) row.dataset.foto = d.foto_url;
+                        if (d.biografia) row.dataset.bio = d.biografia;
+                        const infoCell = row.querySelector('td:nth-child(4)');
+                        let html = '';
+                        if (d.foto_url) {
+                            html += '<img src="' + d.foto_url + '" style="width:32px;height:32px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:4px">';
+                        }
+                        if (d.biografia) html += '<i class="fa-solid fa-align-left" title="Tiene biografía" style="font-size:11px;color:var(--muted)"></i>';
+                        if (d.foto_url) html += '<i class="fa-solid fa-image" title="Tiene foto" style="font-size:11px;color:var(--muted)"></i>';
+                        infoCell.innerHTML = html || '<span style="font-size:11px;color:var(--muted)">—</span>';
+                    }
+                    if (d.nombre) {
+                        row.dataset.nombre = d.nombre;
+                        row.querySelector('.artist-name-display').textContent = d.nombre;
+                    }
+                    setTimeout(cerrarModal, 1000);
+                }
+            })
+            .catch(() => { clearInterval(interval); });
+    }, 800);
 }
 
 document.getElementById('btn-lookup').addEventListener('click', function() {
@@ -264,7 +312,13 @@ document.getElementById('btn-save').addEventListener('click', function() {
                 infoCell.innerHTML = html || '<span style="font-size:11px;color:var(--muted)">—</span>';
             }
 
-            cerrarModal();
+            if (d.enrich_task_id) {
+                document.querySelector('.modal-footer').style.display = 'none';
+                document.getElementById('modal-progress-area').style.display = 'block';
+                pollEnrichProgress(d.enrich_task_id, row);
+            } else {
+                cerrarModal();
+            }
         } else {
             error.textContent = d.error || d.message || 'Error al guardar';
             error.style.display = 'inline';
