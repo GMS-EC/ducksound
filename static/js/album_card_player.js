@@ -6,6 +6,14 @@ function playAlbum(albumId) {
         .then(r => r.json())
         .then(songs => {
             if (songs && songs.length > 0) {
+                songs = songs.map(s => ({
+                    id: s.id,
+                    titulo: s.titulo,
+                    artista: s.artista,
+                    audio: s.audio,
+                    cover: s.cover,
+                    lyrics: s.lyrics
+                }));
                 const iframe = document.getElementById('player-frame');
                 if (iframe && iframe.contentWindow) {
                     iframe.contentWindow.postMessage({
@@ -13,13 +21,15 @@ function playAlbum(albumId) {
                         playlist: songs
                     }, window.location.origin);
                     
-                    setTimeout(() => {
-                        iframe.contentWindow.postMessage({
-                            type: 'command', 
-                            cmd: 'playSong', 
-                            index: 0
-                        }, window.location.origin);
-                    }, 100);
+                    const first = songs[0];
+                    if (first) {
+                        setTimeout(() => {
+                            iframe.contentWindow.postMessage({
+                                type: 'playSong',
+                                song: first
+                            }, window.location.origin);
+                        }, 100);
+                    }
                 }
             }
         })
@@ -31,6 +41,14 @@ function playDailyMix(mixId) {
         .then(r => r.json())
         .then(songs => {
             if (songs && songs.length > 0) {
+                songs = songs.map(s => ({
+                    id: s.id,
+                    titulo: s.titulo,
+                    artista: s.artista,
+                    audio: s.audio,
+                    cover: s.cover,
+                    lyrics: s.lyrics
+                }));
                 const iframe = document.getElementById('player-frame');
                 if (iframe && iframe.contentWindow) {
                     iframe.contentWindow.postMessage({
@@ -38,13 +56,15 @@ function playDailyMix(mixId) {
                         playlist: songs
                     }, window.location.origin);
                     
-                    setTimeout(() => {
-                        iframe.contentWindow.postMessage({
-                            type: 'command', 
-                            cmd: 'playSong', 
-                            index: 0
-                        }, window.location.origin);
-                    }, 100);
+                    const first = songs[0];
+                    if (first) {
+                        setTimeout(() => {
+                            iframe.contentWindow.postMessage({
+                                type: 'playSong',
+                                song: first
+                            }, window.location.origin);
+                        }, 100);
+                    }
                 }
             }
         })

@@ -437,8 +437,11 @@
                 tags.push(m*60 + s + ms/1000);
             }
             const text = raw.replace(timeTag, '').trim();
-            if (tags.length) for (const t of tags) cues.push({start: t, text: text});
-            else if (raw.trim()) cues.push({start: 0, text: raw.trim()});
+            // Ignorar líneas de metadatos sin timestamp
+            if (!tags.length) continue;
+            if (!text) continue;
+            if (/contribuciones/i.test(text)) continue;
+            for (const t of tags) cues.push({start: t, text: text});
         }
         return cues.sort((a,b)=>a.start - b.start);
     }
@@ -475,6 +478,8 @@
         scrollDiv.innerHTML = '<div class="lyrics-lines">' + html + '</div>';
         window._currentLyrics = {songId: songId, cues: cues, index: -1};
         updateTranslateBtn(true);
+        // Reset scroll to top for new lyrics
+        scrollDiv.scrollTop = 0;
     }
 
     function translateLyrics(cues){
@@ -662,17 +667,30 @@
             window._userLang = p.idioma_preferido || 'es';
         }).catch(()=>{ window._userLang = 'es'; });
         
+        let skipGuard = false;
+        const guardSkip = (fn) => {
+            if (skipGuard) return;
+            skipGuard = true;
+            try { fn(); } finally { setTimeout(() => { skipGuard = false; }, 250); }
+        };
         const ctrls = {
             'mini-play': ()=> { tryUnlockAudio(); sendToPlayer({type:'command', cmd:'toggle'}); },
-            'mini-next': ()=> sendToPlayer({type:'command', cmd:'next'}),
-            'mini-prev': ()=> sendToPlayer({type:'command', cmd:'prev'}),
+            'mini-next': ()=> guardSkip(() => sendToPlayer({type:'command', cmd:'next'})),
+            'mini-prev': ()=> guardSkip(() => sendToPlayer({type:'command', cmd:'prev'})),
             'mini-back10': ()=> sendToPlayer({type:'command', cmd:'seek', seconds:-10}),
             'mini-forward10': ()=> sendToPlayer({type:'command', cmd:'seek', seconds:10}),
             'mini-shuffle': ()=> sendToPlayer({type:'command', cmd:'shuffle'}),
             'mini-repeat': ()=> sendToPlayer({type:'command', cmd:'repeat'}),
             'volume-icon': ()=> sendToPlayer({type:'command', cmd:'toggleMute'})
         };
-        for (let id in ctrls) { const el = document.getElementById(id); if (el) el.addEventListener('click', ctrls[id]); }
+        for (let id in ctrls) {
+            const el = document.getElementById(id);
+            if (el) {
+                if (el.dataset.boundMiniControls === '1') continue;
+                el.dataset.boundMiniControls = '1';
+                el.addEventListener('click', ctrls[id]);
+            }
+        }
         const vS = document.getElementById('volume-slider');
         if (vS) vS.addEventListener('input', function(){ updateVolumeIcon(this.value); sendToPlayer({type:'command', cmd:'volume', value: parseFloat(this.value)}); });
         

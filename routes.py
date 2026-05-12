@@ -949,6 +949,24 @@ def album_detail(album_id):
     return render_template('album.html', album=album, discos=discos, cover_url=cover_url, total_duration=total_dur, track_count=track_count)
 
 
+@api_bp.route('/api/daily-mix/<int:mix_id>/songs', methods=['GET'])
+def api_daily_mix_songs(mix_id):
+    """Devuelve las canciones de un daily mix en JSON."""
+    mix = DailyMix.query.get_or_404(mix_id)
+    canciones = [
+        {
+            'id': c.id,
+            'titulo': c.titulo,
+            'artista': c.artista_obj.nombre if c.artista_obj else 'Desconocido',
+            'audio': f'/audio/{c.id}',
+            'cover': f'/album-art/{c.id}',
+            'lyrics': f'/lyrics/{c.id}'
+        }
+        for c in mix.canciones
+    ]
+    return jsonify(canciones)
+
+
 @api_bp.route('/api/playlist/<int:playlist_id>/songs', methods=['GET'])
 def api_songs_by_playlist(playlist_id):
     """Devuelve las canciones asociadas a una playlist en JSON"""

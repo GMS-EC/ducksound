@@ -249,6 +249,10 @@ body {
   box-shadow: 2px 0 20px rgba(0, 0, 0, 0.2);
 }
 
+.sidebar-overlay {
+  z-index: 1200;
+}
+
 .logo-container {
   display: flex;
   align-items: center;
@@ -664,6 +668,10 @@ body {
   flex-direction: column;
   z-index: 800;
   box-shadow: -2px 0 20px rgba(0, 0, 0, 0.15);
+}
+
+.right-panel-overlay {
+  z-index: 1200;
 }
 
 .right-tabs {
@@ -1103,7 +1111,7 @@ body {
   right: 0 !important;
   bottom: 0 !important;
   height: var(--player-height) !important;
-  z-index: 10000 !important;
+  z-index: 1100 !important;
   background: var(--surface) !important;
   border-top: 1px solid var(--border-color) !important;
   box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.4) !important;

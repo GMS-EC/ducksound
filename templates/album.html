@@ -136,12 +136,15 @@
             lyrics: t.dataset.lyrics || null
         }));
         const idx = allTracks.indexOf(item);
+        const song = idx >= 0 ? playlist[idx] : playlist[0];
         const iframe = document.getElementById('player-frame');
         if (iframe && iframe.contentWindow) {
             iframe.contentWindow.postMessage({type: 'setPlaylist', playlist: playlist}, window.location.origin);
-            setTimeout(() => {
-                iframe.contentWindow.postMessage({type: 'command', cmd: 'playSong', index: idx >= 0 ? idx : 0}, window.location.origin);
-            }, 100);
+            if (song) {
+                setTimeout(() => {
+                    iframe.contentWindow.postMessage({type: 'playSong', song: song}, window.location.origin);
+                }, 100);
+            }
         }
         document.querySelectorAll('.track-item').forEach(t => t.classList.remove('playing'));
         item.classList.add('playing');
