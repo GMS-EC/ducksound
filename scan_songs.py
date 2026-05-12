@@ -1267,7 +1267,7 @@ def escaneo_rapido(progress_callback=None):
     if archivos_eliminados:
         emit_progress({
             'stage': 'processing',
-            'message': f'Detectando {len(archivos_eliminados)} archivos eliminados...',
+            'message': f'Eliminando {len(archivos_eliminados)} archivos obsoletos...',
             'percent': 5, 'processed': 0, 'total': len(archivos_nuevos)
         })
         for ruta_eliminada in archivos_eliminados:
@@ -1275,8 +1275,10 @@ def escaneo_rapido(progress_callback=None):
             if cancion:
                 db.session.delete(cancion)
                 canciones_eliminadas += 1
-                print(f"  Eliminada de BD: {Path(ruta_eliminada).name}")
         db.session.commit()
+        limpiar_entidades_vacias()
+        db.session.commit()
+
         limpiar_entidades_vacias()
         db.session.commit()
 
@@ -1309,13 +1311,19 @@ def escaneo_rapido(progress_callback=None):
 
     for idx, archivo in enumerate(archivos_nuevos_lista, start=1):
         emit_progress({
-            'stage': 'processing',
-            'message': f'Nuevo: {archivo.name}',
+            'stage': 'file_done',
+            'message': f'Agregado: {archivo.name}',
             'current_file': archivo.name,
-            'processed': idx - 1,
+            'processed': idx,
             'total': total,
-            'percent': int(5 + ((idx - 1) / total) * 90)
+            'percent': int(5 + (idx / total) * 90),
+            'counters': {
+                'agregadas': canciones_agregadas,
+                'actualizadas': 0,
+                'omitidas': 0
+            }
         })
+
 
         try:
             metadatos = extraer_metadatos(archivo)
