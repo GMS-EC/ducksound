@@ -7,7 +7,7 @@
     <h1 class="dashboard-title">
         <i class="fa-solid {% if es_favoritos %}fa-heart{% else %}fa-music{% endif %}"
             style="color:var(--accent);margin-right:8px"></i>
-        {% if es_favoritos %}Tus Favoritos{% else %}<span id="dynamic-greeting" data-user="{{ nombre_usuario }}">Buenos días</span>{% endif %}
+        {% if es_favoritos %}Tus Favoritos{% else %}<span id="dynamic-greeting" data-user="{% if current_user and current_user.nombre_publico %}{{ current_user.nombre_publico }}{% endif %}">Buenos días</span>{% endif %}
     </h1>
     <p class="dashboard-subtitle">Bienvenido</p>
 </div>
@@ -212,7 +212,7 @@
             } else if (hour >= 20 || hour < 5) {
                 greeting = "Buenas noches";
             }
-            greetingEl.textContent = greeting + ' ' + userName;
+            greetingEl.textContent = userName ? greeting + ' ' + userName : greeting;
         }
 
         // Track click to play (solo desde el botón play)
