@@ -95,13 +95,9 @@
                     <i class="fa-solid fa-align-left" id="modal-bio-icon" style="display:none"></i> <span id="modal-bio-text"></span>
                     <i class="fa-solid fa-image" id="modal-foto-icon" style="display:none;margin-left:8px"></i> <span id="modal-foto-text"></span>
                 </div>
-
-                <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border-light)">
-                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
-                        <input type="checkbox" id="modal-enrich" checked style="accent-color:var(--accent)">
-                        Enriquecer metadata (foto, biografía) al guardar
-                    </label>
-                </div>
+            </div>
+            <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border-light)">
+                <!-- Enrichment is now always active -->
             </div>
         </div>
         <div style="display:flex;justify-content:flex-end;align-items:center;gap:10px;padding:14px 20px;border-top:1px solid var(--border-light)">
@@ -117,13 +113,11 @@
 #artist-modal-overlay {
     position: fixed; top:0; left:0; width:100%; height:100%;
     background:rgba(0,0,0,0.6); z-index:99999;
-    text-align:center;
-}
-#artist-modal-overlay:before {
-    content:''; display:inline-block; height:100%; vertical-align:middle;
+    display: none;
+    justify-content: center;
+    align-items: center;
 }
 #artist-modal-box {
-    display:inline-block; vertical-align:middle;
     text-align:left;
 }
 .btn-sm { border:1px solid var(--border-light); background:var(--surface-2); color:var(--text); cursor:pointer; border-radius:var(--radius-sm); padding:4px 10px; font-size:12px; transition:all 0.15s; }
@@ -171,11 +165,11 @@ document.querySelectorAll('.btn-edit-artist').forEach(btn => {
         } else {
             metaInfo.style.display = 'none';
         }
-
         document.getElementById('modal-error').style.display = 'none';
         document.getElementById('modal-spinner').style.display = 'none';
-        document.getElementById('artist-modal-overlay').style.display = '';
+        document.getElementById('artist-modal-overlay').style.display = 'flex';
     });
+});
 });
 
 function cerrarModal() {
@@ -220,19 +214,18 @@ document.getElementById('btn-save').addEventListener('click', function() {
     const mbid = document.getElementById('modal-mbid').value.trim();
     const spinner = document.getElementById('modal-spinner');
     const error = document.getElementById('modal-error');
-    const enrich = document.getElementById('modal-enrich').checked;
-
+    
     if (!nombre) { error.textContent = 'El nombre es obligatorio'; error.style.display = 'inline'; return; }
     if (mbid && mbid.length !== 36) { error.textContent = 'MBID debe tener 36 caracteres'; error.style.display = 'inline'; return; }
-
+    
     spinner.style.display = 'inline';
     error.style.display = 'none';
     this.disabled = true;
-
+    
     fetch('/admin/artistas/' + id + '/update-mbid', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({mbid: mbid, nombre: nombre, enrich: enrich})
+        body: JSON.stringify({mbid: mbid, nombre: nombre})
     })
     .then(r => {
         if (r.status === 401) { window.location.href = '/login'; return; }

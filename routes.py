@@ -471,7 +471,6 @@ def admin_update_artist_mbid(artist_id):
             return jsonify({'error': 'Datos inválidos'}), 400
         mbid = (data.get('mbid') or '').strip()
         nombre = (data.get('nombre') or '').strip()
-        enrich = data.get('enrich', False)
         if mbid and len(mbid) != 36:
             return jsonify({'error': 'MBID debe tener 36 caracteres (formato UUID)'}), 400
         if mbid:
@@ -485,16 +484,21 @@ def admin_update_artist_mbid(artist_id):
         db.session.commit()
 
         updated_metadata = {}
-        if enrich and mbid and mbid != old_mbid:
-            artista.foto_url = None
-            artista.biografia = None
-            db.session.commit()
-            from musicbrainz_client import get_artista_name
+        # Always trigger enrichment if we have an MBID
+        if mbid:
+            # If the MBID has changed, force a metadata reset to ensure we fetch new data
+            if mbid != old_mbid:
+                artista.foto_url = None
+                artista.biografia = None
+                db.session.commit()
+                
+                from musicbrainz_client import get_artista_name
+                mb_name = get_artista_name(mbid)
+                if mb_name:
+                    artista.nombre = mb_name
+                    updated_metadata['nombre'] = mb_name
+            
             from metadata_fetcher import enrich_artist
-            mb_name = get_artista_name(mbid)
-            if mb_name:
-                artista.nombre = mb_name
-                updated_metadata['nombre'] = mb_name
             enrich_artist(artista, commit=True)
             updated_metadata['foto_url'] = artista.foto_url
             updated_metadata['biografia'] = artista.biografia
