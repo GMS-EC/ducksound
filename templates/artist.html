@@ -156,7 +156,7 @@
                 return;
             }
             grid.innerHTML = data.map(a =>
-                '<a class="artist-card" href="/artists/' + a.id + '">' +
+                '<a class="artist-card" href="/artist/' + a.id + '">' +
                     '<div class="artist-card-cover">' +
                         (a.foto ? '<img src="' + a.foto + '" alt="">' : '<div class="artist-card-placeholder">' + (a.nombre_normalizado || a.nombre)[0] + '</div>') +
                     '</div>' +
