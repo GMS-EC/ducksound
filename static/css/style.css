@@ -651,6 +651,7 @@ body {
     color: var(--accent);
 }
 
+.right-panel {
   position: fixed;
   right: 0;
   top: 0;
@@ -912,7 +913,6 @@ body {
 #upnext-content,
 #related-content {
   padding: 4px;
-}
 }
 
 .lyrics-spacer {
@@ -1653,10 +1653,6 @@ body {
 @media (max-width: 1100px) {
   .main-wrapper {
     margin-right: 0;
-  }
-
-  .right-panel {
-    display: none;
   }
 }
 
@@ -3030,6 +3026,7 @@ body {
    ========================================== */
 @media (max-width: 1024px) {
   .right-panel {
+    display: flex !important;
     position: fixed !important;
     right: -360px !important;
     top: 0 !important;
@@ -3041,6 +3038,7 @@ body {
   }
   .right-panel.open {
     right: 0 !important;
+    visibility: visible !important;
   }
   .right-panel-overlay {
     display: block;
