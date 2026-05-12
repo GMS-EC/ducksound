@@ -3370,23 +3370,26 @@ body {
 
 .album-carousel {
     display: flex;
-    gap: 20px;
+    gap: 16px;
     overflow-x: auto;
     padding: 10px 0 20px;
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
+    align-items: flex-start;
 }
 .album-carousel::-webkit-scrollbar {
     display: none;
 }
 .album-carousel .album-card {
-    flex: 0 0 150px;
-    width: 150px;
-    max-width: 150px;
+    flex: 0 0 140px;
+    width: 140px;
+    max-width: 140px;
     cursor: pointer;
     transition: transform 0.2s, border-color 0.2s;
     border: 2px solid transparent;
     background: var(--surface-2);
+    position: relative;
+    z-index: 1;
 }
 .album-carousel .album-card:hover {
     transform: translateY(-5px);
@@ -3396,8 +3399,16 @@ body {
     background: rgba(255, 64, 64, 0.05);
 }
 .album-carousel .album-card-cover {
-    width: 150px;
-    height: 150px;
+    width: 140px;
+    height: 140px;
+    overflow: hidden;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+.album-carousel .album-card-cover img {
+    width: 140px;
+    height: 140px;
+    object-fit: cover;
+    display: block;
 }
 .album-carousel .album-card-overlay {
     display: none;
