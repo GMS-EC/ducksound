@@ -1,4 +1,4 @@
-from flask import Blueprint, session, redirect, url_for, render_template, jsonify, abort, request
+from flask import Blueprint, session, redirect, url_for, render_template, jsonify, abort, request, current_app
 from models import db, Usuario, Artista, Album, Playlist, Cancion, Favorito, Coleccion
 from scan_songs import escanear_carpeta_audio, escaneo_rapido
 import os
@@ -1106,9 +1106,42 @@ def api_mb_progress():
             'found': p['found'],
             'current_artist': p['current_artist'],
             'message': p['message'],
-            'percent': int((p['completed'] / p['total']) * 100) if p['total'] > 0 else 0
-        }), 200
+        }, 200
     except Exception as e:
         return jsonify({'error': str(e), 'active': False, 'finished': True}), 500
+
+
+@api_bp.route('/api/search', methods=['GET'])
+def api_search():
+    q = request.args.get('q', '').strip()
+    if not q or len(q) < 2:
+        return jsonify({'songs': [], 'artists': [], 'albums': []})
+
+    term = f'%{q}%'
+
+    songs = Cancion.query.filter(Cancion.titulo.ilike(term)).limit(8).all()
+    artists = Artista.query.filter(Artista.nombre.ilike(term)).limit(5).all()
+    albums = Album.query.filter(Album.titulo.ilike(term)).limit(5).all()
+
+    return jsonify({
+        'songs': [{
+            'id': s.id,
+            'titulo': s.titulo,
+            'artista': s.artista_obj.nombre if s.artista_obj else None,
+            'audio': url_for('servir_audio', cancion_id=s.id),
+            'cover': url_for('servir_album_art', cancion_id=s.id),
+            'lyrics': url_for('servir_lyrics', cancion_id=s.id),
+        } for s in songs],
+        'artists': [{
+            'id': a.id,
+            'nombre': a.nombre,
+            'foto': a.foto_url or '',
+        } for a in artists],
+        'albums': [{
+            'id': al.id,
+            'titulo': al.titulo,
+            'artista': al.artista.nombre if al.artista else None,
+        } for al in albums],
+    })
 
 

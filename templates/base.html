@@ -82,6 +82,16 @@
     
     <!-- Contenido principal -->
     <main class="main-wrapper">
+        {% if request.endpoint in ('dashboard', 'browse.explore') and not es_favoritos %}
+        <div class="search-bar" id="global-search-bar">
+            <div class="search-bar-inner">
+                <i class="fa-solid fa-search search-bar-icon"></i>
+                <input type="text" id="global-search-input" class="search-bar-input" placeholder="Buscar canciones, artistas, álbumes..." autocomplete="off">
+                <button class="search-bar-clear" id="global-search-clear" style="display:none"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="search-results" id="global-search-results" style="display:none"></div>
+        </div>
+        {% endif %}
         {% block content %}{% endblock %}
     </main>
     
@@ -508,6 +518,118 @@
         });
         if (overlay) overlay.addEventListener('click', closePanel);
         document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closePanel(); });
+    })();
+    // Global search
+    (function(){
+        const searchBar = document.getElementById('global-search-bar');
+        if (!searchBar) return;
+        const input = document.getElementById('global-search-input');
+        const results = document.getElementById('global-search-results');
+        const clearBtn = document.getElementById('global-search-clear');
+        if (!input || !results) return;
+        let debounceTimer = null;
+        async function doSearch(q){
+            if (q.length < 2){
+                results.style.display = 'none';
+                if (clearBtn) clearBtn.style.display = 'none';
+                return;
+            }
+            if (clearBtn) clearBtn.style.display = 'flex';
+            results.style.display = 'block';
+            results.innerHTML = '<div class="search-loading"><i class="fa-solid fa-spinner fa-spin"></i> Buscando...</div>';
+            try{
+                const res = await fetch('/api/search?q=' + encodeURIComponent(q));
+                const data = await res.json();
+                if (!data) return;
+                let html = '';
+                if (data.songs && data.songs.length){
+                    html += '<div class="search-section-title"><i class="fa-solid fa-music" style="margin-right:6px"></i>Canciones</div>';
+                    data.songs.forEach(s => {
+                        const cover = s.cover || '';
+                        html += '<div class="search-result-item" data-type="song" data-id="' + s.id + '" data-titulo="' + escHtml(s.titulo) + '" data-artista="' + escHtml(s.artista || '') + '" data-audio="' + escHtml(s.audio) + '" data-cover="' + escHtml(s.cover) + '" data-lyrics="' + escHtml(s.lyrics || '') + '">' +
+                            '<div class="search-result-cover">' + (cover ? '<img src="' + cover + '" alt="">' : '<i class="fa-solid fa-music"></i>') + '</div>' +
+                            '<div class="search-result-info"><div class="search-result-title">' + escHtml(s.titulo) + '</div><div class="search-result-subtitle">' + escHtml(s.artista || '') + '</div></div>' +
+                        '</div>';
+                    });
+                }
+                if (data.artists && data.artists.length){
+                    html += '<div class="search-section-title"><i class="fa-solid fa-user-group" style="margin-right:6px"></i>Artistas</div>';
+                    data.artists.forEach(a => {
+                        html += '<a href="' + '/artist/' + a.id + '" class="search-result-item" data-type="artist">' +
+                            '<div class="search-result-cover">' + (a.foto ? '<img src="' + a.foto + '" alt="">' : '<i class="fa-solid fa-user"></i>') + '</div>' +
+                            '<div class="search-result-info"><div class="search-result-title">' + escHtml(a.nombre) + '</div></div>' +
+                        '</a>';
+                    });
+                }
+                if (data.albums && data.albums.length){
+                    html += '<div class="search-section-title"><i class="fa-solid fa-compact-disc" style="margin-right:6px"></i>Álbumes</div>';
+                    data.albums.forEach(al => {
+                        html += '<a href="' + '/album/' + al.id + '" class="search-result-item" data-type="album">' +
+                            '<div class="search-result-cover"><i class="fa-solid fa-compact-disc"></i></div>' +
+                            '<div class="search-result-info"><div class="search-result-title">' + escHtml(al.titulo) + '</div><div class="search-result-subtitle">' + escHtml(al.artista || '') + '</div></div>' +
+                        '</a>';
+                    });
+                }
+                if (!html){
+                    html = '<div class="search-empty">No se encontraron resultados para "<strong>' + escHtml(q) + '</strong>"</div>';
+                }
+                results.innerHTML = html;
+                // Click en canción → enviar al reproductor
+                results.querySelectorAll('.search-result-item[data-type="song"]').forEach(el => {
+                    el.addEventListener('click', function(){
+                        const song = {
+                            id: parseInt(this.dataset.id),
+                            titulo: this.dataset.titulo,
+                            artista: this.dataset.artista,
+                            audio: this.dataset.audio,
+                            cover: this.dataset.cover,
+                            lyrics: this.dataset.lyrics || ''
+                        };
+                        const iframe = document.getElementById('player-frame');
+                        if (iframe && iframe.contentWindow){
+                            iframe.contentWindow.postMessage({type: 'setPlaylist', playlist: [song]}, window.location.origin);
+                            setTimeout(() => {
+                                iframe.contentWindow.postMessage({type: 'playSong', song: song}, window.location.origin);
+                            }, 100);
+                        }
+                        input.value = '';
+                        results.style.display = 'none';
+                        if (clearBtn) clearBtn.style.display = 'none';
+                    });
+                });
+            }catch(e){
+                results.innerHTML = '<div class="search-empty">Error al buscar</div>';
+            }
+        }
+        input.addEventListener('input', function(){
+            const q = this.value.trim();
+            if (debounceTimer) clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => doSearch(q), 300);
+        });
+        input.addEventListener('keydown', function(e){
+            if (e.key === 'Escape'){
+                input.value = '';
+                results.style.display = 'none';
+                if (clearBtn) clearBtn.style.display = 'none';
+                input.blur();
+            }
+        });
+        if (clearBtn){
+            clearBtn.addEventListener('click', function(){
+                input.value = '';
+                results.style.display = 'none';
+                clearBtn.style.display = 'none';
+                input.focus();
+            });
+        }
+        document.addEventListener('click', function(e){
+            if (!searchBar.contains(e.target)){
+                results.style.display = 'none';
+            }
+        });
+        function escHtml(t){
+            return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+        }
     })();
     </script>
 </body>
