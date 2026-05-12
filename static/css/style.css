@@ -628,10 +628,29 @@ body {
   box-shadow: 0 4px 16px rgba(217, 88, 64, 0.4);
 }
 
-/* ============================================
-   RIGHT PANEL
-   ============================================ */
-.right-panel {
+.right-panel-toggle {
+    display: none;
+    position: fixed;
+    right: 15px;
+    top: 15px;
+    z-index: 9001;
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius);
+    background: var(--surface-2);
+    color: var(--text);
+    border: 1px solid var(--border-color);
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    transition: all 0.2s;
+}
+.right-panel-toggle:hover {
+    background: var(--surface-3);
+    color: var(--accent);
+}
+
   position: fixed;
   right: 0;
   top: 0;
