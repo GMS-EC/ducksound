@@ -105,8 +105,6 @@
             {% endif %}
             <a href="{{ url_for('logout') }}" class="btn btn-logout"><i class="fa-solid fa-right-from-bracket"></i> Salir</a>
         </div>
-        
-        <div id="profile-msg" style="display:none;padding:12px 16px;border-radius:var(--radius);font-size:14px"></div>
     </form>
 </div>
 
@@ -124,7 +122,6 @@
             <button id="btn-change-password" class="btn btn-accent"><i class="fa-solid fa-floppy-disk"></i> Cambiar contraseña</button>
             <span id="security-hint" style="font-size:12px;color:var(--muted)">Mínimo 6 caracteres</span>
         </div>
-        <div id="security-msg" style="display:none;padding:12px 16px;border-radius:var(--radius);font-size:14px;margin-top:16px"></div>
     </div>
 </div>
 
@@ -371,7 +368,6 @@
 
     // ===== Profile form =====
     const form = document.getElementById('profile-form');
-    const msg = document.getElementById('profile-msg');
 
     // Toggle switches visual
     document.querySelectorAll('.toggle-row').forEach(row => {
@@ -410,12 +406,7 @@
         .then(r => r.json())
         .then(d => {
             if (d.ok) {
-                msg.style.display = 'block';
-                msg.style.background = 'rgba(74,222,128,0.1)';
-                msg.style.border = '1px solid rgba(74,222,128,0.2)';
-                msg.style.color = '#4ade80';
-                msg.innerHTML = '<i class="fa-regular fa-circle-check"></i> Cambios guardados correctamente';
-                setTimeout(() => msg.style.display = 'none', 3000);
+                showToast('Cambios guardados correctamente', 'success');
                 // Notificar al reproductor del cambio de crossfade
                 const pf = document.getElementById('player-frame');
                 if (pf && pf.contentWindow) {
@@ -426,36 +417,23 @@
                     }, window.location.origin);
                 }
             } else {
-                msg.style.display = 'block';
-                msg.style.background = 'rgba(255,80,80,0.1)';
-                msg.style.border = '1px solid rgba(255,80,80,0.2)';
-                msg.style.color = '#ff6b6b';
-                msg.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Error: ' + (d.error || 'desconocido');
+                showToast('Error: ' + (d.error || 'desconocido'), 'error');
             }
         })
         .catch(() => {
-            msg.style.display = 'block';
-            msg.style.background = 'rgba(255,80,80,0.1)';
-            msg.style.border = '1px solid rgba(255,80,80,0.2)';
-            msg.style.color = '#ff6b6b';
-            msg.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Error de conexión';
+            showToast('Error de conexión', 'error');
         });
     });
 
     // ===== Security tab: password change =====
     const btnChangePwd = document.getElementById('btn-change-password');
     const pwdInput = document.getElementById('security-password');
-    const secMsg = document.getElementById('security-msg');
 
     if (btnChangePwd) {
         btnChangePwd.addEventListener('click', function() {
             const password = pwdInput.value;
             if (!password || password.length < 6) {
-                secMsg.style.display = 'block';
-                secMsg.style.background = 'rgba(255,80,80,0.1)';
-                secMsg.style.border = '1px solid rgba(255,80,80,0.2)';
-                secMsg.style.color = '#ff6b6b';
-                secMsg.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> La contraseña debe tener al menos 6 caracteres';
+                showToast('La contraseña debe tener al menos 6 caracteres', 'error');
                 return;
             }
 
@@ -467,27 +445,14 @@
             .then(r => r.json())
             .then(d => {
                 if (d.ok) {
-                    secMsg.style.display = 'block';
-                    secMsg.style.background = 'rgba(74,222,128,0.1)';
-                    secMsg.style.border = '1px solid rgba(74,222,128,0.2)';
-                    secMsg.style.color = '#4ade80';
-                    secMsg.innerHTML = '<i class="fa-regular fa-circle-check"></i> Contraseña cambiada correctamente';
+                    showToast('Contraseña cambiada correctamente', 'success');
                     pwdInput.value = '';
-                    setTimeout(() => secMsg.style.display = 'none', 3000);
                 } else {
-                    secMsg.style.display = 'block';
-                    secMsg.style.background = 'rgba(255,80,80,0.1)';
-                    secMsg.style.border = '1px solid rgba(255,80,80,0.2)';
-                    secMsg.style.color = '#ff6b6b';
-                    secMsg.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Error: ' + (d.error || 'desconocido');
+                    showToast('Error: ' + (d.error || 'desconocido'), 'error');
                 }
             })
             .catch(() => {
-                secMsg.style.display = 'block';
-                secMsg.style.background = 'rgba(255,80,80,0.1)';
-                secMsg.style.border = '1px solid rgba(255,80,80,0.2)';
-                secMsg.style.color = '#ff6b6b';
-                secMsg.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Error de conexión';
+                showToast('Error de conexión', 'error');
             });
         });
     }

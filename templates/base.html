@@ -164,6 +164,9 @@
         </div>
     </div>
 
+    <!-- ===== TOAST NOTIFICATIONS ===== -->
+    <div id="toast-container" style="position:fixed;bottom:calc(var(--player-height) + 16px);right:16px;z-index:99999;display:flex;flex-direction:column;gap:8px;pointer-events:none"></div>
+
     <!-- ===== MODAL DE INFORMACIÓN DE AUDIO ===== -->
     <div id="audio-info-modal" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.7);align-items:center;justify-content:center;padding:20px;backdrop-filter:none">
         <div style="background:var(--surface);border:1px solid var(--border-color);border-radius:var(--radius-xl);max-width:520px;width:100%;padding:0;box-shadow:var(--shadow-xl);overflow:hidden">
@@ -631,6 +634,32 @@
             return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
         }
     })();
+    // Dynamic greeting (runs on every load including SPA)
+    (function(){
+        const el = document.getElementById('dynamic-greeting');
+        if (!el) return;
+        const hour = new Date().getHours();
+        const userName = el.dataset.user || '';
+        let greeting = 'Buenos días';
+        if (hour >= 12 && hour < 20) greeting = 'Buenas tardes';
+        else if (hour >= 20 || hour < 5) greeting = 'Buenas noches';
+        el.textContent = userName ? greeting + ' ' + userName : greeting;
+    })();
+    // Global toast notifications
+    function showToast(message, type){
+        type = type || 'info';
+        const container = document.getElementById('toast-container');
+        if (!container) return;
+        const icons = {success: 'fa-regular fa-circle-check', error: 'fa-solid fa-triangle-exclamation', info: 'fa-solid fa-circle-info'};
+        const el = document.createElement('div');
+        el.className = 'toast toast-' + type;
+        el.innerHTML = '<i class="' + (icons[type] || icons.info) + '"></i> ' + message;
+        container.appendChild(el);
+        setTimeout(() => {
+            el.classList.add('toast-out');
+            setTimeout(() => el.remove(), 300);
+        }, 3000);
+    }
     </script>
 </body>
 </html>

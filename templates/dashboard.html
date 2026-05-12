@@ -7,7 +7,7 @@
     <h1 class="dashboard-title">
         <i class="fa-solid {% if es_favoritos %}fa-heart{% else %}fa-music{% endif %}"
             style="color:var(--accent);margin-right:8px"></i>
-        {% if es_favoritos %}Tus Favoritos{% else %}<span id="dynamic-greeting" data-user="{% if current_user and current_user.nombre_publico %}{{ current_user.nombre_publico }}{% endif %}">Buenos días</span>{% endif %}
+        {% if es_favoritos %}Tus Favoritos{% else %}<span id="dynamic-greeting" data-user="{{ (current_user.nombre_publico or '') if current_user else '' }}">Buenos días</span>{% endif %}
     </h1>
     <p class="dashboard-subtitle">Bienvenido</p>
 </div>
@@ -202,19 +202,6 @@
 {% block extra_js %}
 <script>
     (function () {
-        const greetingEl = document.getElementById("dynamic-greeting");
-        if (greetingEl) {
-            const hour = new Date().getHours();
-            const userName = greetingEl.dataset.user || '';
-            let greeting = "Buenos días";
-            if (hour >= 12 && hour < 20) {
-                greeting = "Buenas tardes";
-            } else if (hour >= 20 || hour < 5) {
-                greeting = "Buenas noches";
-            }
-            greetingEl.textContent = userName ? greeting + ' ' + userName : greeting;
-        }
-
         // Track click to play (solo desde el botón play)
         document.querySelectorAll('.track-item').forEach(function(item) {
             item.addEventListener('click', function(e) {
