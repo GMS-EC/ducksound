@@ -64,11 +64,11 @@
                     <td style="padding:10px 16px;color:var(--muted)">{{ a.canciones|length }}</td>
                     <td style="padding:10px 16px;text-align:right;white-space:nowrap">
                         <div class="artist-actions">
-                            <button type="button" class="btn-edit-artist btn btn-sm" style="padding:4px 10px;font-size:12px"><i class="fa-solid fa-pen"></i></button>
-                            <button type="button" class="btn-lookup-mbid btn btn-sm" style="padding:4px 10px;font-size:12px" title="Buscar en MusicBrainz"><i class="fa-solid fa-music"></i></button>
-                            <button type="button" class="btn-save-artist btn btn-sm btn-accent" style="display:none;padding:4px 10px;font-size:12px"><i class="fa-solid fa-check"></i></button>
-                            <button type="button" class="btn-cancel-artist btn btn-sm" style="display:none;padding:4px 10px;font-size:12px"><i class="fa-solid fa-xmark"></i></button>
-                            <span class="save-spinner" style="display:none;color:var(--muted);font-size:12px"><i class="fa-solid fa-spinner fa-spin"></i></span>
+                            <button type="button" class="btn-edit-artist btn btn-sm"><i class="fa-solid fa-pen"></i></button>
+                            <button type="button" class="btn-lookup-mbid btn btn-sm" title="Buscar en MusicBrainz"><i class="fa-solid fa-music"></i></button>
+                            <button type="button" class="btn-save-artist btn btn-sm btn-accent"><i class="fa-solid fa-check"></i></button>
+                            <button type="button" class="btn-cancel-artist btn btn-sm"><i class="fa-solid fa-xmark"></i></button>
+                            <span class="save-spinner"><i class="fa-solid fa-spinner fa-spin"></i></span>
                         </div>
                     </td>
                 </tr>
@@ -87,18 +87,27 @@
 
 <style>
 .artist-row:hover { background: rgba(255,255,255,0.02); }
-.artist-row.editing .artist-name-display,
-.artist-row.editing .artist-mbid-display { display: none !important; }
-.artist-row.editing .artist-name-input,
-.artist-row.editing .artist-mbid-input { display: inline-block !important; }
+
+.artist-row .btn-edit-artist,
+.artist-row .btn-lookup-mbid { display: inline-flex; }
+.artist-row .btn-save-artist,
+.artist-row .btn-cancel-artist,
+.artist-row .save-spinner { display: none; }
+
 .artist-row.editing .btn-edit-artist,
-.artist-row.editing .btn-lookup-mbid { display: none !important; }
+.artist-row.editing .btn-lookup-mbid { display: none; }
 .artist-row.editing .btn-save-artist,
-.artist-row.editing .btn-cancel-artist { display: inline-flex !important; }
-.btn-sm { border: 1px solid var(--border-light); background: var(--surface-2); color: var(--text); cursor: pointer; border-radius: var(--radius-sm); transition: all 0.15s; }
+.artist-row.editing .btn-cancel-artist { display: inline-flex; }
+.artist-row.editing .artist-name-display,
+.artist-row.editing .artist-mbid-display { display: none; }
+.artist-row.editing .artist-name-input,
+.artist-row.editing .artist-mbid-input { display: inline-block; }
+
+.btn-sm { border: 1px solid var(--border-light); background: var(--surface-2); color: var(--text); cursor: pointer; border-radius: var(--radius-sm); transition: all 0.15s; padding:4px 10px; font-size:12px; }
 .btn-sm:hover { background: var(--surface-3); }
 .btn-sm.btn-accent { border-color: var(--accent); background: rgba(217, 88, 64, 0.15); color: var(--accent); }
 .btn-sm.btn-accent:hover { background: rgba(217, 88, 64, 0.25); }
+.save-spinner { color:var(--muted); font-size:12px; }
 </style>
 
 <script>
