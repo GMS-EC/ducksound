@@ -41,12 +41,12 @@
                 <tr class="artist-row" data-id="{{ a.id }}"
                     style="border-bottom:1px solid var(--border-light);transition:background 0.15s">
                     <td style="padding:10px 16px;color:var(--muted);font-size:12px">{{ a.id }}</td>
-                    <td style="padding:10px 16px">
+                    <td style="padding:10px 16px;cursor:pointer" onclick="this.querySelector('.btn-edit-artist').click()">
                         <span class="artist-name-display">{{ a.nombre }}</span>
                         <input class="artist-name-input" type="text" value="{{ a.nombre }}"
                             style="display:none;background:var(--surface-2);border:1px solid var(--border-light);color:var(--text);padding:4px 8px;border-radius:4px;font-size:13px;width:200px">
                     </td>
-                    <td style="padding:10px 16px">
+                    <td style="padding:10px 16px;cursor:pointer" onclick="this.closest('.artist-row').querySelector('.btn-edit-artist').click()">
                         <code class="artist-mbid-display" style="font-size:12px;color:{% if a.musicbrainz_id %}var(--accent){% else %}var(--muted){% endif %}">
                             {{ a.musicbrainz_id or '—' }}
                         </code>
