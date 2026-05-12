@@ -45,6 +45,7 @@ def get_artista_bio(mbid):
     """Obtiene la biografía de un artista desde MusicBrainz usando su MBID."""
     if not mbid:
         return None
+    mbid = mbid.lower()
     url = f'{_MB_BASE}/artist/{mbid}'
     data = _get(url, {'inc': 'bio'})
     if not data:
@@ -69,6 +70,7 @@ def get_artista_name(mbid):
     """Obtiene el nombre canónico de un artista desde MusicBrainz usando su MBID."""
     if not mbid:
         return None
+    mbid = mbid.lower()
     url = f'{_MB_BASE}/artist/{mbid}'
     data = _get(url, {'inc': 'aliases'})
     if not data:

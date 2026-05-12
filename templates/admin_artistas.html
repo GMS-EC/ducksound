@@ -87,10 +87,27 @@
                 
                 <label style="display:block;font-size:13px;color:var(--muted);margin-bottom:4px;margin-top:12px">MusicBrainz ID <span style="color:var(--muted);font-size:11px">(UUID de 36 caracteres)</span></label>
                 <div style="display:flex;gap:8px">
-                    <input type="text" id="modal-mbid" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" style="flex:1;padding:8px 12px;border-radius:4px;border:1px solid var(--border-light);background:var(--surface-2);color:var(--text);font-size:13px;font-family:monospace;outline:none;box-sizing:border-box">
-                    <button type="button" id="btn-lookup" class="btn btn-sm" title="Buscar en MusicBrainz"><i class="fa-solid fa-music"></i></button>
+                    <input type="text" id="modal-mbid" placeholder="xxxxxxxx-xxxx-xxxx-xxxxxxxxxxxx" style="flex:1;padding:8px 12px;border-radius:4px;border:1px solid var(--border-light);background:var(--surface-2);color:var(--text);font-size:13px;font-family:monospace;outline:none;box-sizing:border-box">
+                </div>
+
+                <label style="display:block;font-size:13px;color:var(--muted);margin-bottom:4px;margin-top:12px">Deezer ID <span style="color:var(--muted);font-size:11px">(Número de ID)</span></label>
+                <div style="display:flex;gap:8px">
+                    <input type="text" id="modal-deezer-id" placeholder="Ej: 123456" style="flex:1;padding:8px 12px;border-radius:4px;border:1px solid var(--border-light);background:var(--surface-2);color:var(--text);font-size:13px;outline:none;box-sizing:border-box">
+                </div>
+
+                <div style="margin-top:16px; display:flex; justify-content:center">
+                    <button type="button" id="btn-preview" class="btn btn-sm" style="width:100%; background:var(--surface-3); padding:10px"><i class="fa-solid fa-eye"></i> Previsualizar Artista</button>
                 </div>
                 
+                <div id="modal-preview-card" style="margin-top:16px; padding:12px; border-radius:8px; background:var(--surface-2); border:1px solid var(--border-light); display:none; gap:12px; align-items:center">
+                    <img id="preview-img" src="" style="width:50px;height:50px;border-radius:50%;object-fit:cover;display:none">
+                    <div style="flex:1;min-width:0">
+                        <div id="preview-name" style="font-weight:bold; font-size:13px; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap"></div>
+                        <div id="preview-bio" style="font-size:11px; color:var(--muted); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden"></div>
+                    </div>
+                    <i id="preview-status" class="fa-solid fa-circle-check" style="color:var(--accent); font-size:16px"></i>
+                </div>
+
                 <div id="modal-metadata-info" style="font-size:12px;color:var(--muted);margin-top:8px;display:none">
                     <i class="fa-solid fa-align-left" id="modal-bio-icon" style="display:none"></i> <span id="modal-bio-text"></span>
                     <i class="fa-solid fa-image" id="modal-foto-icon" style="display:none;margin-left:8px"></i> <span id="modal-foto-text"></span>
@@ -177,28 +194,46 @@ function cerrarModal() {
     document.getElementById('modal-error').style.display = 'none';
 }
 
-document.getElementById('btn-lookup').addEventListener('click', function() {
     const id = artistaActual.dataset.id;
     const spinner = document.getElementById('modal-spinner');
     const error = document.getElementById('modal-error');
+    const mbid = document.getElementById('modal-mbid').value.trim();
+    const deezerId = document.getElementById('modal-deezer-id').value.trim();
+    
     spinner.style.display = 'inline';
     error.style.display = 'none';
-    fetch('/admin/artistas/' + id + '/lookup-mbid', {
+    document.getElementById('modal-preview-card').style.display = 'none';
+    
+    fetch('/admin/artistas/preview-metadata', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({})
+        body: JSON.stringify({mbid: mbid, deezer_id: deezerId})
     })
     .then(r => {
         if (r.status === 401) { window.location.href = '/login'; return; }
         return r.json();
     })
     .then(d => {
-        if (!d) return;
         spinner.style.display = 'none';
-        if (d.success && d.mbid) {
-            document.getElementById('modal-mbid').value = d.mbid;
+        if (d.success && d.metadata) {
+            const meta = d.metadata;
+            const card = document.getElementById('modal-preview-card');
+            const img = document.getElementById('preview-img');
+            const name = document.getElementById('preview-name');
+            const bio = document.getElementById('preview-bio');
+            
+            card.style.display = 'flex';
+            name.textContent = meta.nombre || 'Desconocido';
+            bio.textContent = meta.biografia || 'Sin biografía disponible';
+            
+            if (meta.foto_url) {
+                img.src = meta.foto_url;
+                img.style.display = 'block';
+            } else {
+                img.style.display = 'none';
+            }
         } else {
-            error.textContent = 'No se encontró en MusicBrainz';
+            error.textContent = d.error || 'No se encontró el artista';
             error.style.display = 'inline';
         }
     })
@@ -211,11 +246,11 @@ document.getElementById('btn-save').addEventListener('click', function() {
     const id = row.dataset.id;
     const nombre = document.getElementById('modal-nombre').value.trim();
     const mbid = document.getElementById('modal-mbid').value.trim();
+    const deezerId = document.getElementById('modal-deezer-id').value.trim();
     const spinner = document.getElementById('modal-spinner');
     const error = document.getElementById('modal-error');
     
     if (!nombre) { error.textContent = 'El nombre es obligatorio'; error.style.display = 'inline'; return; }
-    if (mbid && mbid.length !== 36) { error.textContent = 'MBID debe tener 36 caracteres'; error.style.display = 'inline'; return; }
     
     spinner.style.display = 'inline';
     error.style.display = 'none';
@@ -224,7 +259,7 @@ document.getElementById('btn-save').addEventListener('click', function() {
     fetch('/admin/artistas/' + id + '/update-mbid', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({mbid: mbid, nombre: nombre})
+        body: JSON.stringify({mbid: mbid, deezer_id: deezerId, nombre: nombre})
     })
     .then(r => {
         if (r.status === 401) { window.location.href = '/login'; return; }
@@ -237,15 +272,15 @@ document.getElementById('btn-save').addEventListener('click', function() {
         if (d.success) {
             const nombreFinal = d.metadata?.nombre || nombre;
             row.dataset.nombre = nombreFinal;
-            row.dataset.mbid = mbid;
+            row.dataset.mbid = d.metadata?.mbid || mbid;
             row.querySelector('.artist-name-display').textContent = nombreFinal;
             const mbidEl = row.querySelector('.artist-mbid-display');
-            mbidEl.textContent = mbid || '—';
-            mbidEl.style.color = mbid ? 'var(--accent)' : 'var(--muted)';
-
+            mbidEl.textContent = row.dataset.mbid || '—';
+            mbidEl.style.color = row.dataset.mbid ? 'var(--accent)' : 'var(--muted)';
+    
             if (d.metadata) {
-                if (d.metadata.foto_url) row.dataset.foto = d.metadata.foto_url;
-                if (d.metadata.biografia) row.dataset.bio = d.metadata.biografia;
+                row.dataset.foto = d.metadata.foto_url || '';
+                row.dataset.bio = d.metadata.biografia || '';
                 const infoCell = row.querySelector('td:nth-child(4)');
                 let html = '';
                 if (d.metadata.foto_url) {
@@ -255,7 +290,7 @@ document.getElementById('btn-save').addEventListener('click', function() {
                 if (d.metadata.foto_url) html += '<i class="fa-solid fa-image" title="Tiene foto" style="font-size:11px;color:var(--muted)"></i>';
                 infoCell.innerHTML = html || '<span style="font-size:11px;color:var(--muted)">—</span>';
             }
-
+    
             cerrarModal();
         } else {
             error.textContent = d.error || d.message || 'Error al guardar';
@@ -264,6 +299,7 @@ document.getElementById('btn-save').addEventListener('click', function() {
     })
     .catch(() => { spinner.style.display = 'none'; this.disabled = false; error.textContent = 'Error de red'; error.style.display = 'inline'; });
 });
+
 
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') cerrarModal();

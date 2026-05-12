@@ -458,6 +458,31 @@ def admin_artistas():
     return render_template('admin_artistas.html', artistas=artistas, total=total, con_mbid=con_mbid, query=query)
 
 
+@admin_bp.route('/admin/artistas/preview-metadata', methods=['POST'])
+def admin_preview_artist_metadata():
+    """Proporciona una previsualización de metadatos basada en MBID o Deezer ID."""
+    if not _is_admin_request():
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    data = request.get_json(force=True)
+    if not data:
+        return jsonify({'error': 'Datos inválidos'}), 400
+    
+    mbid = (data.get('mbid') or '').strip()
+    deezer_id = (data.get('deezer_id') or '').strip()
+    
+    if not mbid and not deezer_id:
+        return jsonify({'error': 'Se requiere al menos un MBID o Deezer ID'}), 400
+    
+    from metadata_fetcher import preview_artist_metadata
+    preview = preview_artist_metadata(mbid=mbid if mbid else None, deezer_id=deezer_id if deezer_id else None)
+    
+    if not preview:
+        return jsonify({'success': False, 'message': 'No se encontró ningún artista con esos IDs'}), 404
+    
+    return jsonify({'success': True, 'metadata': preview})
+
+
 @admin_bp.route('/admin/artistas/<int:artist_id>/update-mbid', methods=['POST'])
 def admin_update_artist_mbid(artist_id):
     try:
@@ -469,40 +494,63 @@ def admin_update_artist_mbid(artist_id):
         data = request.get_json(force=True)
         if not data:
             return jsonify({'error': 'Datos inválidos'}), 400
+        
         mbid = (data.get('mbid') or '').strip()
+        deezer_id = (data.get('deezer_id') or '').strip()
         nombre = (data.get('nombre') or '').strip()
-        if mbid and len(mbid) != 36:
-            return jsonify({'error': 'MBID debe tener 36 caracteres (formato UUID)'}), 400
-        if mbid:
-            existing = Artista.query.filter(Artista.musicbrainz_id == mbid, Artista.id != artist_id).first()
+        
+        # Resolver el MBID final si se proporcionó Deezer ID
+        final_mbid = mbid
+        if deezer_id:
+            from metadata_fetcher import get_artista_by_deezer_id
+            d_data = get_artista_by_deezer_id(deezer_id)
+            if d_data:
+                resolved = d_data.get('musicbrainz_id')
+                if resolved:
+                    final_mbid = resolved
+        
+        if final_mbid:
+            final_mbid = final_mbid.lower()
+            if len(final_mbid) != 36:
+                return jsonify({'error': 'MBID debe tener 36 caracteres (UUID)'}), 400
+            existing = Artista.query.filter(Artista.musicbrainz_id == final_mbid, Artista.id != artist_id).first()
             if existing:
                 return jsonify({'error': f'El MBID ya pertenece a {existing.nombre}'}), 400
+        
         old_mbid = artista.musicbrainz_id
-        artista.musicbrainz_id = mbid or None
+        artista.musicbrainz_id = final_mbid or None
         if nombre:
             artista.nombre = nombre
         db.session.commit()
 
         updated_metadata = {}
-        # Always trigger enrichment if we have an MBID
-        if mbid:
-            # If the MBID has changed, force a metadata reset to ensure we fetch new data
-            if mbid != old_mbid:
-                artista.foto_url = None
-                artista.biografia = None
-                db.session.commit()
-                
+        # Reset and Enrich if the identity has changed (including removing the ID)
+        if final_mbid != old_mbid:
+            artista.foto_url = None
+            artista.biografia = None
+            db.session.commit()
+            
+            if final_mbid:
                 from musicbrainz_client import get_artista_name
-                mb_name = get_artista_name(mbid)
+                mb_name = get_artista_name(final_mbid)
                 if mb_name:
                     artista.nombre = mb_name
                     updated_metadata['nombre'] = mb_name
-            
-            from metadata_fetcher import enrich_artist
-            enrich_artist(artista, commit=True)
+                
+                from metadata_fetcher import enrich_artist
+                enrich_artist(artista, commit=True)
+                updated_metadata['foto_url'] = artista.foto_url
+                updated_metadata['biografia'] = artista.biografia
+                db.session.commit()
+            else:
+                # If ID was removed, we just leave metadata as None
+                updated_metadata['foto_url'] = None
+                updated_metadata['biografia'] = None
+                db.session.commit()
+        else:
+            # If ID is the same, just return current state
             updated_metadata['foto_url'] = artista.foto_url
             updated_metadata['biografia'] = artista.biografia
-            db.session.commit()
 
         return jsonify({
             'success': True,
@@ -512,6 +560,7 @@ def admin_update_artist_mbid(artist_id):
     except Exception as e:
         current_app.logger.exception('Error in admin_update_artist_mbid')
         return jsonify({'error': str(e)}), 500
+
 
 
 @admin_bp.route('/admin/artistas/<int:artist_id>/lookup-mbid', methods=['POST'])

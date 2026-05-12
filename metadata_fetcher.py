@@ -124,6 +124,88 @@ def buscar_artista_deezer(nombre_artista, mbid=None):
         return None
 
 
+def get_artista_by_deezer_id(deezer_id):
+    """
+    Obtiene datos de un artista directamente por su ID de Deezer.
+    Retorna el dict de Deezer o None.
+    """
+    try:
+        url = DEEZER_ARTIST_URL.format(deezer_id)
+        resp = requests.get(url, timeout=REQUEST_TIMEOUT)
+        resp.raise_for_status()
+        data = resp.json()
+        if 'error' in data:
+            logging.warning(f"Deezer error para ID {deezer_id}: {data['error']}")
+            return None
+        return data
+    except Exception as e:
+        logging.error(f"Error al obtener artista por Deezer ID {deezer_id}: {e}")
+        return None
+
+
+def preview_artist_metadata(mbid=None, deezer_id=None):
+    """
+    Proporciona una previsualización de los metadatos para confirmar la identidad del artista.
+    Intenta resolver la mejor combinación de Nombre, Foto y Bio.
+    Retorna un dict con la info o None si no se encontró nada.
+    """
+    resolved_mbid = None
+    name = None
+    photo = None
+    bio = None
+
+    # 1. Intentar resolver via Deezer ID primero (si se provee)
+    if deezer_id:
+        deezer_data = get_artista_by_deezer_id(deezer_id)
+        if deezer_data:
+            name = deezer_data.get('name')
+            photo = (
+                deezer_data.get('picture_xl')
+                or deezer_data.get('picture_big')
+                or deezer_data.get('picture_medium')
+            )
+            # Deezer a menudo provee el MBID
+            resolved_mbid = deezer_data.get('musicbrainz_id')
+    
+    # 2. Intentar resolver via MBID (si se provee o si se resolvió desde Deezer)
+    target_mbid = mbid or resolved_mbid
+    if target_mbid:
+        target_mbid = target_mbid.lower()
+        # Obtener nombre canónico si no lo tenemos
+        if not name:
+            from musicbrainz_client import get_artista_name
+            name = get_artista_name(target_mbid)
+        
+        resolved_mbid = target_mbid
+        
+        # Intentar obtener bio de MusicBrainz
+        from musicbrainz_client import get_artista_bio
+        bio = get_artista_bio(target_mbid)
+        
+        # Si no hay foto aún, intentar buscarla en Deezer usando el MBID
+        if not photo:
+            deezer_by_mbid = buscar_artista_deezer(name or 'Unknown', mbid=target_mbid)
+            if deezer_by_mbid:
+                photo = deezer_by_mbid.get('picture')
+
+    # 3. Fallback de biografía a Deezer si MusicBrainz falló y tenemos Deezer ID
+    if not bio and deezer_id:
+        deezer_data = get_artista_by_deezer_id(deezer_id)
+        if deezer_data:
+            # Usamos la función de bio de deezer que ya existe
+            bio = buscar_biografia_deezer(name or 'Unknown', mbid=resolved_mbid)
+
+    if not name and not photo and not resolved_mbid:
+        return None
+
+    return {
+        'nombre': name,
+        'foto_url': photo,
+        'biografia': bio,
+        'mbid': resolved_mbid
+    }
+
+
 from musicbrainz_client import get_artista_bio
 
 
