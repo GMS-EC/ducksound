@@ -167,8 +167,7 @@ def dashboard():
     # Nuevas variables para la vista tipo Spotify
     daily_mixes = DailyMix.query.filter_by(usuario_id=session['user_id']).order_by(DailyMix.fecha.desc()).limit(6).all()
     if not daily_mixes:
-        from datetime import date
-        today = date.today()
+        today = datetime.utcnow().date()
         mixes_hoy = DailyMix.query.filter_by(usuario_id=session['user_id'], fecha=today).first()
         if not mixes_hoy:
             _generate_daily_mixes(session['user_id'])
@@ -280,7 +279,7 @@ def daily_mixes():
         return redirect(url_for('login'))
     usuario_obj = db.session.get(Usuario, session['user_id'])
     is_admin = usuario_obj.is_admin() if usuario_obj else False
-    today = date.today()
+    today = datetime.utcnow().date()
     mixes = DailyMix.query.filter_by(usuario_id=session['user_id'], fecha=today).all()
     if not mixes:
         # Generar mixes del día
@@ -306,7 +305,7 @@ def _generate_daily_mixes(usuario_id):
     from datetime import date, timedelta
     from recommender import get_similar_songs
 
-    today = date.today()
+    today = datetime.utcnow().date()
     last_week = datetime.utcnow() - timedelta(days=7)
 
     # === 1. OBTENER FUENTES DE DATOS ===
