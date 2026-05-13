@@ -57,6 +57,7 @@
     let currentIndex = -1;
     let isPlaying = false;
     let isShuffled = false;
+    let shuffledOrder = [];
     let repeatMode = 'none'; // 'none', 'one', 'all'
     let _lastSentTime = 0;
     let _volume = 1.0;
@@ -111,14 +112,27 @@
             return placeQueuedSongAfterCurrent(nextQueued);
         }
         if (isShuffled){
-            let idx;
-            do { idx = Math.floor(Math.random() * playlist.length); } while (idx === currentIndex && playlist.length > 1);
-            return idx;
+            if (!shuffledOrder.length) rebuildShuffleOrder();
+            const nextIdx = shuffledOrder[0] ?? currentIndex;
+            if (options.consumeQueue && shuffledOrder.length) shuffledOrder.shift();
+            return nextIdx;
         }
         const nextIdx = currentIndex + 1;
         // Si no hay repetición y es la última canción, no avanzar
         if (repeatMode === 'none' && nextIdx >= playlist.length) return currentIndex;
         return nextIdx % playlist.length;
+    }
+
+    function rebuildShuffleOrder(){
+        if (!playlist.length) { shuffledOrder = []; return; }
+        shuffledOrder = [];
+        for (let i = 0; i < playlist.length; i++){
+            if (i !== currentIndex) shuffledOrder.push(i);
+        }
+        for (let i = shuffledOrder.length - 1; i > 0; i--){
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffledOrder[i], shuffledOrder[j]] = [shuffledOrder[j], shuffledOrder[i]];
+        }
     }
 
     async function fetchReplayGain(songId) {
@@ -160,6 +174,11 @@
 
         const s = normalizeSong(playlist[idx]);
         playlist[idx] = s;
+
+        if (isShuffled) {
+            const pos = shuffledOrder.indexOf(idx);
+            if (pos !== -1) shuffledOrder.splice(pos, 1);
+        }
 
         // Visual updates
         titleEl.textContent = s.titulo || 'Sin título';
@@ -255,14 +274,26 @@
             
             // Upcoming playlist songs (up to 20 total)
             const maxTotal = 20;
-            for(let i=1;i<=maxTotal;i++){
-                const idx = currentIndex + i;
-                if (idx >= playlist.length) break;
-                const s = normalizeSong(playlist[idx]);
-                if (!s) break;
-                if (queuedIds.has(s.id)) continue;
-                nextSongs.push({id: s.id, titulo: s.titulo, artista: s.artista, cover: s.cover});
-                if (nextSongs.length >= maxTotal) break;
+            if (isShuffled){
+                if (!shuffledOrder.length) rebuildShuffleOrder();
+                for (let i = 0; i < shuffledOrder.length; i++){
+                    const idx = shuffledOrder[i];
+                    const s = normalizeSong(playlist[idx]);
+                    if (!s) continue;
+                    if (queuedIds.has(s.id)) continue;
+                    nextSongs.push({id: s.id, titulo: s.titulo, artista: s.artista, cover: s.cover});
+                    if (nextSongs.length >= maxTotal) break;
+                }
+            } else {
+                for(let i=1;i<=maxTotal;i++){
+                    const idx = currentIndex + i;
+                    if (idx >= playlist.length) break;
+                    const s = normalizeSong(playlist[idx]);
+                    if (!s) break;
+                    if (queuedIds.has(s.id)) continue;
+                    nextSongs.push({id: s.id, titulo: s.titulo, artista: s.artista, cover: s.cover});
+                    if (nextSongs.length >= maxTotal) break;
+                }
             }
         }catch(e){}
         const currentSong = normalizeSong(playlist[currentIndex] || null);
@@ -357,6 +388,7 @@
             }catch(e){}
         } else if (msg.type === 'setPlaylist'){
             playlist = (msg.playlist || []).map(normalizeSong);
+            if (isShuffled) rebuildShuffleOrder();
             try{ localStorage.setItem('player_playlist', JSON.stringify(playlist)); }catch(e){}
         } else if (msg.type === 'queueSong'){
             const song = normalizeSong(msg.song);
@@ -387,6 +419,8 @@
                 try{ activeAudio.currentTime = Math.max(0, at); activeAudio.play().catch(()=>{}); isPlaying = true; btnPlay.textContent = '⏸'; postState(); }catch(e){}
             } else if (cmd === 'shuffle'){
                 isShuffled = !isShuffled;
+                if (isShuffled) rebuildShuffleOrder();
+                else shuffledOrder = [];
                 parent.postMessage({type:'shuffleChange', shuffled: isShuffled}, window.location.origin);
                 postState();
             } else if (cmd === 'repeat'){
