@@ -1,31 +1,55 @@
+# -*- coding: utf-8 -*-
+"""
+Servicio de Análisis Técnico y Acústico de Audio - DuckSound
+============================================================
+Este servicio se encarga de analizar los archivos físicos de audio en disco para
+extraer parámetros técnicos avanzados como:
+- sample_rate (tasa de muestreo en Hz)
+- bit_depth (profundidad de bits, ej. 16, 24 bits)
+- channels (canales, estéreo/mono)
+- duration (duración en segundos)
+- nyquist_freq (frecuencia de Nyquist)
+- dynamic_range (rango dinámico en dB)
+- peak_level (nivel de pico máximo en dB)
+- rms_level (volumen RMS promedio en dB)
+- bpm (tempo estimado por detección de beats)
+
+Usa de forma híbrida Mutagen (para cabeceras rápidas) y Librosa (para procesar señales de audio).
+"""
+
 import numpy as np
 import logging
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Variable global para controlar el aviso de librosa
+# Variable global para controlar la emisión del aviso de librosa en consola
 _librosa_warning_shown = False
 
-# Intentar importar librosa (opcional, para análisis más precisos)
+# Intentar importar la librería librosa (opcional, requerida para análisis de espectro y beats)
 try:
     import librosa
     HAS_LIBROSA = True
 except ImportError:
     HAS_LIBROSA = False
     if not _librosa_warning_shown:
-        logger.warning("librosa no disponible, usando análisis básico con mutagen")
+        logger.warning("[AudioAnalyzer] librosa no disponible, usando análisis básico con mutagen")
         _librosa_warning_shown = True
 
 
 def analyze_audio(filepath):
     """
-    Analiza un archivo de audio y devuelve un dict con todos los parámetros.
-    Siempre retorna los campos que pueda extraer, incluso si algunos son None.
+    Analiza un archivo físico de música y calcula todas las características acústicas.
+    
+    Args:
+        filepath (str o Path): Ruta física al archivo de música (.mp3, .flac, .wav, etc.).
+        
+    Returns:
+        dict: Diccionario con todos los valores extraídos o estimados.
     """
     fp = Path(filepath)
     if not fp.exists():
-        logger.error(f"Archivo no encontrado: {filepath}")
+        logger.error(f"Archivo de audio no encontrado para análisis: {filepath}")
         return {}
 
     result = {
@@ -42,7 +66,7 @@ def analyze_audio(filepath):
         'genero': None
     }
 
-    # --- FASE 1: Metadatos con mutagen ---
+    # --- FASE 1: Extracción rápida de metadatos de cabecera con mutagen ---
     try:
         from mutagen import File as MFile
         from mutagen.mp3 import MP3
@@ -52,9 +76,9 @@ def analyze_audio(filepath):
 
         af = MFile(filepath)
         if af is None:
-            logger.warning(f"mutagen no pudo leer: {filepath}")
+            logger.warning(f"Mutagen no pudo interpretar las cabeceras del archivo: {filepath}")
         else:
-            # Info general del stream
+            # Obtener datos de stream si existen
             if hasattr(af, 'info'):
                 info = af.info
                 if hasattr(info, 'sample_rate'):
@@ -66,16 +90,13 @@ def analyze_audio(filepath):
                 if hasattr(info, 'bitrate'):
                     result['bit_rate'] = info.bitrate
 
-            # MP3 específico
+            # Lógica específica por contenedor
             if isinstance(af, MP3):
-                # Bit depth no es nativo de MP3, estimamos 16 bits
-                result['bit_depth'] = 16
-                # Extraer género
+                result['bit_depth'] = 16  # Estimación estándar para MP3
                 genre_tag = af.get('TCON', [None])[0]
                 if genre_tag:
                     result['genero'] = str(genre_tag)
 
-            # FLAC específico
             elif isinstance(af, FLAC):
                 if hasattr(info, 'bits_per_sample'):
                     result['bit_depth'] = info.bits_per_sample
@@ -83,7 +104,6 @@ def analyze_audio(filepath):
                 if genre_tag:
                     result['genero'] = str(genre_tag)
 
-            # WAVE específico
             elif isinstance(af, WAVE):
                 if hasattr(info, 'bit_width'):
                     result['bit_depth'] = info.bit_width
@@ -92,63 +112,59 @@ def analyze_audio(filepath):
                     if genre_tag:
                         result['genero'] = str(genre_tag)
 
-            # OGG Vorbis
             elif isinstance(af, OggVorbis):
                 genre_tag = af.get('GENRE', [None])[0]
                 if genre_tag:
                     result['genero'] = str(genre_tag)
 
     except Exception as e:
-        logger.warning(f"Error en mutagen para {filepath}: {e}")
+        logger.warning(f"Error extrayendo cabeceras con mutagen para {filepath}: {e}")
 
-    # Nyquist frequency = sample_rate / 2
+    # Calcular la frecuencia de Nyquist (Tasa de muestreo / 2)
     if result['sample_rate']:
-        result['nyquist_freq'] = result['sample_rate'] / 2000  # en kHz
+        result['nyquist_freq'] = result['sample_rate'] / 2000  # Convertir a kHz
 
-    # Total samples aproximado
+    # Estimación de muestras totales aproximadas
     if result['duration'] and result['sample_rate']:
         result['total_samples'] = int(result['duration'] * result['sample_rate'])
 
-    # --- FASE 2: Análisis de señal con librosa (más preciso) ---
+    # --- FASE 2: Análisis acústico y digital de señal con librosa ---
     if HAS_LIBROSA and result['sample_rate']:
         try:
-            # Cargar solo 30 segundos desde el segundo 30 para análisis rápido
-            # Si la canción dura menos de 60 segundos, cargar sin offset
+            # Cargamos solo una porción de 30 segundos (a partir del segundo 30) para acelerar el escaneo
             duration = result.get('duration', 0)
             if duration >= 60:
-                # Cargar 30 segundos comenzando desde el segundo 30
                 y, sr = librosa.load(filepath, sr=None, mono=True, offset=30.0, duration=30.0)
             else:
-                # Canción corta: cargar sin offset
                 y, sr = librosa.load(filepath, sr=None, mono=True)
 
             if len(y) > 0:
-                # Peak level (dB)
+                # Nivel de pico máximo en dB
                 peak = np.max(np.abs(y))
                 result['peak_level'] = float(20 * np.log10(max(peak, 1e-10)))
 
-                # RMS level (dB)
+                # Nivel RMS (volumen promedio de la señal)
                 rms = np.sqrt(np.mean(y ** 2))
                 result['rms_level'] = float(20 * np.log10(max(rms, 1e-10)))
 
-                # Detectar el tempo (BPM)
+                # Estimar el tempo de la canción (BPM)
                 tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
                 result['bpm'] = float(tempo.item() if hasattr(tempo, 'item') else tempo)
 
-                # Dynamic Range (dB) - diferencia entre pico y RMS
+                # Calcular el rango dinámico de la porción analizada (Diferencia Pico a RMS)
                 if result['peak_level'] is not None and result['rms_level'] is not None:
                     result['dynamic_range'] = float(result['peak_level'] - result['rms_level'])
 
-                # Actualizar sample_rate desde librosa (más fiable)
+                # Actualizar datos con los calculados de precisión por librosa
                 result['sample_rate'] = int(sr)
                 result['total_samples'] = len(y)
                 result['duration'] = float(len(y) / sr)
                 result['nyquist_freq'] = sr / 2000
 
         except Exception as e:
-            logger.warning(f"Error en librosa para {filepath}: {e}")
+            logger.warning(f"Error en procesamiento digital de señal con librosa para {filepath}: {e}")
 
-    # Redondear valores para legibilidad
+    # Redondear campos de volumen y dinámicas para almacenamiento limpio en base de datos
     for key in ['dynamic_range', 'peak_level', 'rms_level']:
         if result[key] is not None:
             result[key] = round(result[key], 1)

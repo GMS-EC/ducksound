@@ -25,7 +25,7 @@ Este lanzamiento representa el estado consolidado de DuckSound como una aplicaci
 - **Fallback a Hilos**: Si la base de datos Redis no está activa, la aplicación emplea hilos locales de forma transparente para evitar interrupciones.
 - **Arranque Seguro**: El servidor web arranca de forma instantánea sin sufrir bloqueos causados por tareas persistentes.
 
-### 🎨 Interfaz Premium (Estilo Spotify-Style)
+### 🎨 Interfaz Premium
 - **Rediseño del Tracklist**: Reestructuración completa con grid adaptable (`40px 40px 1fr 1fr 60px`), portadas miniatura y efectos interactivos.
 - **Ecualizador Animado**: Gráfico dinámico de barras de audio animadas en color verde que sustituye al número de pista cuando la canción se está reproduciendo.
 - **Estado Dinámico**: Sincronización automática de clases del reproductor visual en toda la interfaz al cambiar de pista.
@@ -65,3 +65,27 @@ Este lanzamiento representa el estado consolidado de DuckSound como una aplicaci
 - **Ignorar Subcarpetas**: El motor de escaneo ignora subcarpetas de discos internos (ej. CD 1, Disc 2) organizando correctamente las pistas.
 - **Limpieza de Código Legacy**: Eliminación de scripts de prueba antiguos y archivos CSS duplicados para una estructura ligera y moderna.
 - **Comentarios en Español**: Documentación y comentarios internos detallados en español en la totalidad del backend y frontend del proyecto para un mantenimiento sumamente sencillo.
+
+---
+
+### 🔧 Refactorización Post-Lanzamiento (Hotfixes y Mejoras — v1.0.0)
+
+#### 🐛 Correcciones de Rutas y Navegación
+- **`smart_url_for` Robusto**: Corrección del helper de ruteo interno en `app/__init__.py` para que sea capaz de resolver automáticamente rutas con namespace legacy (ej. `browse.explore`) mapeándolas a los blueprints nuevos (`main`, `audio`, etc.) sin lanzar `BuildError`.
+- **Error SQL en Perfil**: Corrección de una excepción `psycopg2 SyntaxError` en el endpoint `/profile` causada por el uso incorrecto de `sqlfunc.desc('plays')`. Reemplazado por `db.desc('plays')` siguiendo la API estándar de SQLAlchemy con PostgreSQL.
+
+#### 🎧 Panel de Calidad de Audio (Audio Info)
+- **Diagnóstico de datos vacíos**: Identificación de la causa raíz por la cual el botón de "Calidad de audio" en el reproductor mostraba solo la duración y guiones (`—`) en todos los campos técnicos: la clave del diccionario de análisis en `scanner.py` era `'audio_analysis'` pero el código de extracción guardaba el resultado bajo la clave `'analisis'`.
+- **Corrección de clave de diccionario**: En ambas funciones de escaneo (`escanear_carpeta_audio` y `escaneo_rapido`), la asignación `aa = metadatos.get('audio_analysis', {})` fue corregida a `aa = metadatos.get('analisis') or metadatos.get('audio_analysis', {})` para garantizar compatibilidad hacia adelante y hacia atrás.
+- **Campo BPM incluido**: Se agregó el campo `bpm` (tempo en Beats Por Minuto) al constructor `Cancion(...)` en ambas funciones de escaneo, al endpoint `/api/audio-info/<id>` y al grid del modal de calidad de audio en `base.html`, con el ícono `fa-heartbeat`.
+- **Endpoint `/api/audio-info/<id>` mejorado**: La respuesta JSON ahora incluye el campo `bpm` además de los ya existentes (`sample_rate`, `bit_depth`, `channels`, `nyquist_freq`, `dynamic_range`, `peak_level`, `rms_level`, `total_samples`, `bit_rate`, `genero`).
+
+#### 🔄 Scanner Inteligente de Metadatos Faltantes
+- **Detección de registros incompletos en escaneo completo**: `escanear_carpeta_audio` ahora identifica canciones ya indexadas que carecen de `sample_rate` (datos técnicos nulos) y las re-analiza durante el escaneo completo, actualizando todos los campos de calidad sin duplicar registros.
+- **Detección de registros incompletos en escaneo rápido**: `escaneo_rapido` ahora calcula la intersección entre `archivos_disco` y `canciones con sample_rate == None` para incluirlas en el pool de análisis paralelo. Esto permite que los archivos ya registrados pero incompletos reciban sus datos técnicos sin necesidad de un escaneo completo.
+- **Resumen enriquecido**: El resumen devuelto por `escaneo_rapido` ahora incluye correctamente el campo `actualizadas` con el conteo de canciones que fueron actualizadas (no solo las nuevas), y el mensaje final lo refleja visualmente.
+- **Sin bloqueo del servidor**: Todo el análisis de calidad de audio ocurre dentro del **worker RQ** (proceso separado), por lo que nunca bloquea el servidor web Gunicorn ni las peticiones de los demás usuarios.
+
+#### ⚙️ Mejoras de Robustez del Analizador de Audio
+- **Fallback de librosa documentado**: El `audio_analyzer.py` usa librosa cuando está disponible para análisis avanzado (RMS, Peak, Dynamic Range, BPM). Cuando librosa no está instalado en el contenedor, la app recae automáticamente en el análisis básico con Mutagen (extracción de cabeceras: `sample_rate`, `bit_depth`, `channels`, `bit_rate`) sin errores ni caídas.
+- **Análisis paralelo con ThreadPoolExecutor**: El proceso `extraer_metadatos_paralelo` ya usa múltiples hilos (hasta 6 workers) para extraer metadatos técnicos de todos los archivos de forma concurrente, con un impacto mínimo en la I/O del disco.

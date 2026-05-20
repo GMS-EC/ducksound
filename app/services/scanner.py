@@ -32,9 +32,10 @@ from tinytag import TinyTag
 
 # Importaciones del ecosistema DuckSound
 from config import Config
-from models import db, Artista, Album, Cancion
-from metadata_fetcher import enrich_artist, enrich_all
-from metadata_normalizer import (
+from app.models import db, Artista, Album, Cancion
+from app.services.metadata import (
+    enrich_artist, 
+    enrich_all, 
     normalizar_artista, 
     normalizar_album, 
     detectar_version, 
@@ -66,7 +67,7 @@ def extraer_metadatos(ruta_archivo):
         dict: Un diccionario con todos los metadatos parseados, normalizados y listos para BD.
         None: Si ocurre un error fatal o el archivo no es un archivo de audio legible.
     """
-    from audio_analyzer import analyze_audio
+    from app.services.audio_analyzer import analyze_audio
     from pathlib import Path
 
     def es_corrupto(texto):
@@ -212,6 +213,60 @@ def extraer_metadatos(ruta_archivo):
         return None
 
 
+def extraer_metadatos_paralelo(archivos, progress_callback=None, stage='processing', percent_start=0, percent_end=100):
+    """
+    Extrae metadatos para una lista de archivos utilizando un ThreadPoolExecutor en paralelo.
+    Esta función es puramente de lectura de disco y procesamiento matemático, por lo que es
+    completamente segura y libre de condiciones de carrera con la base de datos SQL.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import os
+    
+    total = len(archivos)
+    if total == 0:
+        return {}
+        
+    resultados = {}
+    # Limitar el número de hilos trabajadores para evitar sobrecargar la CPU del host
+    max_workers = min(6, os.cpu_count() or 4)
+    
+    def emit_progress(payload):
+        if not progress_callback:
+            return
+        try:
+            progress_callback(payload)
+        except Exception:
+            pass
+            
+    print(f"🚀 Iniciando extracción de metadatos en paralelo con {max_workers} trabajadores para {total} archivos...")
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Encolar la extracción de metadatos para cada archivo
+        futures = {executor.submit(extraer_metadatos, archivo): archivo for archivo in archivos}
+        
+        for idx, future in enumerate(as_completed(futures), start=1):
+            archivo = futures[future]
+            try:
+                meta = future.result()
+                if meta:
+                    resultados[str(archivo)] = meta
+            except Exception as e:
+                import logging
+                logging.error(f"⚠️ Error extrayendo metadatos en hilo para {archivo.name}: {e}")
+                
+            percent = int(percent_start + ((idx / total) * (percent_end - percent_start)))
+            emit_progress({
+                'stage': stage,
+                'message': f'Analizando audio ({idx}/{total}): {archivo.name}',
+                'current_file': archivo.name,
+                'processed': idx,
+                'total': total,
+                'percent': percent
+            })
+            
+    return resultados
+
+
 def obtener_o_crear_artista(nombre, enriquecer=False, mbid=None):
     """
     Busca un artista en la base de datos o lo crea si no existe.
@@ -246,10 +301,10 @@ def obtener_o_crear_artista(nombre, enriquecer=False, mbid=None):
             cleaned = cleaned[1:-1]
         nombre = cleaned
     
-    from metadata_normalizer import normalizar_artista
+    from app.services.metadata import normalizar_artista
     nombre_norm = normalizar_artista(nombre) or nombre
     
-    from models import db, Artista
+    from app.models import db, Artista
     from sqlalchemy import func
     from rapidfuzz import fuzz
     UMBRAL_FUZZY = 80
@@ -270,7 +325,7 @@ def obtener_o_crear_artista(nombre, enriquecer=False, mbid=None):
     
     # --- NIVEL 3: BÚSQUEDA EN LA API DE MUSICBRAINZ ---
     # Si no está en BD, intentamos consultar a la API de MusicBrainz para ver si hay un nombre canónico/sort_name.
-    from musicbrainz_client import buscar_artista
+    from app.services.metadata import buscar_artista
     mb_result = buscar_artista(nombre)
     if mb_result:
         mb_nombre_raw = mb_result['nombre']
@@ -311,7 +366,7 @@ def obtener_o_crear_artista(nombre, enriquecer=False, mbid=None):
     if mb_norm_name:
         final_norm = mb_norm_name
     else:
-        from musicbrainz_client import _es_latino
+        from app.services.metadata import _es_latino
         # Romanizar caracteres no latinos (ej: cirílico, kanji) a texto latino legible con unidecode
         if not _es_latino(nombre_norm):
             from unidecode import unidecode
@@ -348,7 +403,7 @@ def obtener_o_crear_artista(nombre, enriquecer=False, mbid=None):
         return artista_obj
     
     # 3. Buscar en MusicBrainz API
-    from musicbrainz_client import buscar_artista
+    from app.services.metadata import buscar_artista
     mb_result = buscar_artista(nombre_norm_busqueda)
     if mb_result:
         mb_nombre_raw = mb_result['nombre']
@@ -382,7 +437,7 @@ def obtener_o_crear_artista(nombre, enriquecer=False, mbid=None):
     if mb_norm_name:
         final_norm = mb_norm_name
     else:
-        from musicbrainz_client import _es_latino
+        from app.services.metadata import _es_latino
         if not _es_latino(nombre_norm):
             from unidecode import unidecode
             final_norm = normalizar_artista(unidecode(nombre_norm))
@@ -411,7 +466,7 @@ def obtener_o_crear_artista(nombre, enriquecer=False, mbid=None):
     if artista_obj:
         return artista_obj
 
-    from musicbrainz_client import buscar_artista
+    from app.services.metadata import buscar_artista
     mb_result = buscar_artista(nombre_norm)
     if mb_result:
         mb_nombre_raw = mb_result['nombre']
@@ -445,7 +500,7 @@ def obtener_o_crear_artista(nombre, enriquecer=False, mbid=None):
     if mb_norm_name:
         final_norm = mb_norm_name
     else:
-        from musicbrainz_client import _es_latino
+        from app.services.metadata import _es_latino
         if not _es_latino(nombre_norm):
             from unidecode import unidecode
             final_norm = normalizar_artista(unidecode(nombre_norm))
@@ -521,7 +576,7 @@ def obtener_o_crear_album(album, albumartist, mbid=None):
 
     # --- ETAPA 3: BÚSQUEDA EXTERNA EN MUSICBRAINZ ---
     if album_artista_obj.musicbrainz_id:
-        from musicbrainz_client import buscar_album
+        from app.services.metadata import buscar_album
         mb_album = buscar_album(album, album_artista_obj.musicbrainz_id)
         if mb_album and not mbid:
             # Buscar si el álbum de MusicBrainz ya existe en la base de datos local
@@ -949,6 +1004,25 @@ def buscar_archivo_lrc(ruta_audio, carpeta_lyrics, cancion_id=None):
     
     return None
 
+
+def invalidar_cache_redis():
+    """
+    Busca todas las claves en Redis que coincidan con 'ducksound:cache:*' y las elimina
+    para invalidar la caché de consultas AJAX (búsquedas, recomendaciones) tras un escaneo exitoso.
+    """
+    try:
+        from app.services.queue import get_connection
+        r = get_connection()
+        claves = r.keys('ducksound:cache:*')
+        if claves:
+            r.delete(*claves)
+            print(f"🧹 [Cache Redis] Se eliminaron {len(claves)} claves de caché de consultas AJAX.")
+        else:
+            print("🧹 [Cache Redis] No hay claves de caché de consultas AJAX para invalidar.")
+    except Exception as e:
+        print(f"⚠️ [Cache Redis] Error al invalidar la caché de Redis: {e}")
+
+
 def escanear_carpeta_audio(progress_callback=None):
     """
     Realiza un escaneo completo y profundo de la carpeta de audio configurada.
@@ -1073,15 +1147,41 @@ def escanear_carpeta_audio(progress_callback=None):
     commit_counter = 0
     batch_size = 50 # Tamaño óptimo de bloque de inserciones transaccionales
     
+    # ─── PRE-DETECCIÓN DE ARCHIVOS NUEVOS Y ANÁLISIS EN PARALELO ───
+    # Buscamos en memoria cuáles son las rutas nuevas para analizarlas de forma concurrente.
+    # También incluimos aquellas canciones que ya existen en BD pero carecen de especificaciones técnicas (como sample_rate).
+    rutas_bd = {row.ruta_archivo_audio for row in Cancion.query.with_entities(Cancion.ruta_archivo_audio).all()}
+    canciones_sin_sample_rate = {row.ruta_archivo_audio for row in Cancion.query.filter(Cancion.sample_rate == None).with_entities(Cancion.ruta_archivo_audio).all()}
+    
+    archivos_nuevos = []
+    for archivo in archivos_encontrados:
+        ruta_str = str(archivo)
+        if ruta_str not in rutas_bd:
+            # Comprobar si no es una reubicación por stem
+            cancion_por_nombre = Cancion.query.filter(Cancion.ruta_archivo_audio.like(f'%{archivo.stem}%')).first()
+            if not cancion_por_nombre or os.path.exists(cancion_por_nombre.ruta_archivo_audio):
+                archivos_nuevos.append(archivo)
+        elif ruta_str in canciones_sin_sample_rate:
+            # Archivo existente pero incompleto: lo agregamos al pool de análisis paralelo
+            archivos_nuevos.append(archivo)
+                
+    metadatos_extraidos = extraer_metadatos_paralelo(
+        archivos_nuevos,
+        progress_callback=progress_callback,
+        stage='processing',
+        percent_start=5,
+        percent_end=80
+    )
+    
     total_archivos = len(archivos_encontrados)
     for idx, archivo in enumerate(archivos_encontrados, start=1):
         emit_progress({
             'stage': 'processing',
-            'message': f'Procesando {archivo.name}',
+            'message': f'Guardando en BD: {archivo.name}',
             'current_file': archivo.name,
             'processed': idx - 1,
             'total': total_archivos,
-            'percent': int(((idx - 1) / total_archivos) * 100)
+            'percent': int(80 + ((idx - 1) / total_archivos) * 14)
         })
         print(f"\nProcesando: {archivo.name}")
 
@@ -1091,22 +1191,57 @@ def escanear_carpeta_audio(progress_callback=None):
         if cancion_existente:
             print(f"  Ya existe en la base de datos (ID: {cancion_existente.id})")
             
+            actualizada_localmente = False
             # Si ya existe, aprovechamos el escaneo para buscar y vincular letras (.lrc) locales si no tenía
             if not cancion_existente.ruta_archivo_lrc or not Path(cancion_existente.ruta_archivo_lrc).exists():
                 ruta_lrc_existente = buscar_archivo_lrc(archivo, carpeta_lyrics, cancion_existente.id)
                 if ruta_lrc_existente:
                     cancion_existente.ruta_archivo_lrc = ruta_lrc_existente
                     print(f"  🎤 Letra local actualizada: {Path(ruta_lrc_existente).name}")
-                    canciones_actualizadas += 1
+                    actualizada_localmente = True
                 else:
                     print(f"  ⚠ Sin letra local (se descargará en segundo plano)")
             else:
                 print(f"  ✅ Letra ya existente: {Path(cancion_existente.ruta_archivo_lrc).name}")
-            
-            canciones_omitidas += 1
+
+            # Si ya existe pero le faltan los datos técnicos del audio (e.g. sample_rate es None), los analizamos
+            if cancion_existente.sample_rate is None:
+                print(f"  🔍 Datos técnicos faltantes para canción ID {cancion_existente.id}. Analizando...")
+                # Extraer metadatos ricos (incluyendo DSP)
+                metadatos = metadatos_extraidos.get(str(archivo)) or extraer_metadatos(archivo)
+                if metadatos:
+                    aa = (metadatos or {}).get('analisis') or (metadatos or {}).get('audio_analysis', {})
+                    if aa:
+                        cancion_existente.sample_rate = aa.get('sample_rate')
+                        cancion_existente.bit_depth = aa.get('bit_depth')
+                        cancion_existente.channels = aa.get('channels')
+                        cancion_existente.nyquist_freq = aa.get('nyquist_freq')
+                        cancion_existente.dynamic_range = aa.get('dynamic_range')
+                        cancion_existente.peak_level = aa.get('peak_level')
+                        cancion_existente.rms_level = aa.get('rms_level')
+                        cancion_existente.total_samples = aa.get('total_samples')
+                        cancion_existente.bit_rate = aa.get('bit_rate')
+                        cancion_existente.bpm = aa.get('bpm')
+                        # Asegurar el género si no estaba
+                        if not cancion_existente.genero:
+                            cancion_existente.genero = (metadatos or {}).get('genero') or aa.get('genero')
+                        actualizada_localmente = True
+                        print(f"  ✅ Datos técnicos extraídos para canción ID {cancion_existente.id}")
+
+            if actualizada_localmente:
+                db.session.add(cancion_existente)
+                canciones_actualizadas += 1
+                commit_counter += 1
+                if commit_counter >= batch_size:
+                    db.session.commit()
+                    commit_counter = 0
+                    print(f"  💾 Commit periódico de {batch_size} canciones actualizadas")
+            else:
+                canciones_omitidas += 1
+
             emit_progress({
                 'stage': 'file_done',
-                'message': f'Omitida (ya existía): {archivo.name}',
+                'message': f'Omitida/Actualizada: {archivo.name}',
                 'current_file': archivo.name,
                 'processed': idx,
                 'total': total_archivos,
@@ -1149,8 +1284,8 @@ def escanear_carpeta_audio(progress_callback=None):
                 })
                 continue
 
-        # Extraer metadatos ricos del archivo
-        metadatos = extraer_metadatos(archivo)
+        # Extraer metadatos ricos del archivo pre-analizado en paralelo
+        metadatos = metadatos_extraidos.get(str(archivo)) or extraer_metadatos(archivo)
 
         if metadatos:
             titulo = metadatos['titulo']
@@ -1214,7 +1349,9 @@ def escanear_carpeta_audio(progress_callback=None):
             print(f"  ⚠️ Sin letra local (se descargará en segundo plano)")
 
         # Datos electroacústicos calculados por el analizador
-        aa = (metadatos or {}).get('audio_analysis', {})
+        # Buscamos primero 'analisis' (que es la clave real asignada por extraer_metadatos)
+        # y como fallback 'audio_analysis' por compatibilidad.
+        aa = (metadatos or {}).get('analisis') or (metadatos or {}).get('audio_analysis', {})
 
         # Crear y registrar la canción
         nueva_cancion = Cancion(
@@ -1236,7 +1373,8 @@ def escanear_carpeta_audio(progress_callback=None):
             peak_level=aa.get('peak_level'),
             rms_level=aa.get('rms_level'),
             total_samples=aa.get('total_samples'),
-            bit_rate=aa.get('bit_rate')
+            bit_rate=aa.get('bit_rate'),
+            bpm=aa.get('bpm')
         )
 
         db.session.add(nueva_cancion)
@@ -1349,24 +1487,31 @@ def escanear_carpeta_audio(progress_callback=None):
     # 6. FASE DE ENCOLAMIENTO ASÍNCRONO DE TAREAS SECUNDARIAS
     # -------------------------------------------------------------
     try:
-        from task_queue import enqueue
-        from lyrics_fetcher import descargar_letras_segundo_plano
-        from musicbrainz_client import enriquecer_artistas_sin_mbid
+        from app.services.queue import enqueue
+        from app.services.lyrics import descargar_letras_segundo_plano
+        from app.services.metadata import enriquecer_artistas_sin_mbid
+        from app.services.transcoder import run_pretranscode_library
         
-        print("\n🚀 Encolando tareas post-escaneo en Redis (letras + MusicBrainz)...")
-        # Encolamos en Redis para que los workers dedicados descarguen letras e IDs sin bloquear la UI
+        print("\n🚀 Encolando tareas post-escaneo en Redis (letras + MusicBrainz + transcode)...")
+        # Encolamos en Redis para que los workers dedicados descarguen letras, IDs y pretranscodifiquen sin bloquear la UI
         enqueue(descargar_letras_segundo_plano, batch_size=10)
         enqueue(enriquecer_artistas_sin_mbid, limite=200)
+        enqueue(run_pretranscode_library)
         print("✅ Tareas encoladas — workers las procesarán en segundo plano")
     except Exception as e:
         print(f"⚠️ No se pudieron encolar tareas: {e}")
         # Fallback: Si no hay Redis configurado, lanzamos un hilo Daemon en segundo plano
         import threading
+        from app.services.transcoder import pretranscodificar_biblioteca
         th = threading.Thread(target=lambda: (
             descargar_letras_segundo_plano(batch_size=10),
-            enriquecer_artistas_sin_mbid(limite=200)
+            enriquecer_artistas_sin_mbid(limite=200),
+            pretranscodificar_biblioteca()
         ), daemon=True)
         th.start()
+    
+    # Invalidar la caché de consultas AJAX de Redis tras el escaneo exitoso
+    invalidar_cache_redis()
     
     return resumen
 
@@ -1442,6 +1587,7 @@ def escaneo_rapido(progress_callback=None):
 
     # Inicialización de contadores del proceso
     canciones_agregadas = 0
+    canciones_actualizadas = 0
     canciones_eliminadas = 0
     errores = 0
 
@@ -1462,9 +1608,17 @@ def escaneo_rapido(progress_callback=None):
         limpiar_entidades_vacias()
         db.session.commit()
 
-    # Si no hay archivos nuevos, la biblioteca está al día.
+    # Buscar canciones existentes que no tengan datos técnicos (e.g. sample_rate es None)
+    rutas_incompletas_bd = {row.ruta_archivo_audio for row in Cancion.query.filter(Cancion.sample_rate == None).with_entities(Cancion.ruta_archivo_audio).all()}
+    # Solo las que realmente existen en el disco y no están marcadas para eliminación
+    rutas_incompletas = rutas_incompletas_bd & archivos_disco
+
+    # Procesar únicamente los archivos nuevos y los existentes incompletos
+    archivos_a_procesar = archivos_nuevos | rutas_incompletas
+
+    # Si no hay archivos para procesar, la biblioteca está al día.
     # Solo normalizamos la biblioteca y retornamos un resumen temprano.
-    if not archivos_nuevos:
+    if not archivos_a_procesar:
         resumen_norm = normalizar_biblioteca(
             progress_callback=progress_callback,
             percent_start=90,
@@ -1483,10 +1637,20 @@ def escaneo_rapido(progress_callback=None):
                 'procesadas': 0, 'eliminadas': canciones_eliminadas, 'meta_artistas': 0, 'meta_albumes': 0,
                 'normalizacion': resumen_norm}
 
-    # 5. Procesar únicamente los archivos nuevos (misma lógica detallada que el escaneo completo)
+    # 5. Procesar únicamente los archivos nuevos y los incompletos
     # Ordenamos la lista para que el procesamiento sea predecible y alfabético
-    archivos_nuevos_lista = [Path(p) for p in sorted(archivos_nuevos)]
-    total = len(archivos_nuevos_lista)
+    archivos_procesar_lista = [Path(p) for p in sorted(archivos_a_procesar)]
+    total = len(archivos_procesar_lista)
+    
+    # ─── ANÁLISIS ACÚSTICO Y DE TAGS EN PARALELO (MULTITHREADING) ───
+    # Ejecutamos la lectura de metadatos y DSP concurrente en hilos secundarios
+    metadatos_extraidos = extraer_metadatos_paralelo(
+        archivos_procesar_lista,
+        progress_callback=progress_callback,
+        stage='processing',
+        percent_start=5,
+        percent_end=85
+    )
 
     # Variables para control de transacciones en bloques (commit cada 50 canciones)
     commit_counter = 0
@@ -1496,11 +1660,11 @@ def escaneo_rapido(progress_callback=None):
         # Reportar el progreso por cada archivo procesado mediante el callback
         emit_progress({
             'stage': 'file_done',
-            'message': f'Agregado: {archivo.name}',
+            'message': f'Guardando en BD: {archivo.name}',
             'current_file': archivo.name,
             'processed': idx,
             'total': total,
-            'percent': int(5 + (idx / total) * 90),
+            'percent': int(85 + (idx / total) * 7),
             'counters': {
                 'agregadas': canciones_agregadas,
                 'actualizadas': 0,
@@ -1509,8 +1673,8 @@ def escaneo_rapido(progress_callback=None):
         })
 
         try:
-            # Intentar extraer metadatos del archivo usando TinyTag/Mutagen
-            metadatos = extraer_metadatos(archivo)
+            # Recuperar los metadatos pre-extraídos en paralelo
+            metadatos = metadatos_extraidos.get(str(archivo)) or extraer_metadatos(archivo)
 
             if metadatos:
                 titulo = metadatos.get('titulo')
@@ -1552,34 +1716,62 @@ def escaneo_rapido(progress_callback=None):
                 print(f"  ⚠️ Sin letra local (se descargará en segundo plano)")
 
             # Recuperar análisis técnico de audio (frecuencias, rango dinámico, etc.) si está disponible
-            aa = (metadatos or {}).get('audio_analysis', {})
+            # Buscamos primero 'analisis' (que es la clave real asignada por extraer_metadatos)
+            # y como fallback 'audio_analysis' por compatibilidad.
+            aa = (metadatos or {}).get('analisis') or (metadatos or {}).get('audio_analysis', {})
             
-            # Instanciar el registro de base de datos de la nueva canción
-            nueva_cancion = Cancion(
-                titulo=titulo or archivo.stem,
-                artista_id=artista_obj.id if artista_obj else None,
-                album_id=album_obj.id if album_obj else None,
-                duracion=duracion or aa.get('duration'),
-                ruta_archivo_audio=str(archivo),
-                ruta_archivo_lrc=ruta_lrc,
-                ruta_imagen_album=metadatos.get('ruta_imagen') if metadatos else None,
-                numero_pista=(metadatos or {}).get('numero_pista'),
-                numero_disco=(metadatos or {}).get('numero_disco'),
-                genero=(metadatos or {}).get('genero') or aa.get('genero'),
-                sample_rate=aa.get('sample_rate'),
-                bit_depth=aa.get('bit_depth'),
-                channels=aa.get('channels'),
-                nyquist_freq=aa.get('nyquist_freq'),
-                dynamic_range=aa.get('dynamic_range'),
-                peak_level=aa.get('peak_level'),
-                rms_level=aa.get('rms_level'),
-                total_samples=aa.get('total_samples'),
-                bit_rate=aa.get('bit_rate')
-            )
-            db.session.add(nueva_cancion)
-            canciones_agregadas += 1
-            commit_counter += 1
-            print(f"  ✅ Agregada: {archivo.name}")
+            # Comprobar si ya existe en la base de datos (por si es una canción incompleta)
+            cancion_existente = Cancion.query.filter_by(ruta_archivo_audio=str(archivo)).first()
+
+            if cancion_existente:
+                # Actualizar los metadatos técnicos y de calidad
+                cancion_existente.sample_rate = aa.get('sample_rate')
+                cancion_existente.bit_depth = aa.get('bit_depth')
+                cancion_existente.channels = aa.get('channels')
+                cancion_existente.nyquist_freq = aa.get('nyquist_freq')
+                cancion_existente.dynamic_range = aa.get('dynamic_range')
+                cancion_existente.peak_level = aa.get('peak_level')
+                cancion_existente.rms_level = aa.get('rms_level')
+                cancion_existente.total_samples = aa.get('total_samples')
+                cancion_existente.bit_rate = aa.get('bit_rate')
+                cancion_existente.bpm = aa.get('bpm')
+                if not cancion_existente.genero:
+                    cancion_existente.genero = (metadatos or {}).get('genero') or aa.get('genero')
+                if not cancion_existente.ruta_archivo_lrc or not Path(cancion_existente.ruta_archivo_lrc).exists():
+                    cancion_existente.ruta_archivo_lrc = ruta_lrc
+                
+                db.session.add(cancion_existente)
+                canciones_actualizadas += 1
+                commit_counter += 1
+                print(f"  🔄 Actualizados datos técnicos: {archivo.name}")
+            else:
+                # Instanciar el registro de base de datos de la nueva canción
+                nueva_cancion = Cancion(
+                    titulo=titulo or archivo.stem,
+                    artista_id=artista_obj.id if artista_obj else None,
+                    album_id=album_obj.id if album_obj else None,
+                    duracion=duracion or aa.get('duration'),
+                    ruta_archivo_audio=str(archivo),
+                    ruta_archivo_lrc=ruta_lrc,
+                    ruta_imagen_album=metadatos.get('ruta_imagen') if metadatos else None,
+                    numero_pista=(metadatos or {}).get('numero_pista'),
+                    numero_disco=(metadatos or {}).get('numero_disco'),
+                    genero=(metadatos or {}).get('genero') or aa.get('genero'),
+                    sample_rate=aa.get('sample_rate'),
+                    bit_depth=aa.get('bit_depth'),
+                    channels=aa.get('channels'),
+                    nyquist_freq=aa.get('nyquist_freq'),
+                    dynamic_range=aa.get('dynamic_range'),
+                    peak_level=aa.get('peak_level'),
+                    rms_level=aa.get('rms_level'),
+                    total_samples=aa.get('total_samples'),
+                    bit_rate=aa.get('bit_rate'),
+                    bpm=aa.get('bpm')
+                )
+                db.session.add(nueva_cancion)
+                canciones_agregadas += 1
+                commit_counter += 1
+                print(f"  ✅ Agregada: {archivo.name}")
             
             # Realizar commits en bloques de 50 canciones para acelerar la inserción en base de datos
             if commit_counter >= batch_size:
@@ -1621,9 +1813,9 @@ def escaneo_rapido(progress_callback=None):
     # Compilación final del diccionario con el resumen de la operación de escaneo rápido
     resumen = {
         'agregadas': canciones_agregadas,
-        'actualizadas': 0,
-        'omitidas': len(rutas_bd) - canciones_eliminadas,
-        'procesadas': canciones_agregadas,
+        'actualizadas': canciones_actualizadas,
+        'omitidas': len(rutas_bd) - canciones_eliminadas - canciones_actualizadas,
+        'procesadas': canciones_agregadas + canciones_actualizadas,
         'eliminadas': canciones_eliminadas,
         'meta_artistas': meta_artistas,
         'meta_albumes': meta_albumes,
@@ -1633,7 +1825,7 @@ def escaneo_rapido(progress_callback=None):
     # Notificación de finalización exitosa con los datos del resumen consolidado
     emit_progress({
         'stage': 'done',
-        'message': f'Escaneo rápido finalizado — {canciones_agregadas} nuevas, {canciones_eliminadas} eliminadas',
+        'message': f'Escaneo rápido finalizado — {canciones_agregadas} nuevas, {canciones_actualizadas} actualizadas, {canciones_eliminadas} eliminadas',
         'percent': 100,
         'processed': total,
         'total': total,
@@ -1644,22 +1836,29 @@ def escaneo_rapido(progress_callback=None):
     # Encolamos en Redis (o levantamos hilos Daemon si Redis no está disponible) para la descarga en segundo plano
     # de letras faltantes desde APIs y metadatos complementarios en MusicBrainz, sin penalizar la UI del usuario.
     try:
-        from task_queue import enqueue
-        from lyrics_fetcher import descargar_letras_segundo_plano
-        from musicbrainz_client import enriquecer_artistas_sin_mbid
+        from app.services.queue import enqueue
+        from app.services.lyrics import descargar_letras_segundo_plano
+        from app.services.metadata import enriquecer_artistas_sin_mbid
+        from app.services.transcoder import run_pretranscode_library
         
-        print("\n🚀 Encolando tareas post-escaneo en Redis (letras + MusicBrainz)...")
+        print("\n🚀 Encolando tareas post-escaneo en Redis (letras + MusicBrainz + transcode)...")
         enqueue(descargar_letras_segundo_plano, batch_size=10)
         enqueue(enriquecer_artistas_sin_mbid, limite=200)
+        enqueue(run_pretranscode_library)
         print("✅ Tareas encoladas — workers las procesarán en segundo plano")
     except Exception as e:
         print(f"⚠️ No se pudieron encolar tareas: {e}")
         import threading
+        from app.services.transcoder import pretranscodificar_biblioteca
         th = threading.Thread(target=lambda: (
             descargar_letras_segundo_plano(batch_size=10),
-            enriquecer_artistas_sin_mbid(limite=200)
+            enriquecer_artistas_sin_mbid(limite=200),
+            pretranscodificar_biblioteca()
         ), daemon=True)
         th.start()
+    
+    # Invalidar la caché de consultas AJAX de Redis tras el escaneo exitoso
+    invalidar_cache_redis()
     
     return resumen
 
@@ -1672,7 +1871,8 @@ if __name__ == '__main__':
     """
     try:
         # Importar la app localmente para evitar importaciones circulares en el sistema
-        from app import app
+        from app import create_app
+        app = create_app()
         # Se establece el contexto de aplicación obligatorio para las consultas y operaciones ORM
         with app.app_context():
             resumen = escanear_carpeta_audio()

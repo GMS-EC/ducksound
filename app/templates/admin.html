@@ -635,7 +635,7 @@
     const statusEl = document.getElementById('version-status');
     const updateBanner = document.getElementById('update-banner');
 
-    fetch('/admin/check-update')
+    fetch('/admin/check-update?_t=' + Date.now())
         .then(r => r.json())
         .then(data => {
             if (data.error) {
@@ -787,7 +787,7 @@
 
     async function pollStatus(taskId){
         try{
-            const res = await fetch('/admin/escanear/status/' + encodeURIComponent(taskId));
+            const res = await fetch('/admin/escanear/status/' + encodeURIComponent(taskId) + '?_t=' + Date.now());
             if (res.status === 404) {
                 setRunningState(false);
                 if (pollTimer){ clearInterval(pollTimer); pollTimer = null; }
@@ -820,8 +820,9 @@
     panel.style.display = 'none';
     
     async function checkActiveOnLoad(){
+        if (pollTimer) return; // Si ya estamos polleando activamente un escaneo iniciado por el usuario, no re-verificar
         try {
-            const res = await fetch('/admin/escanear/active');
+            const res = await fetch('/admin/escanear/active?_t=' + Date.now());
             if (!res.ok) return;
             const data = await res.json();
             if (data && data.task_id && data.status && ['running', 'normalizing', 'enriching'].includes(data.status)) {
@@ -831,6 +832,9 @@
         } catch(e) { /* silencioso */ }
     }
     checkActiveOnLoad();
+    // Ejecutar la verificación cada 4 segundos de forma recurrente para detectar escaneos que se inicien
+    // en segundo plano sin requerir que el usuario recargue manualmente la página
+    setInterval(checkActiveOnLoad, 4000);
 
     // Helper reutilizable para iniciar cualquier tipo de escaneo
     async function startScan(endpoint, initMsg) {
@@ -920,7 +924,7 @@
 
     async function pollLyricsProgress() {
         try {
-            const res = await fetch('/api/lyrics-progress');
+            const res = await fetch('/api/lyrics-progress?_t=' + Date.now());
             if (!res.ok) return;
             const data = await res.json();
             renderLyricsProgress(data);
@@ -942,7 +946,7 @@
 
     async function pollMBProgress() {
         try {
-            const res = await fetch('/api/mb-progress');
+            const res = await fetch('/api/mb-progress?_t=' + Date.now());
             if (!res.ok) return;
             const data = await res.json();
             if (!data || !data.active) {

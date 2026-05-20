@@ -219,6 +219,7 @@
                         infoItem('fa-solid fa-signal', 'RMS', val(d.rms_level, ' dBFS')) +
                         infoItem('fa-solid fa-calculator', 'Samples', d.total_samples != null ? d.total_samples.toLocaleString() : '<span class="audio-info-na">—</span>') +
                         infoItem('fa-solid fa-gauge-high', 'Bit Rate', val(d.bit_rate ? Math.round(d.bit_rate/1000) : null, ' kbps')) +
+                        infoItem('fa-solid fa-heartbeat', 'Tempo (BPM)', val(d.bpm ? Math.round(d.bpm) : null)) +
                     '</div>';
                 })
                 .catch(() => {

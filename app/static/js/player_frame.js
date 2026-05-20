@@ -225,11 +225,21 @@
         }
 
         if (!isCrossfading) {
-            // DETENCIÓN INMEDIATA: Aplicar ganancia directamente
-            activeAudio.pause();
-            activeAudio.src = s.audio;
-            activeGain.gain.setValueAtTime(replayGainValue, audioCtx.currentTime);
-            activeAudio.play().catch(()=>{});
+            // Si el siguiente audio ya está preparado con esta misma canción,
+            // simplemente conmutamos para aprovechar la precarga gapless
+            if (nextSongPrepared && nextAudio.src && nextAudio.src.includes(s.audio)) {
+                const tempA = activeAudio; activeAudio = nextAudio; nextAudio = tempA;
+                const tempG = activeGain; activeGain = nextGain; nextGain = tempG;
+                
+                activeGain.gain.setValueAtTime(replayGainValue, audioCtx.currentTime);
+                activeAudio.play().catch(()=>{});
+                nextAudio.pause();
+            } else {
+                activeAudio.pause();
+                activeAudio.src = s.audio;
+                activeGain.gain.setValueAtTime(replayGainValue, audioCtx.currentTime);
+                activeAudio.play().catch(()=>{});
+            }
             currentIndex = idx;
         } else {
             // TRANSICIÓN CRUZADA (CROSSFADE): Conmutar nodos y aplicar fundidos (fades)
@@ -261,6 +271,7 @@
             localStorage.setItem('player_state', JSON.stringify(saved));
         }catch(e){}
         
+        updateMediaSession(s);
         postState();
 
         try { fetch('/api/play/' + s.id, {method: 'POST'}); } catch(e) {}
@@ -313,6 +324,9 @@
             }
         }catch(e){}
         const currentSong = normalizeSong(playlist[currentIndex] || null);
+        if ('mediaSession' in navigator) {
+            navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+        }
         parent.postMessage({type:'state', state:{currentIndex, isPlaying, song: currentSong, upnext: nextSongs, shuffled: isShuffled, repeat: repeatMode, volume: _volume}}, window.location.origin);
     }
 
@@ -364,13 +378,24 @@
                     }
                 }
                 
-                if (d > 0 && (d - t) <= crossfadeDuration + 5 && !nextSongPrepared) {
+                if (d > 0 && ((t / d) >= 0.90 || (d - t) <= crossfadeDuration + 5) && !nextSongPrepared) {
                     prepareNextSong();
                 }
 
                 if (Math.abs(t - _lastSentTime) > 0.15){
                     _lastSentTime = t;
                     parent.postMessage({type:'timeupdate', currentTime: t, duration: d, currentIndex}, window.location.origin);
+                    
+                    // Sincronizar barra de progreso con el sistema operativo
+                    if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
+                        try {
+                            navigator.mediaSession.setPositionState({
+                                duration: d || 0,
+                                playbackRate: aud.playbackRate || 1.0,
+                                position: t || 0
+                            });
+                        } catch(e) {}
+                    }
                 }
                 
                 if (!window._lastPlaybackSave || Date.now() - window._lastPlaybackSave > 3000) {
@@ -502,6 +527,13 @@
                     cover.innerHTML = `<img src="${playlist[currentIndex].cover}" style="width:100%;height:100%;object-fit:cover;border-radius:6px">`;
                     extractColor(playlist[currentIndex].cover);
                 }
+                
+                // Inicializar sesión multimedia con la canción actual al arrancar
+                updateMediaSession(playlist[currentIndex]);
+                if ('mediaSession' in navigator) {
+                    navigator.mediaSession.playbackState = 'paused';
+                }
+                
                 fetchReplayGain(playlist[currentIndex].id).then(gain => {
                     activeGain.gain.value = gain;
                 });
@@ -519,5 +551,92 @@
             setTimeout(postState, 200);
         }
     }catch(e){console.error(e)}
+
+    function updateMediaSession(s) {
+        if (!('mediaSession' in navigator)) return;
+        try {
+            const artworkUrl = s.cover ? (s.cover.startsWith('http') ? s.cover : window.location.origin + s.cover) : window.location.origin + '/static/img/default-cover.png';
+            navigator.mediaSession.metadata = new MediaMetadata({
+                title: s.titulo || 'Sin título',
+                artist: s.artista || 'Artista desconocido',
+                album: s.album || 'Álbum desconocido',
+                artwork: [
+                    { src: artworkUrl, sizes: '96x96', type: 'image/jpeg' },
+                    { src: artworkUrl, sizes: '128x128', type: 'image/jpeg' },
+                    { src: artworkUrl, sizes: '192x192', type: 'image/jpeg' },
+                    { src: artworkUrl, sizes: '256x256', type: 'image/jpeg' },
+                    { src: artworkUrl, sizes: '384x384', type: 'image/jpeg' },
+                    { src: artworkUrl, sizes: '512x512', type: 'image/jpeg' }
+                ]
+            });
+            navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+        } catch(e) {
+            console.error('[MediaSession] Error actualizando metadatos:', e);
+        }
+    }
+
+    function setupMediaSessionHandlers() {
+        if (!('mediaSession' in navigator)) return;
+        try {
+            navigator.mediaSession.setActionHandler('play', () => {
+                if (!activeAudio.src) return;
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                activeAudio.play().catch(()=>{});
+                isPlaying = true;
+                btnPlay.textContent = '⏸';
+                navigator.mediaSession.playbackState = 'playing';
+                postState();
+            });
+
+            navigator.mediaSession.setActionHandler('pause', () => {
+                activeAudio.pause();
+                isPlaying = false;
+                btnPlay.textContent = '▶';
+                navigator.mediaSession.playbackState = 'paused';
+                postState();
+            });
+
+            navigator.mediaSession.setActionHandler('previoustrack', () => {
+                if (playlist.length) {
+                    playIndex(currentIndex <= 0 ? playlist.length - 1 : currentIndex - 1);
+                }
+            });
+
+            navigator.mediaSession.setActionHandler('nexttrack', () => {
+                if (playlist.length || queuedSongs.length) {
+                    playIndex(getNextIndex({consumeQueue: true}));
+                }
+            });
+
+            navigator.mediaSession.setActionHandler('seekbackward', (details) => {
+                const offset = details.seekOffset || 10;
+                try {
+                    activeAudio.currentTime = Math.max(0, activeAudio.currentTime - offset);
+                } catch(e) {}
+            });
+
+            navigator.mediaSession.setActionHandler('seekforward', (details) => {
+                const offset = details.seekOffset || 10;
+                try {
+                    activeAudio.currentTime = Math.min(activeAudio.duration || 0, activeAudio.currentTime + offset);
+                } catch(e) {}
+            });
+
+            navigator.mediaSession.setActionHandler('seekto', (details) => {
+                if (details.fastSeek && 'fastSeek' in activeAudio) {
+                    activeAudio.fastSeek(details.seekTime);
+                    return;
+                }
+                try {
+                    activeAudio.currentTime = details.seekTime;
+                } catch(e) {}
+            });
+        } catch (e) {
+            console.error('[MediaSession] Error configurando manejadores:', e);
+        }
+    }
+
+    // Inicializar manejadores de Media Session al inicio
+    setupMediaSessionHandlers();
 
 })();
