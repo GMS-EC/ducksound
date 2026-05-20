@@ -4,6 +4,9 @@
 
 {% block content %}
 <div class="admin-container">
+    <a href="{{ url_for('dashboard') }}" class="btn-back">
+        <i class="fa-solid fa-arrow-left"></i> Volver al Dashboard
+    </a>
     <h1><i class="fa-solid fa-gear" style="color:var(--accent);margin-right:8px"></i> Panel de Administración</h1>
     <p class="admin-subtitle">Gestiona tu plataforma de música desde aquí</p>
 
@@ -328,6 +331,55 @@
     transform: translateY(-1px);
 }
 
+/* Notas de versión dinámicas (GitHub Releases) */
+.update-release-notes {
+    margin-top: 16px;
+    padding: 16px;
+    background: rgba(0, 0, 0, 0.15);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-light);
+}
+.update-release-notes h4 {
+    margin-top: 0;
+    margin-bottom: 12px;
+    color: var(--text-bright);
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.release-notes-body {
+    max-height: 250px;
+    overflow-y: auto;
+    font-size: 13px;
+    color: var(--text-normal);
+    line-height: 1.6;
+    padding-right: 8px;
+}
+.release-notes-body::-webkit-scrollbar {
+    width: 6px;
+}
+.release-notes-body::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+}
+.release-notes-body h4, .release-notes-body h5 {
+    color: var(--text-bright);
+    margin-top: 16px;
+    margin-bottom: 8px;
+}
+.release-notes-body li {
+    margin-left: 18px;
+    margin-bottom: 6px;
+    list-style-type: disc;
+}
+.release-notes-body a {
+    color: #fbbf24;
+    text-decoration: none;
+}
+.release-notes-body a:hover {
+    text-decoration: underline;
+}
+
 /* ===== CHANGELOG ===== */
 .changelog-wrapper {
     margin-top: 16px;
@@ -571,6 +623,16 @@
                 statusEl.className = 'version-status update-available';
                 statusEl.innerHTML = '<i class="fa-solid fa-arrow-up"></i><span>Actualización disponible</span>';
                 updateBanner.style.display = 'block';
+                
+                let releaseNotesHtml = '';
+                if (data.body) {
+                    releaseNotesHtml = 
+                        '<div class="update-release-notes">' +
+                            '<h4>Notas de esta versión:</h4>' +
+                            '<div class="release-notes-body">' + formatReleaseNotes(data.body) + '</div>' +
+                        '</div>';
+                }
+                
                 updateBanner.innerHTML = 
                     '<div class="update-banner-content">' +
                         '<div class="update-banner-icon"><i class="fa-solid fa-arrow-up"></i></div>' +
@@ -581,7 +643,7 @@
                         '<a href="' + escHtml(data.url) + '" target="_blank" rel="noopener" class="btn-update-link">' +
                             '<i class="fa-brands fa-github"></i> Ver release' +
                         '</a>' +
-                    '</div>';
+                    '</div>' + releaseNotesHtml;
             } else {
                 statusEl.className = 'version-status up-to-date';
                 statusEl.innerHTML = '<i class="fa-solid fa-circle-check"></i><span>Al día</span>';
@@ -597,6 +659,29 @@
 
     function escHtml(t) {
         return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function formatReleaseNotes(text) {
+        if (!text) return '';
+        let html = escHtml(text);
+        
+        // Reemplazar viñetas
+        html = html.replace(/^\s*[-*]\s+(.+)$/gm, '<li>$1</li>');
+        
+        // Reemplazar títulos
+        html = html.replace(/^###\s+(.+)$/gm, '<h5>$1</h5>');
+        html = html.replace(/^##\s+(.+)$/gm, '<h4>$1</h4>');
+        
+        // Reemplazar negritas
+        html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        
+        // Reemplazar links [texto](url)
+        html = html.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+        
+        // Unificar saltos de línea consecutivos
+        html = html.replace(/\n/g, '<br>');
+        
+        return html;
     }
 
     // ===== Scan logic =====

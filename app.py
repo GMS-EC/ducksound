@@ -208,10 +208,21 @@ def favoritos():
 
 
 # ============================================
-# VISTA DE CARPETAS
+# VISTA DE CARPETAS (EXPLORADOR DE ARCHIVOS)
 # ============================================
 @app.route('/folders')
 def folders():
+    """
+    Genera una vista en árbol del sistema de archivos de música en el servidor.
+    
+    Permite navegar recursivamente por la carpeta configurada de audio, listando directorios
+    y archivos con extensiones compatibles. Adicionalmente, cuenta en tiempo real cuántas
+    canciones de cada directorio están actualmente indexadas en la base de datos mediante
+    búsquedas de coincidencia de prefijos de ruta.
+    
+    Returns:
+        Render de la plantilla 'folders.html' con la estructura del árbol de directorios.
+    """
     if 'user_id' not in session:
         return redirect(url_for('login'))
     usuario_obj = db.session.get(Usuario, session['user_id'])
@@ -225,18 +236,41 @@ def folders():
     tree = {}
 
     def build_tree(dirpath, prefix=''):
+        """
+        Función recursiva interna para escanear y estructurar directorios de audio.
+        
+        Args:
+            dirpath (str): Ruta absoluta del directorio actual en el disco.
+            prefix (str): Prefijo de ruta acumulado para visualización o indexación.
+            
+        Returns:
+            list: Lista de diccionarios que representan carpetas y archivos en la ruta.
+        """
         items = []
         try:
+            # Iterar sobre las entradas del directorio ordenando primero carpetas y luego archivos (sin distinguir mayúsculas/minúsculas)
             for entry in sorted(os.scandir(dirpath), key=lambda e: (not e.is_dir(), e.name.lower())):
                 if entry.is_dir():
+                    # Llamada recursiva para subcarpetas
                     children = build_tree(entry.path, prefix + entry.name + '/')
-                    # count songs in this folder
+                    # Contar canciones en la base de datos cuya ruta de archivo comience con la ruta de este directorio
                     songs = Cancion.query.filter(Cancion.ruta_archivo_audio.like(entry.path.replace('\\', '/') + '%')).count()
-                    items.append({'name': entry.name, 'path': entry.path, 'type': 'folder',
-                                  'children': children, 'song_count': songs})
+                    items.append({
+                        'name': entry.name,
+                        'path': entry.path,
+                        'type': 'folder',
+                        'children': children,
+                        'song_count': songs
+                    })
                 elif entry.name.lower().endswith(tuple(('.mp3','.flac','.wav','.m4a','.ogg'))):
-                    items.append({'name': entry.name, 'path': entry.path, 'type': 'file'})
+                    # Archivo de audio válido encontrado
+                    items.append({
+                        'name': entry.name,
+                        'path': entry.path,
+                        'type': 'file'
+                    })
         except PermissionError:
+            # Ignorar de forma segura si no se tienen permisos de lectura en algún subdirectorio
             pass
         return items
 
@@ -245,14 +279,22 @@ def folders():
 
 
 # ============================================
-# COLECCIONES
+# COLECCIONES (PLAYLISTS PERSONALIZADAS)
 # ============================================
 @app.route('/colecciones')
 def colecciones_list():
+    """
+    Muestra el listado de colecciones (playlists) creadas por el usuario autenticado.
+    
+    Returns:
+        Render de la plantilla 'colecciones.html' con la lista de colecciones del usuario.
+    """
     if 'user_id' not in session:
         return redirect(url_for('login'))
     usuario_obj = db.session.get(Usuario, session['user_id'])
     is_admin = usuario_obj.is_admin() if usuario_obj else False
+    
+    # Obtener todas las colecciones del usuario ordenadas de las más recientes a las más antiguas
     colecciones = Coleccion.query.filter_by(usuario_id=session['user_id'])\
         .order_by(Coleccion.fecha_creacion.desc()).all()
     return render_template('colecciones.html', colecciones=colecciones, is_admin=is_admin)
@@ -260,29 +302,50 @@ def colecciones_list():
 
 @app.route('/coleccion/<int:coleccion_id>')
 def coleccion_detail(coleccion_id):
+    """
+    Muestra los detalles y la lista de canciones contenidas en una colección específica.
+    
+    Args:
+        coleccion_id (int): Identificador único de la colección.
+        
+    Returns:
+        Render de la plantilla 'coleccion_detail.html' con los datos y canciones de la playlist.
+    """
     if 'user_id' not in session:
         return redirect(url_for('login'))
     coleccion = Coleccion.query.get_or_404(coleccion_id)
+    
+    # Validar que la colección pertenezca al usuario que realiza la petición
     if coleccion.usuario_id != session['user_id']:
         abort(403)
+        
     usuario_obj = db.session.get(Usuario, session['user_id'])
     is_admin = usuario_obj.is_admin() if usuario_obj else False
     return render_template('coleccion_detail.html', coleccion=coleccion, is_admin=is_admin)
 
 
 # ============================================
-# DAILY MIXES
+# DAILY MIXES (RECOMENDACIONES DIARIAS)
 # ============================================
 @app.route('/daily-mixes')
 def daily_mixes():
+    """
+    Muestra las mezclas recomendadas automáticas para el día de hoy.
+    Si no se han generado para el día actual, las crea al instante antes de renderizar la vista.
+    
+    Returns:
+        Render de la plantilla 'daily_mixes.html' con los 3 mixes personalizados del día.
+    """
     if 'user_id' not in session:
         return redirect(url_for('login'))
     usuario_obj = db.session.get(Usuario, session['user_id'])
     is_admin = usuario_obj.is_admin() if usuario_obj else False
     today = datetime.utcnow().date()
+    
+    # Buscar si ya existen mixes generados hoy para este usuario
     mixes = DailyMix.query.filter_by(usuario_id=session['user_id'], fecha=today).all()
     if not mixes:
-        # Generar mixes del día
+        # Generar dinámicamente los mixes del día mediante el motor de recomendación
         _generate_daily_mixes(session['user_id'])
         mixes = DailyMix.query.filter_by(usuario_id=session['user_id'], fecha=today).all()
     return render_template('daily_mixes.html', mixes=mixes, is_admin=is_admin)
@@ -290,6 +353,15 @@ def daily_mixes():
 
 @app.route('/daily-mix/<int:mix_id>')
 def daily_mix_detail(mix_id):
+    """
+    Detalle de un Mix Diario específico y su cola ordenada de reproducción.
+    
+    Args:
+        mix_id (int): ID de la mezcla diaria.
+        
+    Returns:
+        Render de la plantilla 'daily_mix_detail.html' con el título del mix y sus pistas.
+    """
     if 'user_id' not in session:
         return redirect(url_for('login'))
     mix = DailyMix.query.get_or_404(mix_id)
@@ -299,7 +371,20 @@ def daily_mix_detail(mix_id):
 
 
 def _generate_daily_mixes(usuario_id):
-    """Genera 3 daily mixes personalizados basados en historial, favoritos y similitud acústica."""
+    """
+    Motor de Recomendación de Mixes Diarios Personalizados.
+    
+    Genera 3 mezclas temáticas distintas basadas en los hábitos de escucha del usuario:
+    1. 'Morning Vibes': Mezcla energética basada en popularidad general, géneros favoritos y temas acústicamente similares.
+    2. 'Afternoon Chill': Orientado a favoritos directos del usuario combinados con descubrimiento de canciones similares y exploración.
+    3. 'Night Beats': Enfocado en el historial de reproducción histórica del usuario, adición de temas nuevos y sugerencias de similitud.
+    
+    La mezcla utiliza un algoritmo proporcional de selección de pools (fuentes de datos) y excluye las canciones
+    escuchadas en la última semana para mantener las listas frescas y dinámicas.
+    
+    Args:
+        usuario_id (int): Identificador del usuario al cual generarle los mixes.
+    """
     import random
     from models import Favorito, HistorialEscucha
     from datetime import date, timedelta
@@ -308,9 +393,9 @@ def _generate_daily_mixes(usuario_id):
     today = datetime.utcnow().date()
     last_week = datetime.utcnow() - timedelta(days=7)
 
-    # === 1. OBTENER FUENTES DE DATOS ===
+    # === 1. OBTENER FUENTES DE DATOS DE HÁBITOS DE ESCUCHA ===
 
-    # Canciones más reproducidas (top 50)
+    # Obtener el Top 50 de canciones más escuchadas del usuario (excluyendo canciones saltadas/skips)
     mas_escuchadas = db.session.query(
         Cancion.id, db.func.count(HistorialEscucha.id).label('plays')
     ).join(HistorialEscucha).filter(
@@ -320,16 +405,16 @@ def _generate_daily_mixes(usuario_id):
     mas_escuchadas_ids = [c.id for c in mas_escuchadas]
     mas_escuchadas_plays = {c.id: c.plays for c in mas_escuchadas}
 
-    # Canciones favoritas
+    # Obtener IDs de las canciones marcadas como "Me gusta" (Favoritos)
     fav_ids = [f.cancion_id for f in Favorito.query.filter_by(usuario_id=usuario_id).all()]
 
-    # Canciones escuchadas en la última semana (para excluir)
+    # Canciones reproducidas en la última semana (usadas para exclusión temporal para evitar fatiga auditiva)
     recientes_ids = [h.cancion_id for h in HistorialEscucha.query.filter(
         HistorialEscucha.usuario_id == usuario_id,
         HistorialEscucha.reproducido_en >= last_week
     ).distinct(HistorialEscucha.cancion_id).all()]
 
-    # Top 3 géneros más escuchados
+    # Determinar los 3 géneros más escuchados por el usuario
     top_generos = db.session.query(
         Cancion.genero, db.func.count(Cancion.id).label('cnt')
     ).join(HistorialEscucha).filter(
@@ -339,9 +424,12 @@ def _generate_daily_mixes(usuario_id):
     ).group_by(Cancion.genero).order_by(db.desc('cnt')).limit(3).all()
     top_generos_list = [g[0] for g in top_generos if g[0]]
 
-    # === 2. FUNCIÓN AUXILIAR: OBTENER CANCIONES POR VIBE ===
+    # === 2. FUNCIONES AUXILIARES PARA CÁLCULO DE POOLS ===
+    
     def _random_ids(limit, extra_filters=None):
-        """Obtiene IDs aleatorios de canciones eficientemente."""
+        """
+        Obtiene de manera óptima un muestreo aleatorio de IDs de canciones que cumplen ciertos criterios.
+        """
         base = Cancion.query.with_entities(Cancion.id)
         if extra_filters:
             for f in extra_filters:
@@ -352,7 +440,9 @@ def _generate_daily_mixes(usuario_id):
         return random.sample(ids, min(limit, len(ids)))
 
     def canciones_por_vibe(max_bpm=None, min_bpm=None, excluir_ids=None, limit=25):
-        """Filtra canciones por rango de BPM."""
+        """
+        Filtra y extrae canciones aleatorias que encajan en un perfil de tempo (BPM).
+        """
         excluir = set(excluir_ids or [])
         filters = []
         if min_bpm is not None:
@@ -363,9 +453,11 @@ def _generate_daily_mixes(usuario_id):
         return [c for c in candidatos_ids if c not in excluir][:limit]
 
     def obtener_similares_a(song_ids, top_k=8):
-        """Obtiene canciones similares a un conjunto de canciones."""
+        """
+        Consulta canciones similares acústicamente en base al subconjunto de entrada (usando embeddings/perfil acústico).
+        """
         similares_ids = set()
-        for sid in song_ids[:5]:  # Top 5 para similitud
+        for sid in song_ids[:5]:  # Usar un máximo de 5 canciones semilla para evitar lentitud
             try:
                 similares = get_similar_songs(sid, top_k=top_k)
                 for s in similares:
@@ -376,7 +468,11 @@ def _generate_daily_mixes(usuario_id):
         return list(similares_ids)
 
     def mezclar_pool(pools, target=20):
-        """Mezcla proporcionalmente de varios pools."""
+        """
+        Algoritmo de mezcla round-robin proporcional.
+        Toma elementos de múltiples fuentes (pools) de forma rotatoria hasta llenar el target.
+        Evita duplicados dentro de la mezcla final.
+        """
         result = []
         seen = set()
         idx = [0] * len(pools)
@@ -394,16 +490,16 @@ def _generate_daily_mixes(usuario_id):
             rounds += 1
         return result[:target]
 
-    # === 3. GENERAR CADA MIX ===
+    # === 3. ESQUEMAS DE CONFIGURACIÓN DE LOS 3 MIXES ===
 
-    # Pool base compartido: canciones más escuchadas + favoritas
+    # Pool inicial: Combinación sin duplicados de las más reproducidas e identificadas como favoritas
     pool_populares = list(dict.fromkeys(mas_escuchadas_ids + fav_ids))
 
     mixes_data = [
         {
             'name': 'Morning Vibes',
             'desc': 'Energía para empezar el día',
-            'bpm_range': (None, None),  # Sin filtro de BPM
+            'bpm_range': (None, None),
             'pools': ['populares', 'similares', 'genero'],
         },
         {
@@ -423,10 +519,10 @@ def _generate_daily_mixes(usuario_id):
     for mix_info in mixes_data:
         name = mix_info['name']
         pools = []
-        pool_similares_ids = []  # IDs de canciones similares en esta iteración
+        pool_similares_ids = []
         excluir_ids_set = set(recientes_ids)
 
-        # Pool 1: Populares (más escuchadas + favoritas) excluyendo recientes
+        # Pool 1: Canciones conocidas / familiares al usuario (excluyendo lo escuchado recientemente)
         populares_pool = pool_populares.copy()
         random.shuffle(populares_pool)
         pool_populares_filtrado = [c for c in populares_pool if c not in excluir_ids_set]
@@ -434,7 +530,7 @@ def _generate_daily_mixes(usuario_id):
             pools.append(pool_populares_filtrado)
             excluir_ids_set.update(pool_populares_filtrado)
 
-        # Pool 2: Similares a las favoritas
+        # Pool 2: Canciones recomendadas similares acústicamente a sus favoritas
         if fav_ids:
             raw_similares = obtener_similares_a(fav_ids, top_k=6)
             pool_similares_ids = [s for s in raw_similares if s not in excluir_ids_set]
@@ -442,7 +538,7 @@ def _generate_daily_mixes(usuario_id):
                 pools.append(pool_similares_ids)
                 excluir_ids_set.update(pool_similares_ids)
 
-        # Pool 3: Exploración del género (canciones no escuchadas)
+        # Pool 3: Descubrimiento de nuevos temas dentro de sus géneros de música favoritos
         if top_generos_list:
             genre = top_generos_list[(hash(name) % len(top_generos_list))]
             explorar_ids = _random_ids(30, [
@@ -453,27 +549,28 @@ def _generate_daily_mixes(usuario_id):
                 pools.append(explorar_ids)
                 excluir_ids_set.update(explorar_ids)
 
-        # Fallback si no hay suficientes
+        # Fallback de seguridad en caso de que los pools estén vacíos (usuario muy nuevo)
         if not pools or sum(len(p) for p in pools) < 5:
             fallback_ids = _random_ids(30)
             fallback_ids = [c for c in fallback_ids if c not in excluir_ids_set]
             pools = [fallback_ids]
 
-        # Mezclar pools proporcionalmente
+        # Mezclar las fuentes de recomendación usando el algoritmo round-robin
         mix_canciones_ids = mezclar_pool(pools, target=20)
 
-        # Si aún así está vacío, fallback total
+        # Si se queda vacío a pesar de todo, rellenar de la biblioteca global de forma aleatoria
         if not mix_canciones_ids:
             mix_canciones_ids = _random_ids(20)
 
-        # === 4. GUARDAR MIX ===
-        # Limpiar mixes viejos del mismo nombre para este usuario (opcional)
+        # === 4. GUARDAR E INSERTAR MIX DIARIO ===
+        # Limpiar registros obsoletos del mismo mix diario del usuario para el día actual
         DailyMix.query.filter_by(usuario_id=usuario_id, nombre=name, fecha=today).delete()
 
         mix = DailyMix(usuario_id=usuario_id, nombre=name, fecha=today)
         db.session.add(mix)
-        db.session.flush()
+        db.session.flush() # flush para obtener el ID asignado por base de datos
 
+        # Registrar la relación de canciones con orden de prioridad explícito
         for idx, cid in enumerate(mix_canciones_ids[:20]):
             db.session.execute(
                 db.text("INSERT INTO daily_mix_canciones (mix_id, cancion_id, orden) VALUES (:m, :c, :o) ON CONFLICT (mix_id, cancion_id) DO NOTHING"),
@@ -485,24 +582,41 @@ def _generate_daily_mixes(usuario_id):
 
 
 # ============================================
-# ESTADÍSTICAS DE USUARIO
+# REDIRECCIÓN DE ESTADÍSTICAS
 # ============================================
 @app.route('/stats')
 def user_stats():
+    """Redirige al perfil principal donde se encuentran renderizadas las estadísticas."""
     return redirect(url_for('profile'))
 
 
 # ============================================
-# ARTISTAS RELACIONADOS
+# API DE ARTISTAS RELACIONADOS (RECOMENDACIÓN)
 # ============================================
 @app.route('/api/related/artists/<int:artist_id>')
 def related_artists(artist_id):
+    """
+    Endpoint JSON para obtener artistas similares/relacionados a un artista dado.
+    
+    Implementa 4 niveles de cascada (estrategias de búsqueda):
+    1. Género Compartido: Artistas que tienen canciones con el mismo género del artista actual.
+    2. Colaboraciones o Álbumes Cruzados: Artistas que comparten pistas en álbumes de compilación.
+    3. Perfil Acústico Similar: Compara promedios de BPM, rango dinámico (Dynamic Range)
+       y sonoridad RMS de todas las canciones del artista buscando perfiles con baja varianza.
+    4. Fallback de Popularidad: Sugiere artistas con mayor volumen de canciones en la base de datos.
+    
+    Args:
+        artist_id (int): Identificador del artista de referencia.
+        
+    Returns:
+        JSON: Lista de diccionarios de artistas similares con detalles básicos.
+    """
     artist = Artista.query.get_or_404(artist_id)
     related_ids = set()
     related = []
     limit = 4
 
-    # ---- ESTRATEGIA 1: Mismo género ----
+    # ---- ESTRATEGIA 1: Coincidencia por género musical idéntico ----
     genres = db.session.query(Cancion.genero).filter(
         Cancion.artista_id == artist_id, Cancion.genero.isnot(None)
     ).distinct().all()
@@ -518,7 +632,7 @@ def related_artists(artist_id):
                 related_ids.add(a.id)
                 related.append(a)
 
-    # ---- ESTRATEGIA 2: Mismos álbumes (compilaciones / artistas compartidos) ----
+    # ---- ESTRATEGIA 2: Álbumes en común o compilaciones cruzadas ----
     if len(related) < limit:
         album_ids = db.session.query(Album.id).filter(Album.artista_id == artist_id).subquery()
         same_album_artists = db.session.query(Artista).join(Album).join(Cancion).filter(
@@ -535,9 +649,9 @@ def related_artists(artist_id):
                 if len(related) >= limit:
                     break
 
-    # ---- ESTRATEGIA 3: Perfil acústico similar (misma BPM, rango dinámico similar) ----
+    # ---- ESTRATEGIA 3: Perfil acústico similar (tempo BPM, rango dinámico, volumen promedio) ----
     if len(related) < limit:
-        # Obtener perfil acústico promedio del artista actual
+        # Extraer el promedio de BPM, rango dinámico y sonoridad del artista de referencia
         avg_profile = db.session.query(
             db.func.avg(Cancion.bpm),
             db.func.avg(Cancion.dynamic_range),
@@ -546,9 +660,10 @@ def related_artists(artist_id):
 
         if avg_profile and avg_profile[0] is not None:
             bpm, dyn, rms = avg_profile
-            tolerance_bpm = 20
-            tolerance_dyn = 5
-            # Buscar artistas con perfil acústico similar
+            tolerance_bpm = 20  # +/- 20 beats por minuto
+            tolerance_dyn = 5   # +/- 5 dB de rango dinámico
+            
+            # Buscar artistas cuyas canciones tengan valores promedio dentro del rango de tolerancia
             acoustic_matches = db.session.query(
                 Artista,
                 db.func.count(Cancion.id).label('song_count')
@@ -565,7 +680,7 @@ def related_artists(artist_id):
                     if len(related) >= limit:
                         break
 
-    # ---- ESTRATEGIA 4: Fallback - artistas populares (más canciones) ----
+    # ---- ESTRATEGIA 4: Fallback de seguridad - artistas más populares / biblioteca activa ----
     if len(related) < 4:
         popular = db.session.query(Artista).join(Cancion).filter(
             Artista.id != artist_id
@@ -589,11 +704,23 @@ def related_artists(artist_id):
 
 
 # ============================================
-# ============================================
-# PERFIL DE USUARIO
+# PERFIL DE USUARIO Y ESTADÍSTICAS RICAS
 # ============================================
 @app.route('/profile')
 def profile():
+    """
+    Ruta del Perfil de Usuario.
+    
+    Calcula y reúne estadísticas avanzadas y paneles de escucha del usuario:
+    - Las 10 canciones más escuchadas del usuario.
+    - Los 8 artistas más reproducidos.
+    - Total acumulado de canciones completas reproducidas.
+    - Horas de escucha totales calculadas sumando los segundos de duración de las canciones escuchadas.
+    - Conteo de canciones reproducidas en las últimas 24 horas.
+    
+    Returns:
+        Render de la plantilla 'profile.html' con las estadísticas del perfil.
+    """
     if 'user_id' not in session:
         return redirect(url_for('login'))
     usuario = db.session.get(Usuario, session['user_id'])
@@ -602,7 +729,7 @@ def profile():
     is_admin = usuario.is_admin()
     user_id = session['user_id']
 
-    # Canciones más escuchadas
+    # Consultar las 10 canciones más escuchadas (excluyendo saltos rápidos)
     top_songs = db.session.query(
         Cancion, db.func.count(HistorialEscucha.id).label('plays')
     ).join(HistorialEscucha).filter(
@@ -610,7 +737,7 @@ def profile():
         HistorialEscucha.skip == False
     ).group_by(Cancion).order_by(db.desc('plays')).limit(10).all()
 
-    # Artistas más escuchados
+    # Consultar los 8 artistas más escuchados por agregación de reproducciones
     top_artists = db.session.query(
         Artista.nombre, Artista.id, db.func.count(HistorialEscucha.id).label('plays')
     ).select_from(HistorialEscucha)\
@@ -620,17 +747,17 @@ def profile():
         .group_by(Artista.id)\
         .order_by(db.desc('plays')).limit(8).all()
 
-    # Total de escuchas
+    # Suma total de pistas reproducidas completas
     total_plays = HistorialEscucha.query.filter_by(usuario_id=user_id, skip=False).count()
 
-    # Horas totales
+    # Calcular las horas totales dedicadas a escuchar música en la plataforma
     total_hours = db.session.query(db.func.sum(Cancion.duracion))\
         .join(HistorialEscucha)\
         .filter(HistorialEscucha.usuario_id == user_id, HistorialEscucha.skip == False,
                 Cancion.duracion.isnot(None)).scalar() or 0
-    total_hours = total_hours // 3600
+    total_hours = total_hours // 3600  # Convertir segundos acumulados a horas enteras
 
-    # Últimas 24h
+    # Estadísticas rápidas de las últimas 24 horas
     last_24h = HistorialEscucha.query.filter(
         HistorialEscucha.usuario_id == user_id,
         HistorialEscucha.reproducido_en >= datetime.utcnow() - timedelta(hours=24)
@@ -644,6 +771,19 @@ def profile():
 
 @app.route('/api/profile/update', methods=['POST'])
 def api_profile_update():
+    """
+    Endpoint JSON para actualizar dinámicamente preferencias y datos del perfil de usuario.
+    
+    Parámetros recibidos en el JSON del body:
+        nombre_publico (str): Apodo público visible en lugar de su login.
+        crossfade_enabled (bool): Activar/desactivar transición suave de crossfade.
+        activity_tracking (bool): Guardar o no el historial de audición.
+        idioma_preferido (str): Código ISO del idioma (e.g. 'es', 'en').
+        password (str): Nueva contraseña de acceso.
+        
+    Returns:
+        JSON: Estado 'ok' y preferencias actuales tras la persistencia en base de datos.
+    """
     if 'user_id' not in session:
         return jsonify({'error': 'No auth'}), 401
     usuario = db.session.get(Usuario, session['user_id'])
@@ -661,17 +801,25 @@ def api_profile_update():
         usuario.idioma_preferido = data['idioma_preferido'].strip()[:5] or 'es'
     if 'password' in data and data['password'].strip():
         usuario.set_password(data['password'].strip())
-        session.pop('_fresh', None)
+        session.pop('_fresh', None) # Invalidar marca de credencial fresca en sesión si existiera
 
     db.session.commit()
-    return jsonify({'ok': True,
+    return jsonify({
+        'ok': True,
         'crossfade_enabled': usuario.crossfade_enabled,
         'activity_tracking': usuario.activity_tracking,
-        'idioma_preferido': usuario.idioma_preferido})
+        'idioma_preferido': usuario.idioma_preferido
+    })
 
 
 @app.route('/api/profile', methods=['GET'])
 def api_profile():
+    """
+    API JSON que retorna la configuración y metadatos del usuario logueado en la sesión actual.
+    
+    Returns:
+        JSON: Diccionario con preferencias y propiedades básicas de cuenta.
+    """
     if 'user_id' not in session:
         return jsonify({'error': 'No auth'}), 401
     usuario = db.session.get(Usuario, session['user_id'])
@@ -690,21 +838,35 @@ def api_profile():
 
 
 # ============================================
-# API: REGISTRAR REPRODUCCIÓN
+# API: REGISTRAR HISTORIAL DE REPRODUCCIÓN
 # ============================================
 @app.route('/api/play/<int:cancion_id>', methods=['POST'])
 def api_register_play(cancion_id):
+    """
+    Registra una canción en el historial de audición del usuario.
+    
+    Respeta la privacidad del usuario; si 'activity_tracking' está desactivado en su perfil,
+    no se guardará ningún registro de historial y el endpoint retornará exitosamente de inmediato.
+    
+    Args:
+        cancion_id (int): ID de la canción reproducida.
+        
+    Returns:
+        JSON: Estado del guardado ('ok': True).
+    """
     if 'user_id' not in session:
         return jsonify({'error': 'No auth'}), 401
     usuario = db.session.get(Usuario, session['user_id'])
-    # Solo registrar si activity_tracking está activo
+    
+    # Solo registrar si el usuario tiene el seguimiento de actividad habilitado
     if usuario and not usuario.activity_tracking:
         return jsonify({'ok': True, 'tracking': False})
+        
     data = request.get_json(silent=True) or {}
     entry = HistorialEscucha(
         usuario_id=session['user_id'],
         cancion_id=cancion_id,
-        skip=data.get('skip', False)
+        skip=data.get('skip', False) # Marca si la canción se saltó antes del 30% de reproducción
     )
     db.session.add(entry)
     db.session.commit()
@@ -712,11 +874,21 @@ def api_register_play(cancion_id):
 
 
 # ============================================
-# API: TRADUCIR LETRAS
+# API: TRADUCTOR DE LETRAS HÍBRIDO (LIBRE/GOOGLE)
 # ============================================
 @app.route('/api/translate', methods=['POST'])
 def api_translate():
-    """Traduce texto usando LibreTranslate pública o Google Translate."""
+    """
+    Traduce texto o letras (como archivos LRC) en tiempo real al idioma objetivo.
+    
+    Utiliza una estrategia de traducción híbrida:
+    1. Primero intenta de forma directa con LibreTranslate (servicio descentralizado y gratuito).
+    2. Si LibreTranslate da error, responde con timeout o no está disponible, realiza un fallback
+       automático hacia una llamada por scraping no autenticada de la API móvil de Google Translate.
+       
+    Returns:
+        JSON: Texto traducido y el motor que sirvió la traducción ('libre' o 'google').
+    """
     data = request.get_json(silent=True) or {}
     text = data.get('text', '').strip()
     target = data.get('target', 'es').strip()
@@ -724,7 +896,7 @@ def api_translate():
         return jsonify({'error': 'No text'}), 400
 
     try:
-        # Intentar con LibreTranslate (público, gratuito, sin API key)
+        # Estrategia 1: Intentar con LibreTranslate
         resp = requests.post('https://libretranslate.com/translate', json={
             'q': text,
             'source': 'auto',
@@ -738,7 +910,7 @@ def api_translate():
             if translated:
                 return jsonify({'translated': translated, 'source': 'libre'})
 
-        # Fallback: Google Translate via web scraping (sin API key)
+        # Estrategia 2 (Fallback): Google Translate via web scraping móvil (sin requerir API Keys)
         from urllib.parse import quote
         url = f'https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl={target}&dt=t&q={quote(text[:5000])}'
         resp2 = requests.get(url, timeout=10, headers={
@@ -756,26 +928,34 @@ def api_translate():
         return jsonify({'error': str(e)}), 502
 
 
-# Registrar rutas adicionales (blueprints)
+# Registrar rutas adicionales e integraciones (blueprints de Flask)
 from routes import admin_bp, api_bp, browse_bp
 app.register_blueprint(admin_bp)
 app.register_blueprint(api_bp)
 app.register_blueprint(browse_bp)
 
 
-# Player frame (persistent iframe)
+# Vista del contenedor principal de reproducción (Iframe de persistencia de audio)
 @app.route('/player_frame')
 def player_frame():
+    """Sirve el marco iframe dedicado del reproductor para aislar y blindar el AudioContext."""
     return render_template('player_frame.html')
 
 
 # ============================================
-# CONTEXT PROCESSOR - Variables globales para templates
+# CONTEXT PROCESSOR (INYECCIÓN DE JINJA)
 # ============================================
-
 @app.context_processor
 def inject_user_info():
-    """Inyecta información del usuario en todos los templates"""
+    """
+    Inyecta información y permisos del usuario automáticamente en todas las plantillas HTML (templates).
+    
+    Evita la necesidad de pasar redundante y manualmente variables comunes como 'is_admin'
+    o la instancia del usuario a cada función render_template en la aplicación.
+    
+    Returns:
+        dict: Variables agregadas al contexto global del motor de plantillas Jinja2.
+    """
     from flask import g
     is_admin = False
     usuario_obj = None
@@ -787,23 +967,49 @@ def inject_user_info():
         else:
             usuario_obj = g.user_info
         is_admin = g.user_is_admin
-    return dict(is_admin=is_admin, es_favoritos=False, current_user=usuario_obj, app_version=Config.APP_VERSION)
+    return dict(
+        is_admin=is_admin,
+        es_favoritos=False,
+        current_user=usuario_obj,
+        app_version=Config.APP_VERSION
+    )
 
 
 # ============================================
-# RUTAS DE AUDIO Y LETRAS
+# SERVIDORES DE AUDIO, LETRAS Y MULTIMEDIA
 # ============================================
-
 
 @app.route('/audio/<int:cancion_id>')
 def servir_audio(cancion_id):
-    """Sirve el archivo de audio de una canción"""
+    """
+    Sirve el flujo del archivo binario de audio de una canción.
+    
+    > [!IMPORTANT]
+    > **Streaming Eficiente y Navegación Seekable:**
+    > Este endpoint hace uso del parámetro `conditional=True` en `send_file`. Esto le indica
+    > a Flask que procese y responda de manera nativa a cabeceras de rango HTTP 206 ('Range').
+    > Esto es crucial para los reproductores multimedia HTML5, ya que les permite realizar
+    > peticiones por rangos de bytes para rebobinar, saltar adelante en la pista de forma instantánea
+    > y amortiguar el búfer de reproducción sin descargar el archivo de audio completo de golpe.
+    
+    Aplica heurísticas adaptativas de búsqueda de rutas:
+    1. Ruta absoluta de archivo original tal como se indexó.
+    2. Conversión inteligente de rutas absolutas de Windows (ej. 'G:\\Musica\\...') a sistemas de
+       montaje compartidos en Docker/Linux (ej. '/music/Musica/...').
+    3. Resolución y validación en rutas relativas al directorio de ejecución local de DuckSound.
+    
+    Args:
+        cancion_id (int): Identificador de la canción a transmitir.
+        
+    Returns:
+        Response: Stream binario de audio con soporte de solicitudes por rangos parciales.
+    """
     cancion = Cancion.query.get_or_404(cancion_id)
-    # Intenta servir el archivo; si no existe, intenta mapear rutas Windows montadas en Docker
     original_path = cancion.ruta_archivo_audio
     tried_paths = [original_path]
 
     def _mime_for(p):
+        """Asigna el MIME Type correcto de transmisión según la extensión del archivo."""
         ext = Path(p).suffix.lower()
         return {
             '.mp3': 'audio/mpeg',
@@ -813,18 +1019,18 @@ def servir_audio(cancion_id):
             '.ogg': 'audio/ogg'
         }.get(ext, 'audio/mpeg')
 
+    # 1. Intentar servir por la ruta exacta mapeada directamente en disco
     if os.path.exists(original_path):
         print(f"Serving audio (original): {original_path}")
         return send_file(original_path, mimetype=_mime_for(original_path), conditional=True, max_age=86400)
 
-    # Si la ruta no existe, intentar convertir rutas Windows como 'G:\\...' a la ruta montada '/music/...'
+    # 2. Conversión Heurística de rutas Windows montadas en Docker/Linux
     try:
         p = original_path.replace('\\\\', '/').replace(':/', ':/')
-        # Si comienza con letra de unidad, mapeamos a /music
         import re
+        # Detecta letras de unidades Windows típicas como 'G:/MiMusica/cancion.mp3'
         m = re.match(r'^([A-Za-z]):/(.*)', p)
         if m:
-            drive = m.group(1)
             rest = m.group(2)
             alt = '/music/' + rest
             tried_paths.append(alt)
@@ -834,7 +1040,7 @@ def servir_audio(cancion_id):
     except Exception as e:
         print('Error mapping audio path:', e)
 
-    # Último intento: comprobar si la ruta es relativa dentro del proyecto
+    # 3. Intentar como ruta relativa en el directorio de trabajo actual
     rel = os.path.join(os.getcwd(), original_path)
     tried_paths.append(rel)
     if os.path.exists(rel):
@@ -847,29 +1053,43 @@ def servir_audio(cancion_id):
 
 @app.route('/lyrics/<int:cancion_id>')
 def servir_lyrics(cancion_id):
-    """Sirve el archivo .lrc de una canción, intentando descargarlo si no existe localmente"""
+    """
+    Sirve archivos de letras LRC sincronizadas para el reproductor de karaoke.
+    
+    Aplica una estrategia de resolución dinámica:
+    1. Consulta al módulo `lyrics_fetcher` para comprobar si existe la letra; si no existe,
+       realiza una descarga asíncrona automática en tiempo real desde APIs libres en internet.
+    2. En caso de fallback, busca el archivo de letras físico mapeado localmente en la base de datos,
+       aplicando las mismas heurísticas de mapeo de directorios cruzados Windows/Docker.
+       
+    Args:
+        cancion_id (int): ID de la canción asociada.
+        
+    Returns:
+        Response: Archivo .lrc en texto plano con cabeceras de codificación UTF-8.
+    """
     from lyrics_fetcher import obtener_o_descargar_letra
     
     cancion = Cancion.query.get_or_404(cancion_id)
     
-    # Intentar obtener o descargar la letra
+    # Intentar obtener la letra descargada u obtenerla dinámicamente mediante el scraper
     resultado = obtener_o_descargar_letra(cancion_id)
     
     if resultado and resultado.get('letra'):
-        # Devolver el contenido como texto plano
+        # Retornar contenido de letras LRC directo como texto plano UTF-8 con caché
         from flask import Response, make_response
         response = make_response(Response(resultado['letra'], mimetype='text/plain; charset=utf-8'))
         response.headers['Cache-Control'] = 'public, max-age=3600'
         return response
     
-    # Si lyrics_fetcher no pudo obtenerla, intentar servir el archivo directamente (fallback)
+    # Fallback físico directo si el servidor de scraping falló
     original_path = cancion.ruta_archivo_lrc
     tried_paths = [original_path]
 
     if original_path and os.path.exists(original_path):
         return send_file(original_path, mimetype='text/plain', max_age=3600)
 
-    # Intentar mapear rutas Windows montadas en Docker (ej: G:\...) a /music/...
+    # Conversión de rutas Windows a volúmenes Docker
     try:
         if original_path:
             p = original_path.replace('\\\\', '/').replace(':/', ':/')
@@ -884,7 +1104,7 @@ def servir_lyrics(cancion_id):
     except Exception as e:
         print('Error mapping lyrics path:', e)
 
-    # Intentar ruta relativa dentro del proyecto
+    # Buscar bajo ruta relativa
     rel = os.path.join(os.getcwd(), original_path or '')
     tried_paths.append(rel)
     if original_path and os.path.exists(rel):
@@ -895,7 +1115,19 @@ def servir_lyrics(cancion_id):
 
 
 def _extract_cover_from_file(audio_path):
-    """Extrae portada embebida de FLAC (pictures) o MP3 (APIC tags)."""
+    """
+    Extrae la portada incrustada directamente en los metadatos binarios del archivo de audio.
+    
+    Soporta:
+    - Portadas tipo bloque de imagen en metadatos de archivos FLAC (Vorbis Comments - pictures).
+    - Portadas incrustadas en frames APIC dentro de etiquetas ID3v2 para archivos MP3.
+    
+    Args:
+        audio_path (str): Ruta al archivo físico de audio.
+        
+    Returns:
+        bytes: Datos binarios de la imagen de portada extraída, o None si no se encuentra.
+    """
     if not audio_path or not os.path.exists(audio_path):
         return None
     try:
@@ -904,10 +1136,10 @@ def _extract_cover_from_file(audio_path):
         af = MFile(audio_path)
         if af is None:
             return None
-        # FLAC, Ogg, etc. usan .pictures
+        # FLAC y Ogg encapsulan portadas en el atributo .pictures
         if hasattr(af, 'pictures') and af.pictures:
             return af.pictures[0].data
-        # MP3 usa APIC frames en ID3 tags
+        # MP3 almacena portadas en frames APIC dentro de las etiquetas ID3
         if hasattr(af, 'tags') and af.tags is not None:
             apic = af.tags.getall('APIC')
             if apic:
@@ -916,14 +1148,35 @@ def _extract_cover_from_file(audio_path):
         pass
     return None
 
+
 @app.route('/album-art/<int:cancion_id>')
 def servir_album_art(cancion_id):
-    """Sirve la imagen del álbum de una canción"""
+    """
+    Sirve la imagen de portada de álbum asociada a una canción.
+    
+    Posee una arquitectura de búsqueda por cascada ultra-robusta de 6 niveles:
+    1. Ruta física original registrada en base de datos.
+    2. Nueva ubicación centralizada y persistente de portadas ('ALBUM_ART_FOLDER').
+    3. Ubicación clásica heredada ('media/album_art').
+    4. Rutas compartidas absolutas heredadas bajo Docker ('/music/album_art').
+    5. Conversión de mapeo de rutas híbridas Windows-Linux.
+    6. Extracción directa "al vuelo" del artwork incrustado en el archivo de audio.
+    
+    Si todas las búsquedas fallan, devuelve de forma elegante un gráfico vectorial SVG
+    dinámico con un icono de nota musical en lugar de un error 404, previniendo fallos en UI.
+    
+    Args:
+        cancion_id (int): Identificador de la canción.
+        
+    Returns:
+        Response: Imagen JPG/PNG/WebP encontrada o archivo SVG vectorial.
+    """
     cancion = Cancion.query.get_or_404(cancion_id)
     original_path = cancion.ruta_imagen_album
     tried_paths = [original_path]
 
     def _image_mime_for(p):
+        """Asigna cabeceras MIME de imagen idóneas."""
         ext = Path(p).suffix.lower()
         return {
             '.jpg': 'image/jpeg',
@@ -932,11 +1185,12 @@ def servir_album_art(cancion_id):
             '.webp': 'image/webp'
         }.get(ext, 'image/jpeg')
 
+    # 1. Intentar ruta original exacta en disco
     if original_path and os.path.exists(original_path):
         mimetype = _image_mime_for(original_path)
         return send_file(original_path, mimetype=mimetype, max_age=86400)
 
-    # Intentar en ALBUM_ART_FOLDER (nueva ubicación persistente)
+    # 2. Carpeta centralizada ALBUM_ART_FOLDER (PWA caché persistente)
     if original_path:
         alt_name = Path(original_path).name
         alt_path = Config.ALBUM_ART_FOLDER / alt_name
@@ -945,7 +1199,7 @@ def servir_album_art(cancion_id):
             mimetype = _image_mime_for(str(alt_path))
             return send_file(str(alt_path), mimetype=mimetype)
 
-    # Intentar en la ubicación antigua (MEDIA_FOLDER / 'album_art' para local)
+    # 3. Carpeta clásica de archivos multimedia del proyecto
     if hasattr(Config, 'MEDIA_FOLDER') and original_path:
         old_path = Path(str(Config.MEDIA_FOLDER)) / 'album_art' / Path(original_path).name
         tried_paths.append(str(old_path))
@@ -953,7 +1207,7 @@ def servir_album_art(cancion_id):
             mimetype = _image_mime_for(str(old_path))
             return send_file(str(old_path), mimetype=mimetype)
 
-    # Intentar en /music/album_art/ (Docker legacy)
+    # 4. Volumen heredado /music/album_art/ en contenedores Docker
     if original_path:
         docker_legacy = Path('/music/album_art') / Path(original_path).name
         tried_paths.append(str(docker_legacy))
@@ -961,7 +1215,7 @@ def servir_album_art(cancion_id):
             mimetype = _image_mime_for(str(docker_legacy))
             return send_file(str(docker_legacy), mimetype=mimetype)
 
-    # Intentar mapear rutas Windows montadas en Docker (ej: G:\...) a /music/...
+    # 5. Mapeo de sistemas de archivos cruzados Windows/Docker
     try:
         if original_path:
             p = original_path.replace('\\\\', '/').replace(':/', ':/')
@@ -977,16 +1231,17 @@ def servir_album_art(cancion_id):
     except Exception as e:
         print('Error mapping album art path:', e)
 
-    # Intentar ruta relativa dentro del proyecto
+    # 6. Intentar ruta relativa
     rel = os.path.join(os.getcwd(), original_path or '')
     tried_paths.append(rel)
     if original_path and os.path.exists(rel):
         mimetype = _image_mime_for(rel)
         return send_file(rel, mimetype=mimetype)
 
-    # Último recurso: extraer portada directamente del archivo de audio
+    # 7. EXTRACCIÓN BINARIA: Extraer metadatos incrustados en la propia pista
     img_data = _extract_cover_from_file(cancion.ruta_archivo_audio)
     if img_data is None and cancion.ruta_archivo_audio:
+        # Intentar extracción mapeando la ruta de audio en Docker si fuese necesario
         p = cancion.ruta_archivo_audio.replace('\\\\', '/').replace(':/', ':/')
         import re
         m = re.match(r'^([A-Za-z]):/(.*)', p)
@@ -994,12 +1249,13 @@ def servir_album_art(cancion_id):
             alt = '/music/' + m.group(2)
             tried_paths.append(f"audio_fallback:{alt}")
             img_data = _extract_cover_from_file(alt)
+            
     if img_data:
         import io
         return send_file(io.BytesIO(img_data), mimetype='image/jpeg')
 
+    # Fallback total de visualización: Servir un marcador de posición SVG vectorial moderno
     print(f"Album art not found for id={cancion_id}. Tried: {tried_paths}")
-    # Devolver placeholder SVG con icono de nota musical (sólido, sin emoji)
     placeholder_svg = '''<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300">
         <rect width="300" height="300" fill="#2a2a33" rx="12"/>
         <circle cx="150" cy="150" r="70" fill="none" stroke="#9ca3af" stroke-width="2" opacity="0.3"/>
@@ -1010,7 +1266,17 @@ def servir_album_art(cancion_id):
 
 @app.route('/service-worker.js')
 def service_worker():
-    """Sirve el service worker desde la raíz para que tenga scope sobre toda la app"""
+    """
+    Sirve el Service Worker de la PWA desde la raíz del dominio web.
+    
+    Es un requerimiento del estándar W3C servir el Service Worker en la raíz ('/') para que
+    su ámbito de interceptación de red (scope) cubra la totalidad de la aplicación.
+    Sobrescribe las cabeceras HTTP de caché para forzar al navegador a revalidar el script
+    siempre, garantizando la carga inmediata de actualizaciones.
+    
+    Returns:
+        Response: Archivo service-worker.js.
+    """
     from flask import send_from_directory, make_response
     response = make_response(send_from_directory('static/js', 'service-worker.js', mimetype='application/javascript'))
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
@@ -1018,31 +1284,54 @@ def service_worker():
     response.headers['Expires'] = '0'
     return response
 
+
+# ============================================
+# ENDPOINTS API AUXILIARES DE CANCIONES
+# ============================================
+
 @app.route('/api/canciones')
 def api_canciones():
-    """API endpoint para obtener todas las canciones en JSON"""
+    """
+    Retorna la lista de todas las canciones registradas en la biblioteca en formato JSON.
+    
+    Returns:
+        JSON: Lista de diccionarios serializados de canciones.
+    """
     canciones = Cancion.query.all()
     return jsonify([c.to_dict() for c in canciones])
 
 
 @app.route('/api/cancion/<int:cancion_id>')
 def api_cancion(cancion_id):
-    """API endpoint para obtener una canción específica"""
+    """
+    Retorna la información y metadatos detallados de una única canción específica.
+    
+    Args:
+        cancion_id (int): Identificador de la canción.
+        
+    Returns:
+        JSON: Canción serializada.
+    """
     cancion = Cancion.query.get_or_404(cancion_id)
     return jsonify(cancion.to_dict())
 
 
+# ============================================
+# ARRANQUE DE LA APLICACIÓN
+# ============================================
 if __name__ == '__main__':
     print("=" * 60)
     print("🎵 PLATAFORMA DE STREAMING DE MÚSICA CON KARAOKE 🎵")
     print("DuckSound - v" + Config.APP_VERSION)
     print("Servidor iniciado en: http://0.0.0.0:8604")
     
-    # Waitress multi-hilo para desarrollo local en Windows
+    # Intentar utilizar Waitress multi-hilo para alto rendimiento y soporte óptimo de concurrencia
     try:
         from waitress import serve
         print("Usando Waitress (8 threads)...")
         serve(app, host='0.0.0.0', port=8604, threads=8)
     except ImportError:
+        # Servidor de desarrollo Flask por defecto si Waitress no está disponible en el entorno
         print("Waitress no encontrado, usando servidor de desarrollo Flask...")
         app.run(host='0.0.0.0', port=8604, debug=False)
+

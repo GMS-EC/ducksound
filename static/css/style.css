@@ -1462,6 +1462,7 @@ body {
    ============================================ */
 .admin-container {
   max-width: 700px;
+  margin: 0 auto;
 }
 
 .admin-container h1 {
@@ -1541,6 +1542,46 @@ body {
 
 .admin-back:hover {
   color: var(--text-bright);
+}
+
+/* Centered Profile Container */
+.profile-container {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+/* Premium Back Button */
+.btn-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  border-radius: 20px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-light);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all var(--transition);
+  margin-bottom: 24px;
+}
+
+.btn-back:hover {
+  background: var(--surface-3);
+  border-color: var(--border-hover);
+  color: var(--text-bright);
+  transform: translateX(-4px);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn-back i {
+  font-size: 12px;
+  transition: transform var(--transition);
+}
+
+.btn-back:hover i {
+  transform: translateX(-2px);
 }
 
 /* ============================================

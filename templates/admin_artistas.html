@@ -4,6 +4,9 @@
 
 {% block content %}
 <div class="admin-container">
+    <a href="{{ url_for('admin.admin_panel') }}" class="btn-back">
+        <i class="fa-solid fa-arrow-left"></i> Volver al Panel
+    </a>
     <div class="admin-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:12px">
         <div>
             <h1><i class="fa-solid fa-user-group" style="color:var(--accent);margin-right:8px"></i> Gestionar Artistas</h1>
@@ -127,6 +130,9 @@
 </div>
 
 <style>
+.admin-container {
+    max-width: 1200px;
+}
 #artist-modal-overlay {
     position: fixed; top:0; left:0; width:100%; height:100%;
     background:rgba(0,0,0,0.6); z-index:99999;

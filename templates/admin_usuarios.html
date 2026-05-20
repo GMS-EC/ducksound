@@ -4,6 +4,9 @@
 
 {% block content %}
 <div class="admin-container">
+    <a href="{{ url_for('admin.admin_panel') }}" class="btn-back">
+        <i class="fa-solid fa-arrow-left"></i> Volver al Panel
+    </a>
     <div class="admin-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:40px">
         <div>
             <h1><i class="fa-solid fa-users" style="color:var(--accent);margin-right:8px"></i> Gestionar Usuarios</h1>

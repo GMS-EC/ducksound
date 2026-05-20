@@ -1,14 +1,20 @@
-// Player frame: runs inside iframe, manages audio and UI, communicates with parent via postMessage
+// Entorno de ejecución del Reproductor (Iframe Sandbox)
+// Este script corre en un entorno aislado (iframe) para proteger el contexto de audio principal
+// y evitar interrupciones de reproducción al navegar por la SPA.
 (function(){
-    // Create UI inside body
+    // =========================================================================
+    // 1. CONSTRUCCIÓN DE LA INTERFAZ DE USUARIO (DOM) DENTRO DEL IFRAME
+    // =========================================================================
     document.body.style.margin = '0';
     const container = document.createElement('div');
     container.style.cssText = 'display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--surface);color:var(--text);height:100%;box-sizing:border-box;border-top:1px solid rgba(0,0,0,0.08);';
 
+    // Contenedor para la portada del álbum
     const cover = document.createElement('div');
     cover.style.cssText = 'width:56px;height:56px;background:#222;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px';
     cover.textContent = '🎵';
 
+    // Contenedor para metadatos del tema actual
     const meta = document.createElement('div');
     meta.style.cssText = 'flex:1;min-width:0';
     const titleEl = document.createElement('div');
@@ -20,6 +26,7 @@
     artistEl.textContent = '';
     meta.appendChild(titleEl); meta.appendChild(artistEl);
 
+    // Controles físicos del reproductor embebido
     const controls = document.createElement('div');
     controls.style.display = 'flex'; controls.style.gap='8px';
     const btnPrev = document.createElement('button'); btnPrev.textContent='⏮';
@@ -30,28 +37,47 @@
     container.appendChild(cover); container.appendChild(meta); container.appendChild(controls);
     document.body.appendChild(container);
 
-    // === WEB AUDIO API & DUAL BUFFER SETUP ===
+    // =========================================================================
+    // 2. CONFIGURACIÓN DE WEB AUDIO API Y SISTEMA DE BUFFER DUAL (GAPLESS)
+    // =========================================================================
+    // El Buffer Dual utiliza dos elementos de audio independientes que se alternan.
+    // Esto permite cargar en segundo plano la siguiente canción antes de que termine
+    // la actual, garantizando transiciones cruzadas (crossfade) perfectas.
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     const audioCtx = new AudioContext();
 
+    // Crear los dos elementos de audio HTML5 de forma programática
     const audio1 = document.createElement('audio'); audio1.preload='auto'; audio1.crossOrigin='anonymous'; audio1.style.display='none'; document.body.appendChild(audio1);
     const audio2 = document.createElement('audio'); audio2.preload='auto'; audio2.crossOrigin='anonymous'; audio2.style.display='none'; document.body.appendChild(audio2);
 
+    // Enlazar las fuentes de los elementos HTML5 al flujo gráfico de Web Audio API
     const source1 = audioCtx.createMediaElementSource(audio1);
     const source2 = audioCtx.createMediaElementSource(audio2);
+    
+    // Nodos de Ganancia independientes para controlar los volumenes individuales (fundidos)
     const gainNode1 = audioCtx.createGain();
     const gainNode2 = audioCtx.createGain();
+    
+    // Nodo de Ganancia maestro para el control de volumen global del reproductor
     const masterGain = audioCtx.createGain();
 
+    // Estructura de conexiones del grafo de audio:
+    // audio1 -> source1 -> gainNode1 -\
+    //                                  +-> masterGain -> Altavoces (audioCtx.destination)
+    // audio2 -> source2 -> gainNode2 -/
     source1.connect(gainNode1); gainNode1.connect(masterGain);
     source2.connect(gainNode2); gainNode2.connect(masterGain);
     masterGain.connect(audioCtx.destination);
 
+    // Punteros dinámicos para conmutar entre el reproductor ACTIVO y el SIGUIENTE
     let activeAudio = audio1;
     let activeGain = gainNode1;
     let nextAudio = audio2;
     let nextGain = gainNode2;
 
+    // =========================================================================
+    // 3. ESTADOS DE LA MÁQUINA DE REPRODUCCIÓN
+    // =========================================================================
     let playlist = [];
     let queuedSongs = [];
     let currentIndex = -1;
@@ -62,13 +88,14 @@
     let _lastSentTime = 0;
     let _volume = 1.0;
     let crossfadeEnabled = true;
-    let crossfadeDuration = 3; // seconds
+    let crossfadeDuration = 3; // segundos
     let nextSongPrepared = false;
     let crossfadeTriggered = false;
     let _seekTo = 0;
     let _seekListener = null;
 
-    masterGain.gain.value = _volume * _volume; // Curva exponencial
+    // Aplicar curva exponencial al volumen maestro para una respuesta perceptiva natural
+    masterGain.gain.value = _volume * _volume;
 
     function normalizeSong(song){
         if (!song) return song;
@@ -93,11 +120,9 @@
         const queued = normalizeSong(song);
         if (!queued || !queued.id) return currentIndex;
 
-        // Buscar la canción en el playlist sin moverla
         const existingIdx = playlist.findIndex(s => s && s.id === queued.id);
         if (existingIdx !== -1) return existingIdx;
 
-        // No existe en el playlist, agregarla después de la actual
         const insertAt = Math.max(0, currentIndex + 1);
         playlist.splice(insertAt, 0, queued);
         if (insertAt <= currentIndex) currentIndex += 1;
@@ -118,7 +143,6 @@
             return nextIdx;
         }
         const nextIdx = currentIndex + 1;
-        // Si no hay repetición y es la última canción, no avanzar
         if (repeatMode === 'none' && nextIdx >= playlist.length) return currentIndex;
         return nextIdx % playlist.length;
     }
@@ -135,14 +159,15 @@
         }
     }
 
+    /**
+     * Consulta el nivel de ganancia acústico (ReplayGain) y ajusta el volumen para estandarizar a -14 dBFS.
+     */
     async function fetchReplayGain(songId) {
         try {
             const res = await fetch('/api/audio-info/' + songId);
             const data = await res.json();
             if (data.rms_level != null) {
-                // Target loudness -14 dBFS
                 const offset_db = -14 - data.rms_level;
-                // Limit amplification to +12dB to prevent clipping
                 const safe_offset = Math.min(offset_db, 12);
                 return Math.pow(10, safe_offset / 20);
             }
@@ -164,10 +189,12 @@
         img.src = coverUrl;
     }
 
+    /**
+     * Función que activa y reproduce un tema, gestionando el crossfade entre el buffer activo y el siguiente.
+     */
     async function playIndex(idx, isCrossfading = false){
         if (idx < 0 || idx >= playlist.length) return;
         
-        // If AudioContext is suspended (browser policy), resume it
         if (audioCtx.state === 'suspended') {
             await audioCtx.resume();
         }
@@ -180,7 +207,6 @@
             if (pos !== -1) shuffledOrder.splice(pos, 1);
         }
 
-        // Visual updates
         titleEl.textContent = s.titulo || 'Sin título';
         artistEl.textContent = s.artista || '';
         if (s.cover) {
@@ -188,38 +214,35 @@
             extractColor(s.cover);
         } else {
             cover.innerHTML = '🎵';
-            window.parent.postMessage({type: 'themeColor', color: [30, 215, 96]}, '*'); // Default green
+            window.parent.postMessage({type: 'themeColor', color: [30, 215, 96]}, '*');
         }
 
-        // Fetch ReplayGain offset
         const replayGainValue = await fetchReplayGain(s.id);
 
-        // Remover listener de seek que se adjuntó al restaurar estado (evita que busque la posición vieja)
         if (_seekListener) {
             activeAudio.removeEventListener('loadedmetadata', _seekListener);
             _seekListener = null;
         }
 
         if (!isCrossfading) {
-            // Hard stop current
+            // DETENCIÓN INMEDIATA: Aplicar ganancia directamente
             activeAudio.pause();
             activeAudio.src = s.audio;
             activeGain.gain.setValueAtTime(replayGainValue, audioCtx.currentTime);
             activeAudio.play().catch(()=>{});
             currentIndex = idx;
         } else {
-            // We are crossfading: Swap active/next pointers
+            // TRANSICIÓN CRUZADA (CROSSFADE): Conmutar nodos y aplicar fundidos (fades)
             const tempA = activeAudio; activeAudio = nextAudio; nextAudio = tempA;
             const tempG = activeGain; activeGain = nextGain; nextGain = tempG;
 
-            // activeAudio is already preloaded with s.audio!
             activeAudio.play().catch(()=>{});
             
-            // Fade out the old track (now nextAudio)
+            // Fade out canción antigua
             nextGain.gain.setTargetAtTime(0, audioCtx.currentTime, crossfadeDuration / 3);
             setTimeout(() => { nextAudio.pause(); }, crossfadeDuration * 1000);
             
-            // Fade in the new track (activeAudio) to its ReplayGain target
+            // Fade in canción nueva hasta alcanzar ReplayGain
             activeGain.gain.setValueAtTime(0, audioCtx.currentTime);
             activeGain.gain.setTargetAtTime(replayGainValue, audioCtx.currentTime, crossfadeDuration / 3);
             currentIndex = idx;
@@ -231,7 +254,6 @@
         crossfadeTriggered = false;
         nextSongPrepared = false;
         
-        // Resetear tiempo guardado al iniciar canción nueva
         try{
             const saved = JSON.parse(localStorage.getItem('player_state')||'{}');
             saved.currentIndex = currentIndex;
@@ -256,23 +278,17 @@
         const nextSongs = [];
         try{
             const queuedIds = new Set();
-            
-            // Current song first (so the user can see where they are)
             const currentSong = normalizeSong(playlist[currentIndex] || null);
             if (currentSong && currentSong.id) {
                 nextSongs.push({id: currentSong.id, titulo: currentSong.titulo, artista: currentSong.artista, cover: currentSong.cover, current: true});
                 queuedIds.add(currentSong.id);
             }
-            
-            // Queued songs
             queuedSongs.forEach(song => {
                 const s = normalizeSong(song);
                 if (!s || !s.id || queuedIds.has(s.id)) return;
                 queuedIds.add(s.id);
                 nextSongs.push({id: s.id, titulo: s.titulo, artista: s.artista, cover: s.cover, queued: true});
             });
-            
-            // Upcoming playlist songs (up to 20 total)
             const maxTotal = 20;
             if (isShuffled){
                 if (!shuffledOrder.length) rebuildShuffleOrder();
@@ -300,6 +316,9 @@
         parent.postMessage({type:'state', state:{currentIndex, isPlaying, song: currentSong, upnext: nextSongs, shuffled: isShuffled, repeat: repeatMode, volume: _volume}}, window.location.origin);
     }
 
+    // =========================================================================
+    // 4. CONTROLADORES DE EVENTOS Y BINDINGS DE AUDIO
+    // =========================================================================
     btnPlay.addEventListener('click', ()=>{
         if (!activeAudio.src) return;
         if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -336,7 +355,7 @@
                 const t = aud.currentTime || 0;
                 const d = aud.duration || 0;
 
-                // Gapless/Crossfade trigger
+                // Lógica de detección automática para crossfade (Gapless)
                 if (crossfadeEnabled && d > 0 && !crossfadeTriggered && (d - t) <= crossfadeDuration) {
                     crossfadeTriggered = true;
                     if (playlist.length && repeatMode !== 'one') {
@@ -345,7 +364,6 @@
                     }
                 }
                 
-                // Preload next track early
                 if (d > 0 && (d - t) <= crossfadeDuration + 5 && !nextSongPrepared) {
                     prepareNextSong();
                 }
@@ -355,7 +373,6 @@
                     parent.postMessage({type:'timeupdate', currentTime: t, duration: d, currentIndex}, window.location.origin);
                 }
                 
-                // Persistir estado cada ~3 segundos
                 if (!window._lastPlaybackSave || Date.now() - window._lastPlaybackSave > 3000) {
                     window._lastPlaybackSave = Date.now();
                     try{
@@ -372,6 +389,9 @@
     bindAudioEvents(audio1);
     bindAudioEvents(audio2);
 
+    // =========================================================================
+    // 5. COMUNICACIÓN Y PERSISTENCIA
+    // =========================================================================
     window.addEventListener('message', (ev)=>{
         if (ev.origin !== window.location.origin) return;
         const msg = ev.data || {};
@@ -431,7 +451,7 @@
             } else if (cmd === 'volume'){
                 const vol = Math.max(0, Math.min(1, Number(msg.value) || 0));
                 _volume = vol;
-                masterGain.gain.value = vol * vol; // Curva exponencial para sensación natural
+                masterGain.gain.value = vol * vol;
                 parent.postMessage({type:'volumeChange', volume: vol}, window.location.origin);
             } else if (cmd === 'toggleMute'){
                 if (masterGain.gain.value > 0){
@@ -486,7 +506,6 @@
                     activeGain.gain.value = gain;
                 });
                 
-                // Restaurar tiempo de reproducción si estaba guardado
                 if (typeof st.currentTime === 'number' && st.currentTime > 0) {
                     _seekTo = st.currentTime;
                     _seekListener = () => {
@@ -496,9 +515,6 @@
                     };
                     activeAudio.addEventListener('loadedmetadata', _seekListener);
                 }
-                
-                // No reproducir automáticamente al recargar la página
-        // if (st.isPlaying){ activeAudio.play().catch(()=>{}); isPlaying=true; btnPlay.textContent='⏸'; }
             }
             setTimeout(postState, 200);
         }

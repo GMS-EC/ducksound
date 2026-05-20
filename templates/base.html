@@ -327,6 +327,7 @@
             if (!isInternalLink(a)) return;
             // ignore links to static assets or admin endpoints
             if (/\.(png|jpg|jpeg|svg|css|js|ico)$/.test(a.pathname)) return;
+            if (a.pathname.startsWith('/admin') || window.location.pathname.startsWith('/admin')) return;
             e.preventDefault();
             ajaxLoad(a.href).then(ok => {
                 if (!ok) {

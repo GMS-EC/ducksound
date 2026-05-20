@@ -4,6 +4,9 @@
 
 {% block content %}
 <div class="admin-container">
+    <a href="{{ url_for('admin.admin_panel') }}" class="btn-back">
+        <i class="fa-solid fa-arrow-left"></i> Volver al Panel
+    </a>
     <div class="admin-header">
         <h1><i class="fa-solid fa-chart-line" style="color:var(--accent);margin-right:8px"></i> Estadísticas Globales</h1>
         <p class="admin-subtitle">Resumen completo del estado de la plataforma y el comportamiento de los usuarios</p>
@@ -146,6 +149,7 @@
 <style>
 .admin-container {
     max-width: 1200px;
+    margin: 0 auto;
     padding: 0 10px;
 }
 .admin-header {

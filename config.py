@@ -6,8 +6,10 @@ BASE_DIR = Path(__file__).resolve().parent
 # Configuración base de la aplicación
 class Config:
     APP_VERSION = '1.2.0'
+    GITHUB_TOKEN = os.environ.get('GITHUB_TOKEN')
 
     # Secret key para sesiones y CSRF
+
     SECRET_KEY = os.environ.get('SECRET_KEY')
     if not SECRET_KEY:
         _secret_file = Path(__file__).resolve().parent / '.secret_key'

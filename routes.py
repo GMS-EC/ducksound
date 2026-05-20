@@ -7,39 +7,50 @@ import uuid
 from datetime import datetime
 from flask import current_app
 
+# Definición de Blueprints para modularizar la aplicación
 admin_bp = Blueprint('admin', __name__)
 api_bp = Blueprint('api', __name__)
 browse_bp = Blueprint('browse', __name__)
 
-# Scan task tracking via Redis (persistente entre procesos)
+# Control del estado del escaneo a través de Redis (mecanismo persistente e independiente de los hilos de Waitress)
 from task_queue import scan_task_set, scan_task_get, scan_set_active, scan_get_active
 
-# Caché en memoria simple para endpoints (evita saturar APIs externas)
+# Estructuras para la caché interna
 import time
 from functools import wraps
 
 
 def _cleanup_old_tasks():
-    """Limpieza manejada por Redis TTL."""
+    """
+    Función de limpieza de tareas obsoletas.
+    Actualmente delegada automáticamente a la expiración de claves por TTL en Redis.
+    """
     pass
 
 
-
-
-
-# Caché en memoria simple para endpoints (evita saturar APIs externas)
+# Diccionario global para la caché en memoria simple
 _route_cache = {}
 
 def route_cache(ttl_seconds=3600):
+    """
+    Decorador para implementar almacenamiento en caché en memoria con tiempo de vida (TTL).
+    
+    Optimiza la velocidad de respuesta del servidor evitando llamadas repetidas a bases de datos
+    o a servicios web externos (como las APIs de MusicBrainz o Deezer).
+    
+    Args:
+        ttl_seconds (int): Tiempo en segundos que los datos permanecerán en caché (por defecto: 1 hora).
+    """
     def decorator(f):
         @wraps(f)
         def wrapper(*args, **kwargs):
+            # Generar una clave de caché única basada en el nombre de la función y sus argumentos
             key = f"{f.__name__}:{args}:{kwargs}"
             now = time.time()
             if key in _route_cache:
                 value, expires = _route_cache[key]
                 if now < expires:
-                    return value
+                    return value # Retornar el valor guardado si no ha expirado
             result = f(*args, **kwargs)
             _route_cache[key] = (result, now + ttl_seconds)
             return result
@@ -48,6 +59,12 @@ def route_cache(ttl_seconds=3600):
 
 
 def _is_admin_session():
+    """
+    Verifica mediante la sesión HTTP si el usuario actual posee rol de administrador.
+    
+    Returns:
+        bool: True si el usuario tiene sesión activa y es administrador, False en caso contrario.
+    """
     if 'user_id' not in session:
         return False
 
@@ -56,6 +73,18 @@ def _is_admin_session():
 
 
 def _is_admin_request():
+    """
+    Mecanismo híbrido de validación de administrador para accesos web y APIs externas.
+    
+    Valida el acceso bajo dos modalidades:
+    1. Sesión activa: Comprobando `_is_admin_session()`.
+    2. Token estático: Verificando la presencia de un token secreto configurado en variables
+       de entorno (`ADMIN_SECRET_TOKEN`) transmitido mediante cabeceras 'Authorization' (Bearer)
+       o la cabecera personalizada 'X-Admin-Token'.
+       
+    Returns:
+        bool: True si la petición proviene de un administrador autorizado.
+    """
     if _is_admin_session():
         return True
 
@@ -73,15 +102,21 @@ def _is_admin_request():
     return token == admin_token
 
 
+# ============================================
+# ACCIONES DE ADMINISTRACIÓN SÍNCRONAS/ASÍNCRONAS
+# ============================================
+
 @admin_bp.route('/admin/escanear', methods=['GET'])
 def escanear_canciones():
-    """Endpoint para que el administrador dispare el escaneo de la carpeta de audio.
-    Ejecuta la función `escanear_carpeta_audio` del módulo `scan_songs`.
+    """
+    Dispara síncronamente el escaneo de canciones en la carpeta de audio configurada.
+    
+    Returns:
+        Render de la plantilla 'scan_result.html' con el resumen de la indexación de música.
     """
     if not _is_admin_request():
         return jsonify({'error': 'Unauthorized'}), 401
 
-    # Llamar a la función de escaneo (estamos dentro del contexto de app)
     try:
         resumen = escanear_carpeta_audio()
     except Exception as e:
@@ -92,10 +127,22 @@ def escanear_canciones():
 
 @admin_bp.route('/admin/clean_metadata', methods=['POST'])
 def admin_clean_metadata():
-    """Agrupa artistas y álbumes duplicados sin requerir un escaneo del disco."""
+    """
+    Inicia un proceso asíncrono en segundo plano para limpiar y normalizar metadatos en la base de datos.
+    
+    Acciones realizadas:
+    1. Busca y elimina canciones de la BD cuyos archivos de audio físicos ya no existan (canciones huérfanas).
+    2. Elimina álbumes y artistas vacíos resultantes de la purga anterior.
+    3. Unifica y agrupa artistas con nombres tipográficamente idénticos tras aplicar normalización de texto.
+    4. Unifica álbumes duplicados asociados al mismo artista mediante el mismo algoritmo.
+    
+    Returns:
+        JSON: Estado del inicio de la tarea y su respectivo UUID de rastreo.
+    """
     if not _is_admin_request():
         return jsonify({'error': 'Unauthorized'}), 401
 
+    # Impedir la ejecución si ya se está ejecutando otra tarea de escaneo o enriquecimiento activa
     existing_tid, existing_task = scan_get_active()
     if existing_tid and existing_task and existing_task.get('status') in ('running', 'enriching'):
         return jsonify({'error': 'scan_in_progress', 'task_id': existing_tid}), 409
@@ -112,12 +159,14 @@ def admin_clean_metadata():
     })
 
     def _run_clean():
+        """Función interna que corre en un hilo de ejecución separado."""
         from models import Artista, Album, db
         from metadata_normalizer import normalizar_artista, normalizar_album
         from app import app
         
         with app.app_context():
             def emit(data):
+                """Actualiza el progreso de la tarea en Redis."""
                 t = scan_task_get(task_id)
                 if t:
                     t.update(data)
@@ -127,6 +176,8 @@ def admin_clean_metadata():
                 import os
                 from models import Cancion
                 emit({'message': 'Eliminando canciones huérfanas...', 'percent': 5})
+                
+                # 1. Purga de canciones inexistentes en disco
                 canciones = Cancion.query.all()
                 eliminadas = 0
                 for c in canciones:
@@ -135,18 +186,21 @@ def admin_clean_metadata():
                         eliminadas += 1
                 if eliminadas > 0:
                     db.session.commit()
-                    # Limpiar álbumes vacíos
+                    
+                    # Eliminar álbumes vacíos resultantes
                     albumes_all = Album.query.all()
                     for a in albumes_all:
                         if not a.canciones:
                             db.session.delete(a)
-                    # Limpiar artistas vacíos
+                            
+                    # Eliminar artistas sin obras asociadas
                     artistas_all = Artista.query.all()
                     for a in artistas_all:
                         if not a.canciones and not a.albums:
                             db.session.delete(a)
                     db.session.commit()
 
+                # 2. Agrupación inteligente de artistas duplicados
                 emit({'message': 'Buscando artistas para agrupar...', 'percent': 10})
                 artistas = Artista.query.all()
                 total = len(artistas)
@@ -155,11 +209,18 @@ def admin_clean_metadata():
                 renombrados = 0
                 
                 for idx, artista in enumerate(artistas):
-                    emit({'percent': 10 + int((idx/total)*40), 'message': f'Artistas: {artista.nombre}', 'processed': idx, 'total': total})
+                    emit({
+                        'percent': 10 + int((idx/total)*40),
+                        'message': f'Artistas: {artista.nombre}',
+                        'processed': idx,
+                        'total': total
+                    })
                     nombre_norm = normalizar_artista(artista.nombre)
                     
+                    # Buscar coincidencia con un ID inferior para unificar
                     artista_existente = Artista.query.filter(Artista.nombre == nombre_norm, Artista.id < artista.id).first()
                     if artista_existente:
+                        # Reasignar obras del artista duplicado al principal
                         for cancion in artista.canciones:
                             cancion.artista_id = artista_existente.id
                         for album in artista.albums:
@@ -171,14 +232,24 @@ def admin_clean_metadata():
                         renombrados += 1
                 db.session.commit()
                 
+                # 3. Unificación de álbumes duplicados del mismo artista
                 emit({'message': 'Buscando álbumes para unificar...', 'percent': 50})
                 albumes = Album.query.all()
                 total_al = len(albumes)
                 for idx, album in enumerate(albumes):
-                    emit({'percent': 50 + int((idx/total_al)*40), 'message': f'Álbumes: {album.titulo}', 'processed': idx, 'total': total_al})
+                    emit({
+                        'percent': 50 + int((idx/total_al)*40),
+                        'message': f'Álbumes: {album.titulo}',
+                        'processed': idx,
+                        'total': total_al
+                    })
                     titulo_norm = normalizar_album(album.titulo)
                     
-                    album_existente = Album.query.filter(Album.titulo == titulo_norm, Album.artista_id == album.artista_id, Album.id < album.id).first()
+                    album_existente = Album.query.filter(
+                        Album.titulo == titulo_norm,
+                        Album.artista_id == album.artista_id,
+                        Album.id < album.id
+                    ).first()
                     if album_existente:
                         for cancion in album.canciones:
                             cancion.album_id = album_existente.id
@@ -187,16 +258,21 @@ def admin_clean_metadata():
                         album.titulo = titulo_norm
                 db.session.commit()
                 
+                # Notificar finalización exitosa
                 emit({
                     'status': 'done',
                     'percent': 100,
                     'message': 'Limpieza terminada con éxito.',
-                    'summary': {'agregadas': 0, 'actualizadas': renombrados, 'omitidas': mergeados, 'procesadas': total + total_al}
+                    'summary': {
+                        'agregadas': 0,
+                        'actualizadas': renombrados,
+                        'omitidas': mergeados,
+                        'procesadas': total + total_al
+                    }
                 })
             except Exception as e:
                 emit({'status': 'error', 'message': str(e), 'percent': 100})
 
-    import threading
     t = threading.Thread(target=_run_clean)
     t.start()
     return jsonify({'message': 'started', 'task_id': task_id})
@@ -204,7 +280,12 @@ def admin_clean_metadata():
 
 @admin_bp.route('/admin/escanear/start', methods=['POST'])
 def admin_scan_start():
-    """Inicia un escaneo completo vía RQ worker."""
+    """
+    Encola una tarea de escaneo completo e indexación asíncrona de canciones en Redis Queue (RQ).
+    
+    Returns:
+        JSON: UUID de seguimiento de la tarea creada.
+    """
     if not _is_admin_request():
         return jsonify({'error': 'Unauthorized'}), 401
 
@@ -213,7 +294,6 @@ def admin_scan_start():
         return jsonify({'error': 'scan_in_progress', 'task_id': existing_tid}), 409
 
     task_id = str(uuid.uuid4())
-
     scan_set_active(task_id)
     scan_task_set(task_id, {
         'task_id': task_id, 'status': 'running', 'percent': 0,
@@ -231,7 +311,12 @@ def admin_scan_start():
 
 @admin_bp.route('/admin/escanear/quick', methods=['POST'])
 def admin_scan_quick():
-    """Inicia un escaneo rápido vía RQ worker."""
+    """
+    Encola una tarea de escaneo rápido asíncrono (valida marcas de modificación y omite lecturas de tags en pistas estables).
+    
+    Returns:
+        JSON: UUID de seguimiento del escaneo rápido.
+    """
     if not _is_admin_request():
         return jsonify({'error': 'Unauthorized'}), 401
 
@@ -240,7 +325,6 @@ def admin_scan_quick():
         return jsonify({'error': 'scan_in_progress', 'task_id': existing_tid}), 409
 
     task_id = str(uuid.uuid4())
-
     scan_set_active(task_id)
     scan_task_set(task_id, {
         'task_id': task_id, 'status': 'running', 'percent': 0,
@@ -258,7 +342,9 @@ def admin_scan_quick():
 
 @admin_bp.route('/admin/escanear/active', methods=['GET'])
 def admin_scan_active():
-    """Devuelve el escaneo activo actual si hay uno en curso."""
+    """
+    Devuelve los datos generales del escaneo activo si hay alguno ejecutándose en este momento.
+    """
     if not _is_admin_request():
         return jsonify({'error': 'Unauthorized'}), 401
 
@@ -267,13 +353,12 @@ def admin_scan_active():
         return jsonify({'task_id': tid, 'status': task.get('status', 'unknown')})
     return jsonify({}), 200
 
-    return jsonify({'active': False}), 200
-
-
 
 @admin_bp.route('/admin/escanear/status/<task_id>', methods=['GET'])
 def admin_scan_status(task_id):
-    """Devuelve el estado de un escaneo iniciado con /admin/escanear/start."""
+    """
+    Monitorea el avance exacto (porcentaje, conteo procesado, archivo actual) de un escaneo en base a su UUID.
+    """
     if not _is_admin_request():
         return jsonify({'error': 'Unauthorized'}), 401
 
@@ -283,13 +368,26 @@ def admin_scan_status(task_id):
     return jsonify(task)
 
 
+# ============================================
+# RENDERS DE ADMINISTRACIÓN Y VERIFICACIÓN
+# ============================================
+
 @admin_bp.route('/admin')
 def admin_panel():
-    """Panel de administración con acciones disponibles."""
+    """
+    Renderiza el Panel de Control del Administrador.
+    
+    Implementa un lector y formateador dinámico del archivo `CHANGELOG.md` del proyecto.
+    Intenta jalar la última versión directamente desde el repositorio en GitHub y, en caso de fallo
+    de conexión, realiza un fallback al archivo físico local. Procesa el markdown estructurando
+    los encabezados de versión y listando ordenadamente cada cambio.
+    
+    Returns:
+        Render de la plantilla 'admin.html'.
+    """
     if not _is_admin_request():
         return jsonify({'error': 'Unauthorized'}), 401
     
-    # Parsear CHANGELOG para mostrarlo en el admin
     import re as _re
     import requests as _requests
     from config import Config, BASE_DIR
@@ -297,16 +395,21 @@ def admin_panel():
     versions = []
     cl_content = ""
     
-    # 1. Intentar obtener el changelog desde GitHub
+    # 1. Intentar obtener el CHANGELOG dinámico remoto desde GitHub (usando token si está configurado)
     try:
         github_url = 'https://raw.githubusercontent.com/GamersEC/ducksound/main/CHANGELOG.md'
-        resp = _requests.get(github_url, timeout=5)
+        headers = {}
+        github_token = current_app.config.get('GITHUB_TOKEN') or os.environ.get('GITHUB_TOKEN')
+        if github_token:
+            headers['Authorization'] = f'token {github_token}'
+        resp = _requests.get(github_url, headers=headers, timeout=5)
         if resp.status_code == 200:
             cl_content = resp.text
     except Exception as e:
         print(f"Remote changelog fetch failed: {e}")
 
-    # 2. Fallback al archivo local
+
+    # 2. Fallback de lectura al changelog físico del proyecto local
     if not cl_content:
         changelog_path = os.path.join(BASE_DIR, 'CHANGELOG.md')
         try:
@@ -316,7 +419,7 @@ def admin_panel():
         except Exception as e:
             print(f"Local changelog read failed: {e}")
 
-    # 3. Parseo robusto línea por línea
+    # 3. Parseador robusto de secciones y listados del archivo CHANGELOG
     if cl_content:
         lines = cl_content.splitlines()
         current_version = None
@@ -326,7 +429,7 @@ def admin_panel():
             stripped = line.strip()
             if not stripped: continue
             
-            # Detectar inicio de versión: ## [1.2.0] ...
+            # Detectar cabecera de versión: ## [1.2.0] o ## [1.2.0] - YYYY-MM-DD
             if stripped.startswith('## '):
                 header = stripped[3:].strip()
                 m = _re.match(r'\[?([\d\.]+)\]?(\s*-\s*(.+))?', header)
@@ -346,35 +449,31 @@ def admin_panel():
             
             if not current_version: continue
             
-            # Detectar sección: ### Título
+            # Detectar sección o título secundario: ### Título de Sección
             if stripped.startswith('### '):
                 title_text = stripped[4:].strip()
-                # Si es el primer ###, es el título de la versión
                 if not current_version['title']:
                     current_version['title'] = title_text
                 else:
-                    # Si ya hay título, es una sección de cambios
                     if current_section:
                         current_version['sections'].append(current_section)
                     current_section = {'title': title_text, 'entries': []}
                 continue
                 
-            # Detectar subsección: #### Subtítulo
+            # Detectar subsección
             if stripped.startswith('#### '):
                 if current_section:
                     current_version['sections'].append(current_section)
                 current_section = {'title': stripped[5:].strip(), 'entries': []}
                 continue
                 
-            # Detectar entrada: - Cambio
+            # Extraer e insertar viñetas de cambios
             if stripped.startswith('- '):
                 entry = stripped[2:].strip()
                 if not current_section:
-                    # Crear sección por defecto si no hay una
                     current_section = {'title': 'Cambios', 'entries': []}
                 current_section['entries'].append(entry)
         
-        # Añadir última sección si existe
         if current_version and current_section:
             current_version['sections'].append(current_section)
     
@@ -382,22 +481,36 @@ def admin_panel():
 
 
 @admin_bp.route('/admin/check-update', methods=['GET'])
-@route_cache(ttl_seconds=3600)  # Caché de 1 hora
+@route_cache(ttl_seconds=3600)
 def admin_check_update():
-    """Consulta GitHub Releases para verificar si hay una versión más nueva."""
+    """
+    Compara la versión local instalada con el tag del release más reciente publicado en GitHub.
+    
+    Returns:
+        JSON: Estado del comparador, release name, y si hay una actualización disponible.
+    """
     if not _is_admin_request():
         return jsonify({'error': 'Unauthorized'}), 401
 
     import requests as _requests
     from flask import current_app
     current_version = current_app.config.get('APP_VERSION', '1.0.0')
+    github_token = current_app.config.get('GITHUB_TOKEN') or os.environ.get('GITHUB_TOKEN')
+    
+    headers = {
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'DuckSound-UpdateChecker'
+    }
+    if github_token:
+        headers['Authorization'] = f'token {github_token}'
+        
     try:
         resp = _requests.get(
             'https://api.github.com/repos/GamersEC/ducksound/releases/latest',
-            headers={'Accept': 'application/vnd.github.v3+json',
-                     'User-Agent': 'DuckSound-UpdateChecker'},
+            headers=headers,
             timeout=8
         )
+
         if resp.status_code == 200:
             data = resp.json()
             latest_tag = data.get('tag_name', '').lstrip('vV')
@@ -423,10 +536,18 @@ def admin_check_update():
         return jsonify({'error': str(e), 'current': current_version}), 502
 
 
+# ============================================
+# ENRIQUECIMIENTO DE METADATOS DE ARTISTAS
+# ============================================
 
 @admin_bp.route('/admin/enrich-artists', methods=['POST'])
 def admin_enrich_artists():
-    """Enriquece todos los artistas sin foto/biografía desde APIs públicas."""
+    """
+    Enriquece masivamente de forma asíncrona artistas que carecen de biografía o foto de perfil.
+    
+    Returns:
+        JSON: Cantidad de artistas enriquecidos con éxito de forma agregada.
+    """
     if not _is_admin_request():
         return jsonify({'error': 'Unauthorized'}), 401
 
@@ -445,7 +566,12 @@ def admin_enrich_artists():
 
 @admin_bp.route('/admin/artistas')
 def admin_artistas():
-    """Panel para gestionar artistas (MBID, nombres, etc.)."""
+    """
+    Panel de visualización y edición detallada de la identidad de artistas (MBID, Deezer ID, etc.).
+    
+    Returns:
+        Render de la plantilla 'admin_artistas.html'.
+    """
     if not _is_admin_request():
         return redirect(url_for('login'))
     query = request.args.get('q', '').strip()
@@ -460,7 +586,10 @@ def admin_artistas():
 
 @admin_bp.route('/admin/artistas/preview-metadata', methods=['POST'])
 def admin_preview_artist_metadata():
-    """Proporciona una previsualización de metadatos basada en MBID o Deezer ID."""
+    """
+    Endpoint de consulta instantánea para previsualizar los metadatos y biografía
+    del artista en base a un MusicBrainz ID (MBID) o Deezer ID proporcionado en el body.
+    """
     if not _is_admin_request():
         return jsonify({'error': 'Unauthorized'}), 401
     
@@ -485,6 +614,16 @@ def admin_preview_artist_metadata():
 
 @admin_bp.route('/admin/artistas/<int:artist_id>/update-mbid', methods=['POST'])
 def admin_update_artist_mbid(artist_id):
+    """
+    Actualiza o asigna la identidad canónica de un artista en la base de datos mediante su MBID.
+    
+    Si se cambia el MBID, el sistema elimina los datos biográficos viejos y arranca
+    el sincronizador de forma atómica para inyectar la biografía e imágenes oficiales del nuevo artista.
+    Previene colisiones de nombres o metadatos unificando de forma segura.
+    
+    Args:
+        artist_id (int): Identificador del artista local.
+    """
     try:
         if not _is_admin_request():
             return jsonify({'error': 'Unauthorized'}), 401
@@ -499,7 +638,6 @@ def admin_update_artist_mbid(artist_id):
         deezer_id = (data.get('deezer_id') or '').strip()
         nombre = (data.get('nombre') or '').strip()
         
-        # Resolver el MBID final si se proporcionó Deezer ID
         final_mbid = mbid
         if deezer_id:
             from metadata_fetcher import get_artista_by_deezer_id
@@ -526,7 +664,7 @@ def admin_update_artist_mbid(artist_id):
         db.session.commit()
 
         updated_metadata = {}
-        # Reset and Enrich if the identity has changed (including removing the ID)
+        # Reiniciar y enriquecer si la identidad ha cambiado radicalmente
         if final_mbid != old_mbid:
             artista.foto_url = None
             artista.biografia = None
@@ -555,15 +693,13 @@ def admin_update_artist_mbid(artist_id):
                 updated_metadata['biografia'] = artista.biografia
                 db.session.commit()
             else:
-                # If ID was removed, we just leave metadata as None
                 updated_metadata['foto_url'] = None
                 updated_metadata['biografia'] = None
                 db.session.commit()
         else:
-            # If ID is the same, just return current state
             updated_metadata['foto_url'] = artista.foto_url
             updated_metadata['biografia'] = artista.biografia
-
+ 
         return jsonify({
             'success': True,
             'message': f'Artista "{artista.nombre}" actualizado',
@@ -574,9 +710,12 @@ def admin_update_artist_mbid(artist_id):
         return jsonify({'error': str(e)}), 500
 
 
-
 @admin_bp.route('/admin/artistas/<int:artist_id>/lookup-mbid', methods=['POST'])
 def admin_lookup_artist_mbid(artist_id):
+    """
+    Consulta asíncronamente en los servidores de la base de datos global de MusicBrainz
+    para proponer un MBID compatible basado en el nombre de artista registrado.
+    """
     if not _is_admin_request():
         return jsonify({'error': 'Unauthorized'}), 401
     artista = db.session.get(Artista, artist_id)
@@ -597,9 +736,24 @@ def admin_lookup_artist_mbid(artist_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+# ============================================
+# ESTADÍSTICAS GLOBALES DEL SISTEMA
+# ============================================
+
 @admin_bp.route('/admin/estadisticas')
 def admin_estadisticas():
-    """Panel de estadísticas básicas de la plataforma."""
+    """
+    Construye las estadísticas avanzadas del sistema para el panel de administración.
+    
+    Genera métricas clave calculadas agregando las tablas de la base de datos:
+    - Conteo global de usuarios, canciones, géneros y colecciones.
+    - Top 5 de canciones más reproducidas a nivel global.
+    - Top 1 de artistas más escuchados por la comunidad.
+    - Top 1 de géneros de música favoritos de los usuarios en base al histórico de reproducción.
+    
+    Returns:
+        Render de la plantilla 'admin_stats.html'.
+    """
     if not _is_admin_request():
         return jsonify({'error': 'Unauthorized'}), 401
 
@@ -646,16 +800,18 @@ def admin_estadisticas():
                            top_genre=top_genre)
 
 
-
-
-# --------------------------------------------
-# Endpoints API JSON
-# --------------------------------------------
-
+# ============================================
+# API JSON PARA INTEGRACIÓN CON EL FRONTEND SPA
+# ============================================
 
 @api_bp.route('/api/artist/<int:artist_id>/albums', methods=['GET'])
 def api_albums_by_artist(artist_id):
-    """Devuelve los álbumes de un artista (por id) en JSON"""
+    """
+    Retorna todos los álbumes oficiales asociados a un artista específico en formato JSON.
+    
+    Args:
+        artist_id (int): ID de artista.
+    """
     artista = Artista.query.get_or_404(artist_id)
     albums = Album.query.filter_by(artista_id=artista.id).order_by(Album.anio.desc()).all()
     result = []
@@ -672,11 +828,22 @@ def api_albums_by_artist(artist_id):
 
 @api_bp.route('/api/artist/<int:artist_id>/canciones', methods=['GET'])
 def api_songs_by_artist(artist_id):
-    """Devuelve todas las canciones de un artista en JSON ordenadas por álbum, disco y pista"""
+    """
+    Retorna la totalidad de pistas musicales indexadas de un artista en JSON.
+    
+    Aplica una clasificación jerárquica estricta:
+    1. Agrupa canciones por su respectivo Álbum.
+    2. Ordena los álbumes cronológicamente de forma ascendente.
+    3. Clasifica las pistas por el número de disco (Multi-disc releases) y número de track físico
+       para garantizar el orden conceptual de reproducción exacto estructurado por el artista.
+       
+    Args:
+        artist_id (int): ID de artista.
+    """
     artista = Artista.query.get_or_404(artist_id)
     songs = Cancion.query.filter_by(artista_id=artista.id).all()
     
-    # Primero agrupar por álbum
+    # 1. Agrupar pistas por álbum
     albums_dict = {}
     for s in songs:
         album_id = s.album_id if s.album_id is not None else 0
@@ -687,7 +854,7 @@ def api_songs_by_artist(artist_id):
             }
         albums_dict[album_id]['songs'].append(s)
     
-    # Ordenar álbumes por año (o por ID si no hay año)
+    # Ordenar álbumes por fecha de lanzamiento
     def sort_album_key(item):
         album = item[1]['album']
         if album and hasattr(album, 'anio') and album.anio:
@@ -696,10 +863,10 @@ def api_songs_by_artist(artist_id):
     
     albums_ordenados = sorted(albums_dict.items(), key=sort_album_key)
     
-    # Para cada álbum, ordenar por disco y pista
     def get_track_num(c):
         if hasattr(c, 'numero_pista') and c.numero_pista is not None:
             return c.numero_pista
+        # Fallback si no tiene tag de pista: parsear número al inicio del nombre de archivo
         filename = c.ruta_archivo_audio.replace('\\', '/').split('/')[-1]
         import re
         m = re.match(r'^\s*(\d+)', filename)
@@ -710,7 +877,7 @@ def api_songs_by_artist(artist_id):
         album = album_data['album']
         album_songs = album_data['songs']
         
-        # Agrupar por número de disco dentro del álbum
+        # Agrupar internamente por número de disco
         discos_dict = {}
         for s in album_songs:
             disc_num = s.numero_disco if s.numero_disco is not None else 1
@@ -718,7 +885,7 @@ def api_songs_by_artist(artist_id):
                 discos_dict[disc_num] = []
             discos_dict[disc_num].append(s)
         
-        # Ordenar discos y luego canciones por pista
+        # Ordenar discos y después pistas numéricamente
         discos_ordenados = sorted(discos_dict.items())
         for disc_num, canciones_disco in discos_ordenados:
             canciones_ordenadas = sorted(canciones_disco, key=get_track_num)
@@ -740,11 +907,17 @@ def api_songs_by_artist(artist_id):
 
 @api_bp.route('/api/album/<int:album_id>/canciones', methods=['GET'])
 def api_songs_by_album(album_id):
-    """Devuelve todas las canciones de un álbum en JSON ordenadas por disco y pista"""
+    """
+    Retorna la lista ordenada de canciones contenidas en un álbum.
+    
+    Clasifica secuencialmente por volumen/disco y pista para asegurar el flujo del tracklist original.
+    
+    Args:
+        album_id (int): ID de álbum.
+    """
     album = Album.query.get_or_404(album_id)
     songs = Cancion.query.filter_by(album_id=album.id).all()
     
-    # Agrupar por número de disco
     discos_dict = {}
     for s in songs:
         disc_num = s.numero_disco if s.numero_disco is not None else 1
@@ -752,10 +925,8 @@ def api_songs_by_album(album_id):
             discos_dict[disc_num] = []
         discos_dict[disc_num].append(s)
     
-    # Ordenar discos numéricamente
     discos_ordenados = sorted(discos_dict.items())
     
-    # Dentro de cada disco, ordenar por número de pista
     def get_track_num(c):
         if hasattr(c, 'numero_pista') and c.numero_pista is not None:
             return c.numero_pista
@@ -764,7 +935,6 @@ def api_songs_by_album(album_id):
         m = re.match(r'^\s*(\d+)', filename)
         return int(m.group(1)) if m else 9999
     
-    # Construir resultado final ordenado
     result = []
     for disc_num, canciones_disco in discos_ordenados:
         canciones_ordenadas = sorted(canciones_disco, key=get_track_num)
@@ -783,20 +953,28 @@ def api_songs_by_album(album_id):
     return jsonify(result)
 
 
-# --------------------------------------------
-# Helpers
-# --------------------------------------------
+# ============================================
+# FUNCIONES AUXILIARES PARA VISTAS (HELPERS)
+# ============================================
 from sqlalchemy import func as sqlfunc
 
 
 def _album_cover_url(album):
-    """Devuelve la URL para mostrar la portada de un álbum.
-    Si el álbum tiene portada_url (de Deezer), la usa directamente.
-    Si no, busca la primera canción con imagen local y genera URL local.
-    Retorna string URL o None.
+    """
+    Determina dinámicamente la URL idónea para mostrar la portada de un álbum.
+    
+    Si el álbum cuenta con un enlace externo guardado (Deezer), lo retorna directo.
+    De lo contrario, busca la primera pista musical indexada del álbum para redirigir
+    a su respectivo recuperador de imágenes local en el servidor `/album-art/<id>`.
+    
+    Args:
+        album (Album): Modelo de álbum a evaluar.
+        
+    Returns:
+        str: Enlace a la imagen o None si no hay tracks.
     """
     if album.portada_url:
-        return album.portada_url  # URL directa de Deezer
+        return album.portada_url
     primer_cancion = Cancion.query.filter_by(album_id=album.id).first()
     if primer_cancion:
         return url_for('servir_album_art', cancion_id=primer_cancion.id)
@@ -804,24 +982,36 @@ def _album_cover_url(album):
 
 
 def _album_total_duration(album):
-    """Devuelve la duración total de un álbum en segundos."""
+    """
+    Calcula y retorna de forma agregada la duración total en segundos de un álbum.
+    """
     result = db.session.query(sqlfunc.sum(Cancion.duracion)).filter(Cancion.album_id == album.id).scalar()
     return result or 0
 
 
-# --------------------------------------------
-# Rutas de exploración / navegación
-# --------------------------------------------
-
+# ============================================
+# CONTROLADORES DE RENDERIZADO Y EXPLORACIÓN
+# ============================================
 
 @browse_bp.route('/explore')
 def explore():
+    """
+    Ruta del Dashboard de Exploración.
+    
+    Optimizado contra el problema de consultas N+1: realiza un conteo agrupado
+    de pistas por álbum mediante base de datos en una sola petición agregada.
+    
+    Returns:
+        Render de la plantilla 'explore.html'.
+    """
     from sqlalchemy import func
     artists = Artista.query.order_by(Artista.nombre).all()
-    # Query optimizada: álbumes + conteo de canciones en una sola query
+    
+    # Agrupación y conteo optimizado en una sola transacción SQL
     album_stats = db.session.query(
         Album, func.count(Cancion.id).label('track_count')
     ).outerjoin(Cancion).group_by(Album.id).order_by(Album.titulo).limit(20).all()
+    
     albums_data = []
     for al, track_count in album_stats:
         albums_data.append({
@@ -834,21 +1024,31 @@ def explore():
 
 @browse_bp.route('/artists')
 def artists_list():
+    """
+    Ruta de Lista Completa de Artistas.
+    
+    Implementa consultas masivas y pre-carga inteligente para evitar consultas N+1:
+    1. Agrupa conteo de álbumes por artista en una sola transacción.
+    2. Agrupa conteo de canciones por artista en una sola transacción.
+    3. Resuelve de forma inteligente portadas acumulando artistas mapeados.
+    
+    Returns:
+        Render de 'artists.html'.
+    """
     from sqlalchemy import func
     
-    # 1. Obtener conteos de álbumes por artista en una sola query
+    # 1. Agrupación global de álbumes
     album_counts = db.session.query(Album.artista_id, func.count(Album.id)).group_by(Album.artista_id).all()
     album_dict = {a_id: count for a_id, count in album_counts}
     
-    # 2. Obtener conteos de canciones por artista en una sola query
+    # 2. Agrupación global de canciones
     song_counts = db.session.query(Cancion.artista_id, func.count(Cancion.id)).group_by(Cancion.artista_id).all()
     song_dict = {a_id: count for a_id, count in song_counts}
 
     artists = Artista.query.order_by(Artista.nombre).all()
     artists_data = []
     
-    # Pre-cargamos portadas de todos los álbumes para evitar query N+1 en las portadas
-    # Solo tomamos un álbum por artista (el primero por orden de ID)
+    # Pre-cargar portadas de álbumes de forma masiva para evitar N+1
     first_albums = Album.query.order_by(Album.artista_id, Album.id).all()
     first_album_dict = {}
     seen_artists = set()
@@ -874,13 +1074,17 @@ def artists_list():
 
 @browse_bp.route('/artist/<int:artist_id>')
 def artist_detail(artist_id):
+    """
+    Ruta del detalle de un Artista, listando sus álbumes y un reproductor de sus obras completas.
+    """
     from sqlalchemy import func
     artist = Artista.query.get_or_404(artist_id)
     songs = Cancion.query.filter_by(artista_id=artist.id).order_by(Cancion.album_id, Cancion.ruta_archivo_audio).all()
-    # Query optimizada: álbumes + conteo de canciones en una sola query
+    
     album_stats = db.session.query(
         Album, func.count(Cancion.id).label('track_count')
     ).outerjoin(Cancion).filter(Album.artista_id == artist.id).group_by(Album.id).order_by(Album.anio.desc()).all()
+    
     albums_data = []
     for al, track_count in album_stats:
         albums_data.append({
@@ -895,13 +1099,19 @@ def artist_detail(artist_id):
 
 @browse_bp.route('/albums')
 def albums_list():
+    """
+    Ruta de Lista de todos los Álbumes de la plataforma.
+    
+    Posee una transacción única que agrupa metadatos básicos, conteos de tracks
+    y la suma agregada de duración en segundos, garantizando latencia ultra-baja.
+    """
     from sqlalchemy import func
-    # Query optimizada: álbum + conteo + duración total en una sola query (elimina N+1)
     album_stats = db.session.query(
         Album,
         func.count(Cancion.id).label('track_count'),
         func.coalesce(func.sum(Cancion.duracion), 0).label('total_dur')
     ).outerjoin(Cancion).group_by(Album.id).order_by(Album.titulo).all()
+    
     albums_data = []
     for al, track_count, total_dur in album_stats:
         albums_data.append({
@@ -915,11 +1125,14 @@ def albums_list():
 
 @browse_bp.route('/album/<int:album_id>')
 def album_detail(album_id):
+    """
+    Ruta del detalle de un Álbum que renderiza el tracklist completo clasificado por discos.
+    """
     import re
     album = Album.query.get_or_404(album_id)
     songs = Cancion.query.filter_by(album_id=album.id).all()
     
-    # Agrupar por número de disco
+    # Separar canciones por volumen o número de disco físico
     discos_dict = {}
     for s in songs:
         disc_num = s.numero_disco if s.numero_disco is not None else 1
@@ -927,10 +1140,8 @@ def album_detail(album_id):
             discos_dict[disc_num] = []
         discos_dict[disc_num].append(s)
     
-    # Ordenar discos numéricamente
     discos_ordenados = sorted(discos_dict.items())
     
-    # Dentro de cada disco, ordenar por número de pista
     def get_track_num(c):
         if hasattr(c, 'numero_pista') and c.numero_pista is not None:
             return c.numero_pista
@@ -949,9 +1160,13 @@ def album_detail(album_id):
     return render_template('album.html', album=album, discos=discos, cover_url=cover_url, total_duration=total_dur, track_count=track_count)
 
 
+# ============================================
+# ENDPOINTS REST JSON DE RECOMENDACIÓN Y METADATOS
+# ============================================
+
 @api_bp.route('/api/daily-mix/<int:mix_id>/songs', methods=['GET'])
 def api_daily_mix_songs(mix_id):
-    """Devuelve las canciones de un daily mix en JSON."""
+    """Devuelve las canciones del Mix Diario solicitado en formato JSON."""
     mix = DailyMix.query.get_or_404(mix_id)
     canciones = [
         {
@@ -969,7 +1184,7 @@ def api_daily_mix_songs(mix_id):
 
 @api_bp.route('/api/playlist/<int:playlist_id>/songs', methods=['GET'])
 def api_songs_by_playlist(playlist_id):
-    """Devuelve las canciones asociadas a una playlist en JSON"""
+    """Devuelve todas las canciones asociadas a una playlist en JSON."""
     playlist = Playlist.query.get_or_404(playlist_id)
     canciones = [c.to_dict() for c in playlist.canciones]
     return jsonify(canciones)
@@ -977,7 +1192,9 @@ def api_songs_by_playlist(playlist_id):
 
 @api_bp.route('/api/audio-info/<int:cancion_id>', methods=['GET'])
 def api_audio_info(cancion_id):
-    """Devuelve la información de calidad de audio de una canción."""
+    """
+    Retorna la metadata acústica y detalles de resolución física de audio de una pista (Nyquist, BPM, Dynamic Range, RMS).
+    """
     from models import Cancion as CancionModel
     c = CancionModel.query.get(cancion_id)
     if not c:
@@ -1001,16 +1218,16 @@ def api_audio_info(cancion_id):
 
 @api_bp.route('/api/similares/<int:cancion_id>', methods=['GET'])
 def api_similares(cancion_id):
-    """Devuelve las canciones similares a la dada (por contenido acústico)."""
+    """
+    Retorna recomendaciones de canciones similares acústicamente mediante cálculo matemático de vecinos.
+    """
     try:
-        # Importar aquí para evitar overhead al importar el blueprint desde app
         from importlib import import_module
         recommender = import_module('recommender')
         get_similar_songs = getattr(recommender, 'get_similar_songs')
         similares = get_similar_songs(cancion_id, top_k=10)
         return jsonify(similares)
     except Exception as e:
-        # Registrar y devolver lista vacía para que el frontend no reciba 500
         try:
             current_app.logger.exception('Error al calcular similares')
         except Exception:
@@ -1020,33 +1237,25 @@ def api_similares(cancion_id):
 
 @api_bp.route('/api/cancion/<int:cancion_id>/lyrics', methods=['GET'])
 def api_cancion_lyrics(cancion_id):
-    """Devuelve la letra de una canción (sincronizada o plano) desde caché o API LRCLIB."""
+    """
+    Retorna la letra formateada (LRC sincronizada) de una canción desde caché local o descargas en tiempo real.
+    """
     try:
         from lyrics_fetcher import obtener_o_descargar_letra
         from models import Cancion
         
-        # Debug logging: mostrar información de la canción
         cancion = Cancion.query.get(cancion_id)
         if cancion:
-            current_app.logger.info(f"Solicitando letra para canción ID {cancion_id}: '{cancion.titulo}' - '{cancion.artista_obj.nombre if cancion.artista_obj else 'Desconocido'}'")
-            current_app.logger.info(f"Ruta LRC en BD: {cancion.ruta_archivo_lrc}")
-            if cancion.ruta_archivo_lrc:
-                exists = Path(cancion.ruta_archivo_lrc).exists()
-                current_app.logger.info(f"Archivo LRC existe: {exists}")
-        else:
-            current_app.logger.info(f"Canción ID {cancion_id} no encontrada en BD")
+            current_app.logger.info(f"Solicitando letra para canción ID {cancion_id}: '{cancion.titulo}'")
         
         resultado = obtener_o_descargar_letra(cancion_id)
         
         if resultado:
-            current_app.logger.info(f"Letra encontrada para canción ID {cancion_id}, tipo: {resultado.get('tipo')}")
             return jsonify(resultado), 200
         else:
-            current_app.logger.info(f"Letra no encontrada para canción ID {cancion_id}")
             return jsonify({'error': 'Letra no encontrada'}), 404
             
     except Exception as e:
-        # Registrar error pero no exponer detalles al cliente
         try:
             current_app.logger.exception('Error obteniendo letra')
         except Exception:
@@ -1055,16 +1264,16 @@ def api_cancion_lyrics(cancion_id):
 
 
 # ============================================
-# API - Colecciones
+# API DE COLECCIONES (PLAYLISTS DE USUARIO)
 # ============================================
 
 @api_bp.route('/api/colecciones/crear', methods=['POST'])
 def api_colecciones_crear():
+    """Crea una nueva colección o playlist personalizada para el usuario actual."""
     usuario_id = session.get('user_id')
     if not usuario_id:
         return jsonify({'error': 'No auth'}), 401
     
-    # Soporta tanto JSON como form data
     if request.is_json:
         data = request.get_json()
         nombre = data.get('nombre', '').strip()
@@ -1090,6 +1299,7 @@ def api_colecciones_crear():
 
 @api_bp.route('/api/coleccion-lista', methods=['GET'])
 def api_coleccion_lista():
+    """Devuelve listado simple de colecciones del usuario."""
     usuario_id = session.get('user_id')
     if not usuario_id:
         return jsonify([])
@@ -1099,6 +1309,7 @@ def api_coleccion_lista():
 
 @api_bp.route('/api/colecciones/<int:coleccion_id>/add-album/<int:album_id>', methods=['POST'])
 def api_coleccion_add_album(coleccion_id, album_id):
+    """Asocia un álbum completo dentro de una playlist/colección."""
     usuario_id = session.get('user_id')
     c = Coleccion.query.get_or_404(coleccion_id)
     if c.usuario_id != usuario_id:
@@ -1112,6 +1323,7 @@ def api_coleccion_add_album(coleccion_id, album_id):
 
 @api_bp.route('/api/colecciones/<int:coleccion_id>/add-artist/<int:artist_id>', methods=['POST'])
 def api_coleccion_add_artist(coleccion_id, artist_id):
+    """Vincula un artista completo a una colección."""
     usuario_id = session.get('user_id')
     c = Coleccion.query.get_or_404(coleccion_id)
     if c.usuario_id != usuario_id:
@@ -1125,6 +1337,7 @@ def api_coleccion_add_artist(coleccion_id, artist_id):
 
 @api_bp.route('/api/colecciones/<int:coleccion_id>/add-cancion/<int:cancion_id>', methods=['POST'])
 def api_coleccion_add_cancion(coleccion_id, cancion_id):
+    """Añade una canción individual a una playlist."""
     usuario_id = session.get('user_id')
     c = Coleccion.query.get_or_404(coleccion_id)
     if c.usuario_id != usuario_id:
@@ -1137,12 +1350,12 @@ def api_coleccion_add_cancion(coleccion_id, cancion_id):
 
 
 # ============================================
-# API - Favoritos (Me gusta)
+# API DE FAVORITOS (ME GUSTA)
 # ============================================
 
 @api_bp.route('/api/favoritos', methods=['GET'])
 def api_favoritos_list():
-    """Devuelve los IDs de canciones favoritas del usuario actual."""
+    """Devuelve la cola de identificadores de canciones marcadas como 'Me gusta' por el usuario."""
     usuario_id = session.get('user_id')
     if not usuario_id:
         return jsonify([]), 200
@@ -1152,7 +1365,7 @@ def api_favoritos_list():
 
 @api_bp.route('/api/favoritos/toggle/<int:cancion_id>', methods=['POST'])
 def api_favoritos_toggle(cancion_id):
-    """Alterna el estado de favorito de una canción para el usuario actual."""
+    """Alterna el estado favorito de una canción de forma atómica."""
     usuario_id = session.get('user_id')
     if not usuario_id:
         return jsonify({'error': 'No autenticado'}), 401
@@ -1171,7 +1384,7 @@ def api_favoritos_toggle(cancion_id):
 
 @api_bp.route('/api/favoritos/canciones', methods=['GET'])
 def api_favoritos_canciones():
-    """Devuelve la lista completa de canciones favoritas del usuario."""
+    """Retorna los diccionarios completos de canciones favoritas del usuario actual."""
     from models import Cancion
     usuario_id = session.get('user_id')
     if not usuario_id:
@@ -1197,12 +1410,12 @@ def api_favoritos_canciones():
 
 
 # ============================================
-# ADMIN - Gestión de Usuarios
+# PANEL DE GESTIÓN Y CREACIÓN DE USUARIOS
 # ============================================
 
 @admin_bp.route('/admin/usuarios', methods=['GET'])
 def admin_usuarios_list():
-    """Panel de administración de usuarios."""
+    """Muestra el listado de usuarios de la plataforma al administrador."""
     if not _is_admin_request():
         return jsonify({'error': 'Unauthorized'}), 401
 
@@ -1212,14 +1425,14 @@ def admin_usuarios_list():
 
 @admin_bp.route('/admin/usuarios/crear', methods=['POST'])
 def admin_crear_usuario():
-    """Endpoint para que el admin cree nuevos usuarios."""
+    """Endpoint para que el administrador agregue manualmente nuevas cuentas."""
     if not _is_admin_request():
         return jsonify({'error': 'Unauthorized'}), 401
 
     data = request.get_json() or {}
     nombre_usuario = data.get('nombre_usuario', '').strip()
     password = data.get('password', '').strip()
-    role = data.get('role', 'user')  # 'user' o 'admin'
+    role = data.get('role', 'user')
 
     if not nombre_usuario or not password:
         return jsonify({'error': 'nombre_usuario y password son requeridos'}), 400
@@ -1243,11 +1456,15 @@ def admin_crear_usuario():
     }), 201
 
 
-# ========== API PARA PROGRESO DE LETRAS ==========
+# ============================================
+# APIS DE MONITOREO DE PROGRESO DE TAREAS (POLLING)
+# ============================================
 
 @api_bp.route('/api/lyrics-progress', methods=['GET'])
 def api_lyrics_progress():
-    """Devuelve el progreso actual de la descarga de letras en segundo plano."""
+    """
+    Retorna el estado y avance porcentual de la descarga e indexación masiva de letras LRC.
+    """
     try:
         from task_queue import progress_get
         p = progress_get('lyrics') or {}
@@ -1265,11 +1482,11 @@ def api_lyrics_progress():
         return jsonify({'error': str(e), 'active': False, 'finished': True}), 500
 
 
-# ========== API PARA PROGRESO DE MUSICBRAINZ ==========
-
 @api_bp.route('/api/mb-progress', methods=['GET'])
 def api_mb_progress():
-    """Devuelve el progreso actual del enriquecimiento MusicBrainz."""
+    """
+    Retorna el progreso actual del hilo sincronizador de artistas de MusicBrainz.
+    """
     try:
         from musicbrainz_client import get_mb_progress
         p = get_mb_progress()
@@ -1286,8 +1503,19 @@ def api_mb_progress():
         return jsonify({'error': str(e), 'active': False, 'finished': True}), 500
 
 
+# ============================================
+# MOTOR DE BÚSQUEDA NORMALIZADA E INSTANTÁNEA
+# ============================================
+
 @api_bp.route('/api/search', methods=['GET'])
 def api_search():
+    """
+    Endpoint JSON del motor de búsqueda global de DuckSound.
+    
+    Aplica técnicas de búsqueda adaptativa:
+    1. Filtra coincidencias insensibles a mayúsculas y acentos (`unidecode`) en canciones, artistas y álbumes.
+    2. Utiliza consultas SQL optimizadas con límites razonables de visualización rápida para el frontend (SPA).
+    """
     q = request.args.get('q', '').strip()
     if not q or len(q) < 2:
         return jsonify({'songs': [], 'artists': [], 'albums': []})
@@ -1300,6 +1528,7 @@ def api_search():
         q_norm = q
     term_norm = f'%{q_norm}%'
 
+    # Consultas optimizadas con límite
     songs = Cancion.query.filter(
         Cancion.titulo.ilike(term) | Cancion.titulo.ilike(term_norm)
     ).limit(8).all()
@@ -1330,5 +1559,6 @@ def api_search():
             'artista': al.artista.nombre if al.artista else None,
         } for al in albums],
     })
+
 
 
