@@ -113,7 +113,7 @@
             </div>
             <div class="album-card-info">
                 <div class="album-card-title">{{ album.titulo }}</div>
-                <div class="album-card-artist">{{ album.artista_obj.nombre if album.artista_obj else 'Varios' }}</div>
+                <div class="album-card-artist">{{ album.artista.nombre if album.artista else 'Varios' }}</div>
             </div>
         </a>
         {% endfor %}
