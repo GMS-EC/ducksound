@@ -30,6 +30,14 @@ self.addEventListener('fetch', event => {
 
     const url = new URL(request.url);
 
+    // Evitar interceptar flujos de audio, llamadas a la API o endpoints de administración y escaneo
+    if (url.pathname.startsWith('/audio/') || 
+        url.pathname.startsWith('/api/') || 
+        url.pathname.startsWith('/scan/') || 
+        url.pathname.startsWith('/admin/')) {
+        return;
+    }
+
     // 1. Peticiones de Navegación (HTML de páginas): estrategia Network-First
     // Intenta cargar del servidor para asegurar la versión más reciente; si falla (offline), usa el caché.
     if (request.mode === 'navigate') {

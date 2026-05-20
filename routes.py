@@ -31,6 +31,12 @@ def _cleanup_old_tasks():
 # Diccionario global para la caché en memoria simple
 _route_cache = {}
 
+# Caché en memoria para el changelog remoto de GitHub
+_changelog_cache = {
+    'content': None,
+    'expires': 0
+}
+
 def route_cache(ttl_seconds=3600):
     """
     Decorador para implementar almacenamiento en caché en memoria con tiempo de vida (TTL).
@@ -391,22 +397,31 @@ def admin_panel():
     import re as _re
     import requests as _requests
     from config import Config, BASE_DIR
+    import time as _time
     
     versions = []
     cl_content = ""
     
-    # 1. Intentar obtener el CHANGELOG dinámico remoto desde GitHub (usando token si está configurado)
-    try:
-        github_url = 'https://raw.githubusercontent.com/GamersEC/ducksound/development/CHANGELOG.md'
-        headers = {}
-        github_token = current_app.config.get('GITHUB_TOKEN') or os.environ.get('GITHUB_TOKEN')
-        if github_token:
-            headers['Authorization'] = f'token {github_token}'
-        resp = _requests.get(github_url, headers=headers, timeout=5)
-        if resp.status_code == 200:
-            cl_content = resp.text
-    except Exception as e:
-        print(f"Remote changelog fetch failed: {e}")
+    # 1. Intentar obtener el CHANGELOG dinámico remoto desde GitHub usando caché en memoria
+    global _changelog_cache
+    now = _time.time()
+    if _changelog_cache['content'] and now < _changelog_cache['expires']:
+        cl_content = _changelog_cache['content']
+    else:
+        try:
+            github_url = 'https://raw.githubusercontent.com/GamersEC/ducksound/development/CHANGELOG.md'
+            headers = {}
+            github_token = current_app.config.get('GITHUB_TOKEN') or os.environ.get('GITHUB_TOKEN')
+            if github_token:
+                headers['Authorization'] = f'token {github_token}'
+            # Reducimos el timeout a 2 segundos para evitar retrasos si no hay internet
+            resp = _requests.get(github_url, headers=headers, timeout=2)
+            if resp.status_code == 200:
+                cl_content = resp.text
+                _changelog_cache['content'] = cl_content
+                _changelog_cache['expires'] = now + 3600 # Guardar en caché por 1 hora
+        except Exception as e:
+            print(f"Remote changelog fetch failed: {e}")
 
 
     # 2. Fallback de lectura al changelog físico del proyecto local
