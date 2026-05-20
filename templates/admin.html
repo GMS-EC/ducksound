@@ -145,12 +145,14 @@
             <div class="changelog-collapsible" id="changelog-collapsible">
                 {% if changelog_versions %}
                 {% for version in changelog_versions %}
-                <div class="cl-version {% if loop.first %}cl-latest{% endif %}">
+                <div class="cl-version cl-status-{{ version.status }}">
                     <div class="cl-version-header">
                         <span class="cl-tag"><i class="fa-solid fa-tag"></i> v{{ version.number }}</span>
                         <span class="cl-date"><i class="fa-regular fa-calendar"></i> {{ version.date }}</span>
-                        {% if loop.first %}
-                        <span class="cl-badge-current">Actual</span>
+                        {% if version.status == 'current' %}
+                        <span class="cl-badge-current">Instalada (Actual)</span>
+                        {% elif version.status == 'newer' %}
+                        <span class="cl-badge-newer"><i class="fa-solid fa-rocket"></i> Actualización Disponible</span>
                         {% endif %}
                     </div>
                     {% if version.title %}
@@ -428,9 +430,19 @@
 .cl-version {
     padding: 20px 24px;
     border-top: 1px solid var(--border-light);
+    border-left: 4px solid transparent;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
-.cl-latest {
-    background: rgba(217, 88, 64, 0.02);
+.cl-status-newer {
+    background: rgba(217, 88, 64, 0.03);
+    border-left: 4px solid var(--accent);
+}
+.cl-status-current {
+    background: rgba(46, 204, 113, 0.03);
+    border-left: 4px solid #2ecc71;
+}
+.cl-status-older {
+    opacity: 0.75;
 }
 
 .cl-version-header {
@@ -461,12 +473,24 @@
 .cl-badge-current {
     padding: 3px 10px;
     border-radius: 999px;
+    background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    box-shadow: 0 0 10px rgba(46, 204, 113, 0.3);
+}
+.cl-badge-newer {
+    padding: 3px 10px;
+    border-radius: 999px;
     background: linear-gradient(135deg, var(--accent) 0%, #ff8e53 100%);
     color: #fff;
     font-size: 10px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    box-shadow: 0 0 10px rgba(217, 88, 64, 0.3);
 }
 .cl-title {
     font-size: 18px;

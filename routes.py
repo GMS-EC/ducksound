@@ -397,7 +397,7 @@ def admin_panel():
     
     # 1. Intentar obtener el CHANGELOG dinámico remoto desde GitHub (usando token si está configurado)
     try:
-        github_url = 'https://raw.githubusercontent.com/GamersEC/ducksound/main/CHANGELOG.md'
+        github_url = 'https://raw.githubusercontent.com/GamersEC/ducksound/development/CHANGELOG.md'
         headers = {}
         github_token = current_app.config.get('GITHUB_TOKEN') or os.environ.get('GITHUB_TOKEN')
         if github_token:
@@ -476,6 +476,24 @@ def admin_panel():
         
         if current_version and current_section:
             current_version['sections'].append(current_section)
+            
+        # Determinar el estado de cada versión (nueva, instalada o anterior) respecto a la actual
+        def parse_version(v_str):
+            try:
+                digits = _re.findall(r'\d+', v_str)
+                return tuple(int(x) for x in digits)
+            except Exception:
+                return (0, 0, 0)
+                
+        current_version_tuple = parse_version(Config.APP_VERSION)
+        for v in versions:
+            v_tuple = parse_version(v['number'])
+            if v_tuple > current_version_tuple:
+                v['status'] = 'newer'
+            elif v_tuple == current_version_tuple:
+                v['status'] = 'current'
+            else:
+                v['status'] = 'older'
     
     return render_template('admin.html', changelog_versions=versions)
 
