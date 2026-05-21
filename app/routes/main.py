@@ -82,6 +82,12 @@ def dashboard():
     albumes_recientes = Album.query.order_by(Album.id.desc()).limit(12).all()
     artistas_recientes = Artista.query.order_by(Artista.id.desc()).limit(12).all()
     canciones_recientes = Cancion.query.order_by(Cancion.fecha_agregada.desc()).limit(10).all()
+    dashboard_stats = {
+        'canciones': Cancion.query.count(),
+        'albumes': Album.query.count(),
+        'artistas': Artista.query.count(),
+        'mixes': len(daily_mixes)
+    }
 
     return render_template('dashboard.html', 
                            canciones=canciones, 
@@ -91,6 +97,7 @@ def dashboard():
                            daily_mixes=daily_mixes,
                            albumes_recientes=albumes_recientes,
                            artistas_recientes=artistas_recientes,
+                           dashboard_stats=dashboard_stats,
                            canciones_recientes=canciones_recientes)
 
 
