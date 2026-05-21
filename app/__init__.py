@@ -7,7 +7,7 @@ import os
 import sys
 import secrets
 from datetime import datetime, timedelta
-from flask import Flask, session, redirect, url_for, request, jsonify
+from flask import Flask, session, redirect, url_for, request, jsonify, render_template, current_app
 from flask_compress import Compress
 from config import Config
 from app.models import db, Usuario, SesionActiva
@@ -110,6 +110,10 @@ def create_app(config_class=Config):
     def internal_server_error(e):
         return render_template('errors/500.html'), 500
 
+    @app.route('/favicon.ico')
+    def favicon():
+        return redirect(url_for('static', filename='img/favicon.png'))
+
     @app.after_request
     def add_security_headers(response):
         """Añade cabeceras estándar de protección contra ataques XSS y clickjacking."""
@@ -126,7 +130,7 @@ def create_app(config_class=Config):
         Valida además que la sesión no haya sido revocada remotamente.
         """
         # Se incluye tanto 'main.index' como 'index' y 'auth.login' para evitar bucles de redirección
-        allowed_endpoints = ['auth.login', 'static', 'index', 'main.index']
+        allowed_endpoints = ['auth.login', 'static', 'favicon', 'index', 'main.index']
         
         if request.method == 'OPTIONS':
             return

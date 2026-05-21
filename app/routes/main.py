@@ -215,6 +215,14 @@ def coleccion_detail(coleccion_id):
 # ==============================================================================
 
 
+@main_bp.route('/daily-mixes')
+def daily_mixes_redirect():
+    """Compatibilidad: la lista de mixes vive en el dashboard principal."""
+    if 'user_id' not in session:
+        return redirect(url_for('auth.login'))
+    return redirect(url_for('main.dashboard'))
+
+
 @main_bp.route('/daily-mix/<int:mix_id>')
 def daily_mix_detail(mix_id):
     """Muestra el tracklist y la interfaz de reproducción de una mezcla diaria."""
