@@ -362,10 +362,9 @@ def generate_daily_mixes_for_user(usuario_id):
 
         # Registrar las canciones del mix diario conservando el orden asignado
         for idx, cid in enumerate(mix_canciones_ids[:20]):
-            db.session.execute(
-                db.text("INSERT INTO daily_mix_canciones (mix_id, cancion_id, orden) VALUES (:m, :c, :o) ON CONFLICT (mix_id, cancion_id) DO NOTHING"),
-                {'m': mix.id, 'c': cid, 'o': idx}
-            )
+            cancion = Cancion.query.get(cid)
+            if cancion:
+                mix.canciones.append(cancion)
 
     db.session.commit()
     print(f"✅ Daily Mixes generados con éxito para el usuario {usuario_id}.")

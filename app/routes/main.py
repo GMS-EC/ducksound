@@ -258,7 +258,9 @@ def daily_mix_detail(mix_id):
     mix = DailyMix.query.get_or_404(mix_id)
     if mix.usuario_id != session['user_id']:
         abort(403)
-        
+    
+    print(f"DEBUG: Mix {mix_id} songs count: {len(mix.canciones)}")
+    
     usuario_obj = db.session.get(Usuario, session['user_id'])
     is_admin = usuario_obj.is_admin() if usuario_obj else False
     return render_template('daily_mix_detail.html', mix=mix, is_admin=is_admin)

@@ -63,7 +63,7 @@
 
 {% set spotlight_mix = spotlight_mix if spotlight_mix is defined else (daily_mixes[0] if daily_mixes else none) %}
 {% set spotlight_album = albumes_recientes[0] if albumes_recientes else none %}
-{% set spotlight_song = spotlight_mix.canciones.first() if spotlight_mix else (canciones_recientes[0] if canciones_recientes else none) %}
+{% set spotlight_song = spotlight_mix.canciones[0] if spotlight_mix and spotlight_mix.canciones else (canciones_recientes[0] if canciones_recientes else none) %}
 {% set spotlight_cover = url_for('audio.servir_portada_daily_mix', mix_id=spotlight_mix.id) if spotlight_mix else none %}
 {% if not spotlight_cover and spotlight_album %}
     {% set spotlight_cover = spotlight_album.portada_url %}
@@ -89,7 +89,7 @@
         <h2 id="spotlight-title">{{ spotlight_mix.nombre if spotlight_mix else (spotlight_album.titulo if spotlight_album else 'Tu biblioteca esta lista') }}</h2>
         <p>
             {% if spotlight_mix %}
-                <span id="spotlight-description">{{ spotlight_mix.canciones.count() }} canciones seleccionadas para hoy.</span>
+                <span id="spotlight-description">{{ spotlight_mix.canciones|length }} canciones seleccionadas para hoy.</span>
             {% elif spotlight_album %}
                 Lo mas reciente de {{ spotlight_album.artista.nombre if spotlight_album.artista else 'tu coleccion' }}.
             {% else %}
@@ -131,6 +131,30 @@
         </a>
     </div>
 </section>
+
+{% if daily_mixes %}
+<section class="home-shelf">
+    <div class="home-shelf-header">
+        <h2 class="home-shelf-title">Tus Mixes de Hoy</h2>
+    </div>
+    <div class="horizontal-scroll-grid">
+        {% for mix in daily_mixes %}
+        <a href="{{ url_for('daily_mix_detail', mix_id=mix.id) }}" class="album-card" style="text-decoration:none">
+            <div class="album-card-cover">
+                <img src="{{ url_for('audio.servir_portada_daily_mix', mix_id=mix.id) }}" alt="{{ mix.nombre }}" loading="lazy" style="width:100%;height:100%;object-fit:cover;border-radius:var(--radius-lg)">
+                <div class="album-card-overlay">
+                    <button class="album-card-play" data-mix-id="{{ mix.id }}"><i class="fa-solid fa-play"></i></button>
+                </div>
+            </div>
+            <div class="album-card-info">
+                <div class="album-card-title">{{ mix.nombre }}</div>
+                <div class="album-card-artist">{{ mix.fecha.strftime('%d %b %Y') }}</div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
 
 {% if albumes_recientes %}
 <section class="home-shelf">
@@ -271,11 +295,11 @@
     (function () {
         const spotlightMixes = [
             {% for mix in daily_mixes %}
-            {% set mix_song = mix.canciones.first() %}
+            {% set mix_song = mix.canciones[0] if mix.canciones else none %}
             {
                 id: {{ mix.id }},
                 nombre: {{ mix.nombre|tojson }},
-                count: {{ mix.canciones.count() }},
+                count: {{ mix.canciones|length }},
                 cover: {{ url_for('audio.servir_portada_daily_mix', mix_id=mix.id)|tojson }},
                 url: {{ url_for('daily_mix_detail', mix_id=mix.id)|tojson }},
                 song: {% if mix_song %}{

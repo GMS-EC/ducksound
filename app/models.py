@@ -215,6 +215,14 @@ class HistorialEscucha(db.Model):
         return f'<Historial u={self.usuario_id} c={self.cancion_id} t={self.reproducido_en}>'
 
 
+# Tabla de asociación para Mezclas Diarias (Daily Mixes)
+daily_mix_canciones = db.Table(
+    'daily_mix_canciones',
+    db.Column('mix_id', db.Integer, db.ForeignKey('daily_mixes.id'), primary_key=True),
+    db.Column('cancion_id', db.Integer, db.ForeignKey('canciones.id'), primary_key=True),
+    db.Column('orden', db.Integer, nullable=True)
+)
+
 class DailyMix(db.Model):
     """
     Mezcla diaria de música recomendada por DuckSound.
@@ -223,17 +231,12 @@ class DailyMix(db.Model):
     __tablename__ = 'daily_mixes'
     id = db.Column(db.Integer, primary_key=True)
     usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False, index=True)
-    nombre = db.Column(db.String(100), nullable=False) # Ej: Morning Vibes, Afternoon Chill, Night Beats
+    nombre = db.Column(db.String(100), nullable=False)
     fecha = db.Column(db.Date, default=datetime.utcnow().date, index=True)
     fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)
-
     usuario = db.relationship('Usuario', backref=db.backref('daily_mixes', lazy='dynamic'))
-    canciones = db.relationship('Cancion', secondary=db.Table(
-        'daily_mix_canciones',
-        db.Column('mix_id', db.Integer, db.ForeignKey('daily_mixes.id'), primary_key=True),
-        db.Column('cancion_id', db.Integer, db.ForeignKey('canciones.id'), primary_key=True),
-        db.Column('orden', db.Integer, nullable=True)
-    ), lazy='dynamic')
+    canciones = db.relationship('Cancion', secondary=daily_mix_canciones, lazy='select')
+
 
     def __repr__(self):
         return f'<DailyMix {self.nombre} {self.fecha}>'
