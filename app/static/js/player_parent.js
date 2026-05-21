@@ -476,7 +476,7 @@
                 if (miniArtist) miniArtist.textContent = song ? (song.artista||'Artista') : '';
                 setMiniCoverImage(miniCover, song);
             }
-            updateProgressBar(0, 0);
+            updateProgressBar(st.currentTime || 0, st.duration || 0);
 
             // Sincronizar indicadores activos de reproducción (ecualizadores circulares, clases css)
             document.querySelectorAll('.track-item.playing, .song-card.playing').forEach(el => {

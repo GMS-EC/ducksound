@@ -363,7 +363,9 @@
         if ('mediaSession' in navigator) {
             navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
         }
-        parent.postMessage({type:'state', state:{currentIndex, isPlaying, song: currentSong, upnext: nextSongs, shuffled: isShuffled, repeat: repeatMode, volume: _volume}}, window.location.origin);
+        const currentTime = activeAudio.currentTime || _seekTo || 0;
+        const duration = activeAudio.duration || 0;
+        parent.postMessage({type:'state', state:{currentIndex, isPlaying, song: currentSong, upnext: nextSongs, shuffled: isShuffled, repeat: repeatMode, volume: _volume, currentTime, duration}}, window.location.origin);
     }
 
     // =========================================================================
@@ -382,7 +384,9 @@
     function bindAudioEvents(aud) {
         aud.addEventListener('loadedmetadata', ()=>{
             if (aud === activeAudio) {
-                parent.postMessage({type:'timeupdate', currentTime: 0, duration: aud.duration || 0, currentIndex}, window.location.origin);
+                const t = aud.currentTime || _seekTo || 0;
+                parent.postMessage({type:'timeupdate', currentTime: t, duration: aud.duration || 0, currentIndex}, window.location.origin);
+                postState();
             }
         });
 
@@ -436,7 +440,7 @@
                 
                 if (!window._lastPlaybackSave || Date.now() - window._lastPlaybackSave > 3000) {
                     window._lastPlaybackSave = Date.now();
-                    savePlayerState({ currentIndex, currentTime: t });
+                    savePlayerState({ currentIndex, currentTime: t, duration: d });
                 }
             }catch(e){}
         });
