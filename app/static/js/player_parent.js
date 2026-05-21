@@ -901,6 +901,8 @@
         // Listener del deslizador de volumen
         const vS = document.getElementById('volume-slider');
         if (vS) vS.addEventListener('input', function(){ updateVolumeIcon(this.value); sendToPlayer({type:'command', cmd:'volume', value: parseFloat(this.value)}); });
+
+        sendToPlayer({type:'command', cmd:'getState'});
         
         // Evento permanente asociado al botón del traductor automático
         const btnTrans = document.getElementById('btn-translate-lyrics');

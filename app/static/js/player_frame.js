@@ -87,6 +87,7 @@
     let repeatMode = 'none'; // 'none', 'one', 'all'
     let _lastSentTime = 0;
     let _volume = 1.0;
+    let _lastVolumeBeforeMute = 1.0;
     let crossfadeEnabled = true;
     let crossfadeDuration = 3; // segundos
     let nextSongPrepared = false;
@@ -106,8 +107,29 @@
             console.error('[Player] Error saving state:', e);
         }
     }
-    
-    function normalizeSong(song){
+
+    function clampVolume(value) {
+        const n = Number(value);
+        return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 1.0;
+    }
+
+    function applyMasterVolume(value, options = {}) {
+        const vol = clampVolume(value);
+        _volume = vol;
+        masterGain.gain.value = vol * vol;
+
+        if (vol > 0) _lastVolumeBeforeMute = vol;
+        if (options.persist) {
+            savePlayerState({
+                volume: _volume,
+                prevVolume: _lastVolumeBeforeMute
+            });
+        }
+        if (options.notify) {
+            parent.postMessage({type:'volumeChange', volume: _volume}, window.location.origin);
+        }
+    }
+
     function normalizeSong(song){
         if (!song) return song;
         const normalized = {...song};
@@ -489,20 +511,19 @@
                 repeatMode = modes[(curIdx + 1) % modes.length];
                 parent.postMessage({type:'repeatChange', repeat: repeatMode}, window.location.origin);
             } else if (cmd === 'volume'){
-                const vol = Math.max(0, Math.min(1, Number(msg.value) || 0));
-                _volume = vol;
-                masterGain.gain.value = vol * vol;
-                savePlayerState({ volume: _volume });
-                parent.postMessage({type:'volumeChange', volume: vol}, window.location.origin);
+                applyMasterVolume(msg.value, {persist: true, notify: true});
             } else if (cmd === 'toggleMute'){
-                if (masterGain.gain.value > 0){
-                    masterGain.gain.dataset = masterGain.gain.dataset || {};
-                    masterGain.gain.dataset.prevVolume = masterGain.gain.value;
-                    masterGain.gain.value = 0;
+                if (_volume > 0){
+                    _lastVolumeBeforeMute = _volume;
+                    applyMasterVolume(0, {persist: true, notify: true});
                 } else {
-                    masterGain.gain.value = parseFloat(masterGain.gain.dataset.prevVolume) || 1.0;
+                    let restoreVolume = _lastVolumeBeforeMute;
+                    try {
+                        const saved = JSON.parse(localStorage.getItem('player_state') || '{}');
+                        restoreVolume = saved.prevVolume || restoreVolume || 1.0;
+                    } catch(e) {}
+                    applyMasterVolume(restoreVolume, {persist: true, notify: true});
                 }
-                parent.postMessage({type:'volumeChange', volume: masterGain.gain.value}, window.location.origin);
             } else if (cmd === 'setCrossfade'){
                 crossfadeEnabled = msg.enabled === true;
             } else if (cmd === 'settings'){
@@ -534,8 +555,8 @@
         const st = JSON.parse(localStorage.getItem('player_state')||'null');
         if (st) {
             if (typeof st.volume === 'number') {
-                _volume = st.volume;
-                masterGain.gain.value = _volume * _volume;
+                _lastVolumeBeforeMute = clampVolume(st.prevVolume || st.volume || 1.0);
+                applyMasterVolume(st.volume, {persist: false, notify: false});
             }
             if (typeof st.currentIndex==='number'){
                 currentIndex = st.currentIndex;
@@ -569,9 +590,10 @@
                         activeAudio.addEventListener('loadedmetadata', _seekListener);
                     }
                 }
-                setTimeout(postState, 200);
             }
+        }
     }catch(e){console.error(e)}
+    setTimeout(postState, 200);
 
     function updateMediaSession(s) {
         if (!('mediaSession' in navigator)) return;
