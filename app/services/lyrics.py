@@ -73,7 +73,7 @@ def obtener_o_descargar_letra(cancion_id):
     """
     try:
         # Consultar la canción en la base de datos
-        cancion = Cancion.query.get(cancion_id)
+        cancion = db.session.get(Cancion, cancion_id)
         if not cancion:
             return None
         

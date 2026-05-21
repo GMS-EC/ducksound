@@ -600,12 +600,13 @@ def admin_update_artist_mbid(artist_id):
         nombre = (data.get('nombre') or '').strip()
         
         final_mbid = mbid
+        foto_desde_deezer = None
+        nombre_desde_deezer = None
         if deezer_id:
             d_data = get_artista_by_deezer_id(deezer_id)
             if d_data:
-                resolved = d_data.get('musicbrainz_id')
-                if resolved:
-                    final_mbid = resolved
+                foto_desde_deezer = d_data.get('picture_xl') or d_data.get('picture_big') or d_data.get('picture_medium')
+                nombre_desde_deezer = d_data.get('name')
         
         if final_mbid:
             final_mbid = final_mbid.lower()
@@ -623,11 +624,18 @@ def admin_update_artist_mbid(artist_id):
         db.session.commit()
 
         updated_metadata = {}
-        # Si la identidad ha cambiado, resetear metadatos biográficos viejos y gatillar sincronización
-        if final_mbid != old_mbid:
-            artista.foto_url = None
-            artista.biografia = None
-            db.session.commit()
+        mbid_changed = (final_mbid or None) != old_mbid
+        deezer_only = bool(deezer_id) and not final_mbid
+        
+        if mbid_changed or deezer_only:
+            old_foto_url = artista.foto_url
+            old_biografia = artista.biografia
+            
+            if mbid_changed:
+                # Resetear metadatos anteriores si la identidad de MBID cambió
+                artista.foto_url = None
+                artista.biografia = None
+                db.session.commit()
             
             if final_mbid:
                 mb_name = get_artista_name(final_mbid)
@@ -645,16 +653,34 @@ def admin_update_artist_mbid(artist_id):
                         updated_metadata['nombre'] = mb_name
                 
                 enrich_artist(artista, commit=True)
-                updated_metadata['foto_url'] = artista.foto_url
-                updated_metadata['biografia'] = artista.biografia
-                db.session.commit()
-            else:
-                updated_metadata['foto_url'] = None
-                updated_metadata['biografia'] = None
-                db.session.commit()
+            
+            # Aplicar foto de Deezer (tiene prioridad sobre lo que enrich_artist haya encontrado)
+            if foto_desde_deezer:
+                artista.foto_url = foto_desde_deezer
+            
+            # Si es solo Deezer y se obtuvo un nombre, actualizar si el usuario no lo cambió manualmente
+            if deezer_only and nombre_desde_deezer and not nombre:
+                artista.nombre = nombre_desde_deezer
+                artista.nombre_normalizado = normalizar_artista(nombre_desde_deezer)
+                updated_metadata['nombre'] = nombre_desde_deezer
+            
+            updated_metadata['foto_url'] = artista.foto_url or old_foto_url
+            updated_metadata['biografia'] = artista.biografia or old_biografia
+            
+            # Preservar datos anteriores como fallback si no se encontraron nuevos
+            if not artista.foto_url and old_foto_url:
+                artista.foto_url = old_foto_url
+            if not artista.biografia and old_biografia:
+                artista.biografia = old_biografia
+            db.session.commit()
         else:
             updated_metadata['foto_url'] = artista.foto_url
             updated_metadata['biografia'] = artista.biografia
+        
+        # Incluir siempre el MBID final y nombre en la respuesta para que el frontend se actualice
+        updated_metadata['mbid'] = artista.musicbrainz_id or ''
+        if 'nombre' not in updated_metadata:
+            updated_metadata['nombre'] = artista.nombre
  
         return jsonify({
             'success': True,

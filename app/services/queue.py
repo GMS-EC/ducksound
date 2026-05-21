@@ -167,14 +167,13 @@ def run_full_scan(task_id):
     y analizando la acústica de las canciones. Corre dentro del proceso del worker.
     """
     from app import create_app
-    from app.services.scanner import AudioScanner
+    from app.services.scanner import escanear_carpeta_audio
 
     app = create_app()
     with app.app_context():
         progress = _progress_wrapper(task_id)
         try:
-            scanner = AudioScanner()
-            resumen = scanner.escanear_carpeta_audio(progress_callback=progress)
+            resumen = escanear_carpeta_audio(progress_callback=progress)
             t = scan_task_get(task_id)
             if t:
                 t['status'] = 'done'
@@ -199,14 +198,13 @@ def run_quick_scan(task_id):
     Evita reprocesar archivos estables acelerando el inicio. Corre dentro del worker.
     """
     from app import create_app
-    from app.services.scanner import AudioScanner
+    from app.services.scanner import escaneo_rapido
 
     app = create_app()
     with app.app_context():
         progress = _progress_wrapper(task_id)
         try:
-            scanner = AudioScanner()
-            resumen = scanner.escaneo_rapido(progress_callback=progress)
+            resumen = escaneo_rapido(progress_callback=progress)
             t = scan_task_get(task_id)
             if t:
                 t['status'] = 'done'

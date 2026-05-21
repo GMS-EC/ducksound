@@ -24,7 +24,7 @@
                 {% set found = false %}
                 {% for album in a.albums[:1] %}
                     {% if album.canciones %}
-                    <img src="{{ url_for('servir_album_art', cancion_id=album.canciones[0].id) }}" alt="{{ a.nombre }}" loading="lazy">
+                    <img src="{{ url_for('servir_album_art', cancion_id=album.canciones[0].id, size='small') }}" alt="{{ a.nombre }}" loading="lazy">
                     {% set found = true %}
                     {% endif %}
                 {% endfor %}

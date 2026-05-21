@@ -51,6 +51,8 @@ class Config:
         LYRICS_FOLDER.mkdir(parents=True, exist_ok=True)
         ALBUM_ART_FOLDER = DATA_DIR / 'album_art'
         ALBUM_ART_FOLDER.mkdir(exist_ok=True)
+        THUMBNAILS_FOLDER = DATA_DIR / 'thumbnails'
+        THUMBNAILS_FOLDER.mkdir(parents=True, exist_ok=True)
         TRANSCODE_CACHE_FOLDER = DATA_DIR / 'transcode_cache'
         TRANSCODE_CACHE_FOLDER.mkdir(parents=True, exist_ok=True)
     else:
@@ -59,6 +61,8 @@ class Config:
         LYRICS_FOLDER = MEDIA_FOLDER / 'lyrics'
         ALBUM_ART_FOLDER = Path(__file__).resolve().parent / 'album_art'
         ALBUM_ART_FOLDER.mkdir(exist_ok=True)
+        THUMBNAILS_FOLDER = Path(__file__).resolve().parent / 'thumbnails'
+        THUMBNAILS_FOLDER.mkdir(parents=True, exist_ok=True)
         TRANSCODE_CACHE_FOLDER = Path(__file__).resolve().parent / 'transcode_cache'
         TRANSCODE_CACHE_FOLDER.mkdir(parents=True, exist_ok=True)
     

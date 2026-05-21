@@ -75,8 +75,8 @@
     <section class="artist-section">
         <h2 class="section-title">Canciones</h2>
         <div class="tracklist-header spotify-tracklist-header">
-            <span></span>
             <span class="tracklist-col-num">#</span>
+            <span></span> <!-- Espaciador para la carátula -->
             <span class="tracklist-col-title">Título</span>
             <span class="tracklist-col-artist">Álbum</span>
             <span class="tracklist-col-duration">Duración</span>
@@ -87,7 +87,8 @@
                  data-album-id="{{ s.album_obj.id if s.album_obj else 'none' }}"
                  data-audio="{{ url_for('servir_audio', cancion_id=s.id) }}"
                  data-lyrics="{{ url_for('servir_lyrics', cancion_id=s.id) }}"
-                 data-cover="{{ artist.foto_url if artist.foto_url else url_for('servir_album_art', cancion_id=s.id) }}"
+                  data-cover="{{ url_for('servir_album_art', cancion_id=s.id, size='small') }}"
+
                  data-titulo="{{ s.titulo }}"
                  data-artista="{{ display_name }}"
                  data-context="artist" data-artist-id="{{ artist.id }}">
@@ -97,15 +98,8 @@
                     <span class="playing-eq"><span></span><span></span><span></span></span>
                 </span>
                 <div class="track-cover-sm">
-                    {% if s.ruta_imagen_album %}
-                    <img src="{{ url_for('servir_album_art', cancion_id=s.id) }}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                    <img src="{{ url_for('servir_album_art', cancion_id=s.id, size='small') }}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
                     <div class="cover-fallback" style="display:none"><i class="fa-solid fa-compact-disc"></i></div>
-                    {% elif artist.foto_url %}
-                    <img src="{{ artist.foto_url }}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-                    <div class="cover-fallback" style="display:none"><i class="fa-solid fa-user"></i></div>
-                    {% else %}
-                    <div class="cover-fallback"><i class="fa-solid fa-music"></i></div>
-                    {% endif %}
                 </div>
                 <div class="track-info">
                     <span class="track-title">{{ s.titulo }}</span>

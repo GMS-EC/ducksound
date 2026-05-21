@@ -340,6 +340,14 @@ def buscar_album(titulo, artista_mbid):
 
 def enriquecer_artistas_sin_mbid(limite=100):
     """Busca asíncronamente MBID y normaliza nombres para artistas locales sin indexar."""
+    from app import create_app
+    app = create_app()
+    with app.app_context():
+        return _enriquecer_artistas_sin_mbid_impl(limite)
+
+
+def _enriquecer_artistas_sin_mbid_impl(limite):
+    """Implementación interna que requiere contexto de aplicación Flask."""
     _progress_mb(active=True, finished=False, message='Consultando artistas sin MBID...')
     
     artistas = Artista.query.filter(Artista.musicbrainz_id.is_(None)).limit(limite).all()

@@ -7,9 +7,9 @@
     <h1 class="dashboard-title">
         <i class="fa-solid {% if es_favoritos %}fa-heart{% else %}fa-music{% endif %}"
             style="color:var(--accent);margin-right:8px"></i>
-        {% if es_favoritos %}Tus Favoritos{% else %}<span id="dynamic-greeting" data-user="{{ (current_user.nombre_publico or '') if current_user else '' }}">Buenos días</span>{% endif %}
+        {% if es_favoritos %}Tus Favoritos{% else %}<span id="dynamic-greeting" data-user="{{ (current_user.nombre_publico or current_user.nombre_usuario or '') if current_user else '' }}"></span>{% endif %}
     </h1>
-    <p class="dashboard-subtitle">Bienvenido</p>
+    <p class="dashboard-subtitle" id="dashboard-subtitle"></p>
 </div>
 
 {% if not canciones and es_favoritos %}
@@ -33,7 +33,7 @@
     {% for cancion in canciones %}
         <div class="track-item" data-cancion-id="{{ cancion.id }}"
             data-audio="{{ url_for('servir_audio', cancion_id=cancion.id) }}"
-            data-cover="{{ url_for('servir_album_art', cancion_id=cancion.id) }}" data-titulo="{{ cancion.titulo }}"
+            data-cover="{{ url_for('servir_album_art', cancion_id=cancion.id, size='small') }}" data-titulo="{{ cancion.titulo }}"
             data-artista="{{ cancion.artista_obj.nombre if cancion.artista_obj else 'Desconocido' }}">
             <button class="track-play-btn" title="Reproducir"><i class="fa-solid fa-play"></i></button>
             <span class="track-num">
@@ -41,7 +41,7 @@
                 <span class="playing-eq"><span></span><span></span><span></span></span>
             </span>
             <div class="track-cover-sm">
-                <img src="{{ url_for('servir_album_art', cancion_id=cancion.id) }}" alt="" loading="lazy"
+                <img src="{{ url_for('servir_album_art', cancion_id=cancion.id, size='small') }}" alt="" loading="lazy"
                     onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
                 <div class="cover-fallback" style="display:none"><i class="fa-solid fa-music"></i></div>
             </div>
@@ -70,7 +70,7 @@
         {% for mix in daily_mixes %}
         <a href="{{ url_for('daily_mix_detail', mix_id=mix.id) }}" class="album-card" style="text-decoration:none">
             <div class="album-card-cover">
-                <div class="album-card-placeholder"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
+                <img src="{{ url_for('audio.servir_portada_daily_mix', mix_id=mix.id) }}" alt="{{ mix.nombre }}" loading="lazy" style="width:100%;height:100%;object-fit:cover;border-radius:var(--radius-lg)">
                 <div class="album-card-overlay">
                     <button class="album-card-play" data-mix-id="{{ mix.id }}"><i class="fa-solid fa-play"></i></button>
                 </div>
@@ -97,7 +97,7 @@
             <div class="album-card-cover">
                 {% set album_cover = album.portada_url %}
                 {% if not album_cover and album.canciones|length > 0 %}
-                {% set album_cover = url_for('servir_album_art', cancion_id=album.canciones[0].id) %}
+                {% set album_cover = url_for('servir_album_art', cancion_id=album.canciones[0].id, size='medium') %}
                 {% endif %}
                 {% if album_cover %}
                 <img src="{{ album_cover }}" alt="{{ album.titulo }}" loading="lazy"
@@ -156,7 +156,7 @@
         {% for cancion in canciones_recientes %}
         <div class="track-item" data-cancion-id="{{ cancion.id }}"
             data-audio="{{ url_for('servir_audio', cancion_id=cancion.id) }}"
-            data-cover="{{ url_for('servir_album_art', cancion_id=cancion.id) }}" data-titulo="{{ cancion.titulo }}"
+            data-cover="{{ url_for('servir_album_art', cancion_id=cancion.id, size='small') }}" data-titulo="{{ cancion.titulo }}"
             data-artista="{{ cancion.artista_obj.nombre if cancion.artista_obj else 'Desconocido' }}">
             <button class="track-play-btn" title="Reproducir"><i class="fa-solid fa-play"></i></button>
             <span class="track-num">
@@ -164,7 +164,7 @@
                 <span class="playing-eq"><span></span><span></span><span></span></span>
             </span>
             <div class="track-cover-sm">
-                <img src="{{ url_for('servir_album_art', cancion_id=cancion.id) }}" alt="" loading="lazy"
+                <img src="{{ url_for('servir_album_art', cancion_id=cancion.id, size='small') }}" alt="" loading="lazy"
                     onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
                 <div class="cover-fallback" style="display:none"><i class="fa-solid fa-music"></i></div>
             </div>
@@ -191,6 +191,29 @@
 {% block extra_js %}
 <script>
     (function () {
+        // Saludo dinámico según la hora local del dispositivo
+        const greetEl = document.getElementById('dynamic-greeting');
+        const subEl = document.getElementById('dashboard-subtitle');
+        if (greetEl) {
+            const hour = new Date().getHours();
+            let saludo, icono, subtexto;
+            if (hour >= 5 && hour < 12) {
+                saludo = 'Buenos días';
+                subtexto = '¿Qué escuchamos hoy?';
+            } else if (hour >= 12 && hour < 19) {
+                saludo = 'Buenas tardes';
+                subtexto = '¿Qué quieres escuchar?';
+            } else {
+                saludo = 'Buenas noches';
+                subtexto = 'Relájate con tu música';
+            }
+            const userName = greetEl.dataset.user;
+            greetEl.textContent = userName ? `${saludo}, ${userName}` : saludo;
+            if (subEl) subEl.textContent = subtexto;
+        } else if (subEl) {
+            subEl.textContent = 'Bienvenido';
+        }
+
         // Track click to play (solo desde el botón play)
         document.querySelectorAll('.track-item').forEach(function(item) {
             item.addEventListener('click', function(e) {

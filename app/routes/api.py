@@ -22,7 +22,7 @@ from datetime import datetime, timedelta
 from urllib.parse import quote
 
 from flask import Blueprint, jsonify, request, session, url_for, current_app, Response
-from app.models import db, Usuario, Artista, Album, Playlist, Cancion, Favorito, Coleccion, DailyMix, HistorialEscucha
+from app.models import db, Usuario, Artista, Album, Playlist, Cancion, Favorito, Coleccion, DailyMix, HistorialEscucha, SesionActiva
 from app.services.queue import get_connection as get_redis_connection
 import json
 
@@ -204,7 +204,7 @@ def api_songs_by_artist(artist_id):
                     'artista': artista.nombre,
                     'album': album.titulo if album else 'Desconocido',
                     'audio': url_for('audio.servir_audio', cancion_id=c.id),
-                    'cover': url_for('audio.servir_album_art', cancion_id=c.id),
+                    'cover': url_for('audio.servir_album_art', cancion_id=c.id, size='small'),
                     'lyrics': url_for('audio.servir_lyrics', cancion_id=c.id),
                     'numero_pista': c.numero_pista,
                     'numero_disco': c.numero_disco
@@ -783,6 +783,88 @@ def api_profile():
         'audio_quality': usuario.audio_quality,
         'display_name': usuario.display_name()
     })
+
+
+# ==============================================================================
+# SECCIÓN 12.5: GESTIÓN DE SESIONES Y DISPOSITIVOS ACTIVOS
+# ==============================================================================
+
+@api_bp.route('/api/sessions', methods=['GET'])
+def api_sessions_list():
+    """
+    Retorna la lista de sesiones activas del usuario actual.
+    Incluye información del dispositivo, navegador, IP parcial y marca temporal.
+    """
+    if 'user_id' not in session:
+        return jsonify({'error': 'No auth'}), 401
+    
+    current_token = session.get('session_token')
+    sesiones = SesionActiva.query.filter_by(usuario_id=session['user_id'])\
+        .order_by(SesionActiva.ultima_actividad.desc()).all()
+    
+    result = []
+    for s in sesiones:
+        # Ocultar parcialmente la IP por privacidad
+        ip_parcial = None
+        if s.ip_address:
+            partes = s.ip_address.split('.')
+            if len(partes) == 4:
+                ip_parcial = f"{partes[0]}.{partes[1]}.*.*"
+            else:
+                ip_parcial = s.ip_address[:12] + '...'
+        
+        result.append({
+            'id': s.id,
+            'navegador': s.navegador or 'Desconocido',
+            'sistema': s.sistema or 'Desconocido',
+            'dispositivo': s.dispositivo or 'Desconocido',
+            'ip': ip_parcial,
+            'fecha_creacion': s.fecha_creacion.isoformat() + 'Z' if s.fecha_creacion else None,
+            'ultima_actividad': s.ultima_actividad.isoformat() + 'Z' if s.ultima_actividad else None,
+            'es_actual': (s.session_token == current_token)
+        })
+    
+    return jsonify(result)
+
+
+@api_bp.route('/api/sessions/<int:session_id>/revoke', methods=['POST'])
+def api_session_revoke(session_id):
+    """
+    Revoca (cierra) una sesión activa del usuario tras verificar su contraseña.
+    No permite revocar la sesión actual (para eso debe usar /logout).
+    """
+    if 'user_id' not in session:
+        return jsonify({'error': 'No auth'}), 401
+    
+    usuario = db.session.get(Usuario, session['user_id'])
+    if not usuario:
+        return jsonify({'error': 'Usuario no encontrado'}), 404
+    
+    data = request.get_json(silent=True) or {}
+    password = data.get('password', '').strip()
+    
+    if not password:
+        return jsonify({'error': 'La contraseña es requerida'}), 400
+    
+    if not usuario.check_password(password):
+        return jsonify({'error': 'Contraseña incorrecta'}), 403
+    
+    sesion_target = SesionActiva.query.filter_by(
+        id=session_id, usuario_id=session['user_id']
+    ).first()
+    
+    if not sesion_target:
+        return jsonify({'error': 'Sesión no encontrada'}), 404
+    
+    # No permitir cerrar la sesión actual
+    current_token = session.get('session_token')
+    if sesion_target.session_token == current_token:
+        return jsonify({'error': 'No puedes cerrar tu sesión actual desde aquí. Usa el botón Salir.'}), 400
+    
+    db.session.delete(sesion_target)
+    db.session.commit()
+    
+    return jsonify({'ok': True, 'message': 'Sesión cerrada exitosamente'})
 
 
 # ==============================================================================

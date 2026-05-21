@@ -44,13 +44,13 @@
         <table class="artists-table">
             <thead>
                 <tr>
-                    <th style="width: 80px;">ID</th>
-                    <th>Artista</th>
-                    <th>MusicBrainz ID (MBID)</th>
-                    <th style="width: 120px;">Metadatos</th>
-                    <th style="width: 100px; text-align: center;">Álbumes</th>
-                    <th style="width: 100px; text-align: center;">Canciones</th>
-                    <th style="text-align: right; width: 80px;">Acción</th>
+                    <th style="width: 60px;">ID</th>
+                    <th style="min-width: 140px;">Artista</th>
+                    <th style="width: 180px;">MusicBrainz ID (MBID)</th>
+                    <th style="width: 100px;">Metadatos</th>
+                    <th style="width: 80px; text-align: center;">Álbumes</th>
+                    <th style="width: 90px; text-align: center;">Canciones</th>
+                    <th style="text-align: right; width: 70px;">Acción</th>
                 </tr>
             </thead>
             <tbody>
@@ -130,7 +130,7 @@
             <button type="button" class="modal-close" onclick="cerrarModal()"><i class="fa-solid fa-xmark"></i></button>
         </div>
         
-        <div class="modal-body" style="padding: 24px; display: flex; flex-direction: column; gap: 20px;">
+        <div class="modal-body" style="padding: 24px; display: flex; flex-direction: column; gap: 20px; overflow-y: auto;">
             <div class="artist-modal-profile-row" style="display: flex; gap: 20px; align-items: center;">
                 <div class="avatar-preview-box" style="width: 80px; height: 80px; flex-shrink: 0; position: relative;">
                     <img id="modal-foto-preview" src="" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid var(--border-light); box-shadow: 0 4px 10px rgba(0,0,0,0.3); display: none;">
@@ -236,7 +236,7 @@
 
 /* ===== HEADER COMPONENT ===== */
 .admin-card-header {
-    background: linear-gradient(135deg, rgba(34, 34, 41, 0.6) 0%, rgba(26, 26, 31, 0.8) 100%);
+    background: var(--surface-2);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-xl);
     padding: 24px 32px;
@@ -244,7 +244,6 @@
     justify-content: space-between;
     align-items: center;
     gap: 20px;
-    backdrop-filter: blur(12px);
     box-shadow: var(--shadow-md);
     flex-wrap: wrap;
 }
@@ -370,16 +369,16 @@
 
 /* ===== TABLE CONTAINER & DESIGN ===== */
 .artists-table-container {
-    background: linear-gradient(135deg, rgba(34, 34, 41, 0.4) 0%, rgba(26, 26, 31, 0.6) 100%);
+    background: var(--surface);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-xl);
-    overflow: hidden;
+    overflow-x: auto;
     box-shadow: var(--shadow-md);
-    backdrop-filter: blur(12px);
 }
 
 .artists-table {
     width: 100%;
+    min-width: 800px;
     border-collapse: separate;
     border-spacing: 0;
     text-align: left;
@@ -518,13 +517,13 @@
 .modal-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(10, 10, 12, 0.75);
-    backdrop-filter: blur(8px);
+    background: rgba(10, 10, 12, 0.85);
     display: none;
     align-items: center;
     justify-content: center;
     z-index: 9999;
     padding: 20px;
+    padding-bottom: calc(20px + var(--player-height));
     opacity: 0;
     transition: opacity 0.25s ease;
 }
@@ -540,6 +539,9 @@
     border-radius: var(--radius-xl);
     width: 100%;
     max-width: 520px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
     box-shadow: var(--shadow-xl), 0 0 40px rgba(0, 0, 0, 0.6);
     overflow: hidden;
     transform: scale(0.95);
@@ -689,7 +691,7 @@ document.querySelectorAll('.btn-edit-artist').forEach(btn => {
         const fotoPreview = document.getElementById('modal-foto-preview');
         const fotoPlaceholder = document.getElementById('modal-foto-placeholder');
         if (foto) {
-            fotoPreview.src = foto;
+            fotoPreview.src = foto + (foto.startsWith('http') ? '?t=' + Date.now() : '');
             fotoPreview.style.display = 'block';
             fotoPlaceholder.style.display = 'none';
         } else {
@@ -832,8 +834,9 @@ document.getElementById('btn-save').addEventListener('click', function() {
         spinner.style.display = 'none';
         if (d.success) {
             const nombreFinal = d.metadata?.nombre || nombre;
+            const mbidFinal = d.metadata?.mbid || '';
             row.dataset.nombre = nombreFinal;
-            row.dataset.mbid = d.metadata?.mbid || mbid;
+            row.dataset.mbid = mbidFinal;
             row.querySelector('.artist-name-display').textContent = nombreFinal;
             
             // Actualizar celda de MBID
@@ -861,7 +864,7 @@ document.getElementById('btn-save').addEventListener('click', function() {
                 // Actualizar celda de Avatar
                 const avatarMini = row.querySelector('.artist-avatar-mini');
                 if (d.metadata.foto_url) {
-                    avatarMini.innerHTML = `<img src="${d.metadata.foto_url}" alt="${nombreFinal}">`;
+                    avatarMini.innerHTML = `<img src="${d.metadata.foto_url}?t=${Date.now()}" alt="${nombreFinal}">`;
                 } else {
                     avatarMini.innerHTML = `<i class="fa-solid fa-user"></i>`;
                 }

@@ -24,7 +24,8 @@
         <div class="track-item" data-cancion-id="{{ s.id }}" 
              data-audio="{{ url_for('servir_audio', cancion_id=s.id) }}"
              data-lyrics="{{ url_for('servir_lyrics', cancion_id=s.id) }}"
-             data-cover="{{ url_for('servir_album_art', cancion_id=s.id) if s.ruta_imagen_album else '' }}"
+              data-cover="{{ url_for('servir_album_art', cancion_id=s.id, size='small') if s.ruta_imagen_album else '' }}"
+
              data-titulo="{{ s.titulo }}"
              data-artista="{{ s.artista_obj.nombre if s.artista_obj else 'Desconocido' }}"
              data-context="coleccion" data-album-id="{{ coleccion.id }}">
@@ -35,7 +36,8 @@
             </span>
             <div class="track-cover-sm">
                 {% if s.ruta_imagen_album %}
-                <img src="{{ url_for('servir_album_art', cancion_id=s.id) }}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                 <img src="{{ url_for('servir_album_art', cancion_id=s.id, size='small') }}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+
                 <div class="cover-fallback" style="display:none"><i class="fa-solid fa-music"></i></div>
                 {% else %}
                 <div class="cover-fallback"><i class="fa-solid fa-music"></i></div>

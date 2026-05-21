@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Página no encontrada - DuckSound{% endblock %}
+{% block content %}
+<div class="empty-state" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:70vh;text-align:center">
+    <div class="empty-icon" style="font-size:80px;color:var(--accent);margin-bottom:24px">
+        <i class="fa-solid fa-ghost"></i>
+    </div>
+    <h1 class="empty-title" style="font-size:32px;margin-bottom:12px">404 - ¡Oh, no!</h1>
+    <p class="empty-text" style="max-width:400px;margin-bottom:32px;font-size:16px">
+        La página que buscas ha desaparecido en el vacío digital o nunca existió.
+    </p>
+    <a href="{{ url_for('main.dashboard') }}" class="btn btn-accent">
+        <i class="fa-solid fa-house"></i> Volver al Dashboard
+    </a>
+</div>
+{% endblock %}

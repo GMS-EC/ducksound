@@ -132,6 +132,7 @@ def transcodificar_cancion(cancion_id, calidad='high', forzar=False):
                 '-i', str(original_path),
                 '-c:a', 'libmp3lame',
                 '-b:a', bitrate,
+                '-f', 'mp3',
                 '-threads', '1',
                 str(ruta_temporal)
             ]
@@ -219,3 +220,26 @@ def run_pretranscode_library(calidad='high'):
             pretranscodificar_biblioteca(calidad=calidad)
         except Exception as e:
             logger.error(f"[Transcoder Worker] Error al pretranscodificar biblioteca en background ({calidad}): {e}")
+
+
+def limpiar_cache_transcodificacion(max_age_horas=24):
+    """
+    Elimina archivos del caché de transcodificación que no se hayan usado en más de `max_age_horas`.
+    Esto evita que el disco se llene con archivos transcodificados de canciones que ya no se escuchan.
+    """
+    import time
+    ahora = time.time()
+    max_age_segundos = max_age_horas * 3600
+    eliminados = 0
+    for archivo in Config.TRANSCODE_CACHE_FOLDER.iterdir():
+        if archivo.suffix in ('.mp3', '.tmp'):
+            try:
+                tiempo_mod = archivo.stat().st_mtime
+                if ahora - tiempo_mod > max_age_segundos:
+                    archivo.unlink()
+                    eliminados += 1
+            except Exception as e:
+                logger.error(f"[Transcoder] Error limpiando archivo {archivo}: {e}")
+    if eliminados:
+        logger.info(f"[Transcoder] Limpieza completada: {eliminados} archivos eliminados del caché.")
+    return eliminados

@@ -1706,8 +1706,12 @@ body {
 }
 
 @media (max-width: 768px) {
+  :root {
+    --player-height: 72px !important;
+  }
+
   .sidebar {
-    display: none;
+    display: flex !important;
   }
 
   .main-wrapper {
@@ -1716,17 +1720,68 @@ body {
   }
 
   #mini-player-parent {
-    grid-template-columns: 1fr auto !important;
-    padding: 0 12px !important;
-    gap: 8px !important;
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    padding: 0 16px !important;
+    gap: 12px !important;
+    height: 72px !important;
+  }
+
+  .player-left-section {
+    flex: 1 !important;
+    min-width: 0 !important;
+  }
+
+  .player-center-section {
+    flex-shrink: 0 !important;
+    width: auto !important;
+    margin: 0 !important;
+    max-width: none !important;
+  }
+
+  .player-progress-row {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    height: 3px !important;
+  }
+
+  #mini-time-current,
+  #mini-time-duration {
+    display: none !important;
+  }
+
+  #mini-progress-container {
+    width: 100% !important;
+    height: 3px !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    cursor: pointer !important;
+  }
+
+  #mini-progress-bar {
+    height: 100% !important;
+    border-radius: 0 !important;
+  }
+
+  #mini-shuffle,
+  #mini-repeat,
+  #mini-back10,
+  #mini-forward10 {
+    display: none !important;
+  }
+
+  .player-controls {
+    gap: 12px !important;
   }
 
   .player-right-section {
     display: none !important;
-  }
-
-  .player-left-section {
-    min-width: 0 !important;
   }
 
   #mini-cover-wrapper {
@@ -1734,6 +1789,53 @@ body {
     height: 44px !important;
   }
 }
+
+@media (max-width: 480px) {
+  :root {
+    --player-height: 64px !important;
+  }
+
+  #mini-player-parent {
+    padding: 0 10px !important;
+    gap: 8px !important;
+    height: 64px !important;
+  }
+
+  #mini-cover-wrapper {
+    width: 36px !important;
+    height: 36px !important;
+  }
+
+  .player-track-info {
+    max-width: 100px !important;
+  }
+
+  #mini-title {
+    font-size: 12px !important;
+  }
+
+  #mini-artist {
+    font-size: 10px !important;
+  }
+
+  .player-controls {
+    gap: 6px !important;
+  }
+
+  .player-controls button {
+    width: 28px !important;
+    height: 28px !important;
+    font-size: 12px !important;
+  }
+
+  #mini-play {
+    width: 32px !important;
+    height: 32px !important;
+    font-size: 12px !important;
+    margin: 0 2px !important;
+  }
+}
+
 
 /* ============================================
    PAGE HEADER
@@ -1886,6 +1988,7 @@ body {
    ============================================ */
 .album-detail {
   max-width: 1000px;
+  margin: 0 auto;
 }
 
 .album-header {
@@ -2437,6 +2540,7 @@ body {
    ============================================ */
 .artist-detail {
   max-width: 1000px;
+  margin: 0 auto;
 }
 
 .artist-header {
@@ -3214,7 +3318,7 @@ body {
     display: none !important;
   }
   .player-track-info {
-    max-width: 100px;
+    max-width: 130px;
   }
   #mini-title {
     font-size: 13px;
@@ -3370,16 +3474,18 @@ body {
 }
 
 .sidebar-overlay {
-  display: none;
+  display: block;
   position: fixed;
   inset: 0;
   background: rgba(0,0,0,0.5);
   z-index: 8999;
   opacity: 0;
+  pointer-events: none;
   transition: opacity 0.25s ease;
 }
 .sidebar-overlay.visible {
   opacity: 1;
+  pointer-events: auto;
 }
 
 @media (max-width: 900px) {

@@ -2,9 +2,12 @@
 {% block title %}{{ mix.nombre }} - DuckSound{% endblock %}
 {% block content %}
 <div class="page-header" style="display:flex;align-items:center;gap:16px">
-    <a href="{{ url_for('daily_mixes') }}" class="btn" style="padding:8px 16px"><i class="fa-solid fa-arrow-left"></i></a>
+    <a href="{{ url_for('main.dashboard') }}" class="btn" style="padding:8px 16px"><i class="fa-solid fa-arrow-left"></i></a>
+    <div style="width:120px;height:120px;flex-shrink:0;border-radius:var(--radius-lg);overflow:hidden">
+        <img src="{{ url_for('audio.servir_portada_daily_mix', mix_id=mix.id) }}" alt="{{ mix.nombre }}" style="width:100%;height:100%;object-fit:cover">
+    </div>
     <div>
-        <h1 class="page-title" style="margin-bottom:0"><i class="fa-solid fa-wand-magic-sparkles" style="color:var(--accent);margin-right:8px"></i> {{ mix.nombre }}</h1>
+        <h1 class="page-title" style="margin-bottom:0">{{ mix.nombre }}</h1>
         <p class="page-subtitle" style="margin-bottom:0">{{ mix.fecha }} · {{ mix.canciones.count() }} canciones</p>
     </div>
 </div>
@@ -20,8 +23,10 @@
 <div class="tracklist spotify-tracklist" id="mix-tracklist">
     {% for cancion in mix.canciones %}
     <div class="track-item" data-cancion-id="{{ cancion.id }}"
-         data-audio="{{ url_for('servir_audio', cancion_id=cancion.id) }}"
-         data-cover="{{ url_for('servir_album_art', cancion_id=cancion.id) }}"
+         data-audio="{{ url_for('audio.servir_audio', cancion_id=cancion.id) }}"
+         data-cover="{{ url_for('audio.servir_album_art', cancion_id=cancion.id, size='small') }}"
+
+
          data-titulo="{{ cancion.titulo }}"
          data-artista="{{ cancion.artista_obj.nombre if cancion.artista_obj else 'Desconocido' }}">
         <button class="track-play-btn" title="Reproducir"><i class="fa-solid fa-play"></i></button>
@@ -30,7 +35,8 @@
             <span class="playing-eq"><span></span><span></span><span></span></span>
         </span>
         <div class="track-cover-sm">
-            <img src="{{ url_for('servir_album_art', cancion_id=cancion.id) }}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                <img src="{{ url_for('audio.servir_album_art', cancion_id=cancion.id, size='small') }}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+
             <div class="cover-fallback" style="display:none"><i class="fa-solid fa-music"></i></div>
         </div>
         <div class="track-info">

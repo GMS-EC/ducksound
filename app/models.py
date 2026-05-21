@@ -50,6 +50,29 @@ class Usuario(db.Model):
         return f'<Usuario {self.nombre_usuario}>'
 
 
+class SesionActiva(db.Model):
+    """
+    Modelo de Sesión Activa.
+    Registra cada inicio de sesión con información del dispositivo para permitir
+    al usuario visualizar y revocar sesiones remotamente desde su perfil.
+    """
+    __tablename__ = 'sesiones_activas'
+    id = db.Column(db.Integer, primary_key=True)
+    usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False, index=True)
+    session_token = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    navegador = db.Column(db.String(100), nullable=True)    # Chrome, Firefox, Safari...
+    sistema = db.Column(db.String(100), nullable=True)      # Windows 10, Android, macOS...
+    dispositivo = db.Column(db.String(50), nullable=True)   # Desktop, Mobile, Tablet
+    ip_address = db.Column(db.String(45), nullable=True)    # IPv4/IPv6
+    fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)
+    ultima_actividad = db.Column(db.DateTime, default=datetime.utcnow)
+
+    usuario = db.relationship('Usuario', backref=db.backref('sesiones', lazy='dynamic'))
+
+    def __repr__(self):
+        return f'<SesionActiva {self.navegador} - {self.sistema}>'
+
+
 # Tabla de asociación (muchos a muchos) entre Playlists y Canciones.
 # Permite guardar la lista de reproducción y su orden personalizado de tracks.
 playlist_canciones = db.Table(

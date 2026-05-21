@@ -1492,21 +1492,16 @@ def escanear_carpeta_audio(progress_callback=None):
         from app.services.metadata import enriquecer_artistas_sin_mbid
         from app.services.transcoder import run_pretranscode_library
         
-        print("\n🚀 Encolando tareas post-escaneo en Redis (letras + MusicBrainz + transcode)...")
-        # Encolamos en Redis para que los workers dedicados descarguen letras, IDs y pretranscodifiquen sin bloquear la UI
+        print("\n🚀 Encolando tareas post-escaneo en Redis (letras + MusicBrainz)...")
         enqueue(descargar_letras_segundo_plano, batch_size=10)
         enqueue(enriquecer_artistas_sin_mbid, limite=200)
-        enqueue(run_pretranscode_library)
         print("✅ Tareas encoladas — workers las procesarán en segundo plano")
     except Exception as e:
         print(f"⚠️ No se pudieron encolar tareas: {e}")
-        # Fallback: Si no hay Redis configurado, lanzamos un hilo Daemon en segundo plano
         import threading
-        from app.services.transcoder import pretranscodificar_biblioteca
         th = threading.Thread(target=lambda: (
             descargar_letras_segundo_plano(batch_size=10),
             enriquecer_artistas_sin_mbid(limite=200),
-            pretranscodificar_biblioteca()
         ), daemon=True)
         th.start()
     
@@ -1839,21 +1834,17 @@ def escaneo_rapido(progress_callback=None):
         from app.services.queue import enqueue
         from app.services.lyrics import descargar_letras_segundo_plano
         from app.services.metadata import enriquecer_artistas_sin_mbid
-        from app.services.transcoder import run_pretranscode_library
         
-        print("\n🚀 Encolando tareas post-escaneo en Redis (letras + MusicBrainz + transcode)...")
+        print("\n🚀 Encolando tareas post-escaneo en Redis (letras + MusicBrainz)...")
         enqueue(descargar_letras_segundo_plano, batch_size=10)
         enqueue(enriquecer_artistas_sin_mbid, limite=200)
-        enqueue(run_pretranscode_library)
         print("✅ Tareas encoladas — workers las procesarán en segundo plano")
     except Exception as e:
         print(f"⚠️ No se pudieron encolar tareas: {e}")
         import threading
-        from app.services.transcoder import pretranscodificar_biblioteca
         th = threading.Thread(target=lambda: (
             descargar_letras_segundo_plano(batch_size=10),
             enriquecer_artistas_sin_mbid(limite=200),
-            pretranscodificar_biblioteca()
         ), daemon=True)
         th.start()
     

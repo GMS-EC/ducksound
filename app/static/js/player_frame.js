@@ -47,8 +47,8 @@
     const audioCtx = new AudioContext();
 
     // Crear los dos elementos de audio HTML5 de forma programática
-    const audio1 = document.createElement('audio'); audio1.preload='auto'; audio1.crossOrigin='anonymous'; audio1.style.display='none'; document.body.appendChild(audio1);
-    const audio2 = document.createElement('audio'); audio2.preload='auto'; audio2.crossOrigin='anonymous'; audio2.style.display='none'; document.body.appendChild(audio2);
+    const audio1 = document.createElement('audio'); audio1.preload='auto'; audio1.crossOrigin='anonymous'; audio1.style.cssText='position:fixed;left:-9999px;width:0;height:0;opacity:0'; document.body.appendChild(audio1);
+    const audio2 = document.createElement('audio'); audio2.preload='auto'; audio2.crossOrigin='anonymous'; audio2.style.cssText='position:fixed;left:-9999px;width:0;height:0;opacity:0'; document.body.appendChild(audio2);
 
     // Enlazar las fuentes de los elementos HTML5 al flujo gráfico de Web Audio API
     const source1 = audioCtx.createMediaElementSource(audio1);
@@ -97,6 +97,17 @@
     // Aplicar curva exponencial al volumen maestro para una respuesta perceptiva natural
     masterGain.gain.value = _volume * _volume;
 
+    function savePlayerState(updates) {
+        try {
+            const saved = JSON.parse(localStorage.getItem('player_state') || '{}');
+            const newState = { ...saved, ...updates };
+            localStorage.setItem('player_state', JSON.stringify(newState));
+        } catch (e) {
+            console.error('[Player] Error saving state:', e);
+        }
+    }
+    
+    function normalizeSong(song){
     function normalizeSong(song){
         if (!song) return song;
         const normalized = {...song};
@@ -217,7 +228,10 @@
             window.parent.postMessage({type: 'themeColor', color: [30, 215, 96]}, '*');
         }
 
-        const replayGainValue = await fetchReplayGain(s.id);
+        const replayGainPromise = fetchReplayGain(s.id);
+        replayGainPromise.then(gain => {
+            activeGain.gain.setTargetAtTime(gain, audioCtx.currentTime, 1.5);
+        });
 
         if (_seekListener) {
             activeAudio.removeEventListener('loadedmetadata', _seekListener);
@@ -231,13 +245,13 @@
                 const tempA = activeAudio; activeAudio = nextAudio; nextAudio = tempA;
                 const tempG = activeGain; activeGain = nextGain; nextGain = tempG;
                 
-                activeGain.gain.setValueAtTime(replayGainValue, audioCtx.currentTime);
+                activeGain.gain.setValueAtTime(1.0, audioCtx.currentTime);
                 activeAudio.play().catch(()=>{});
                 nextAudio.pause();
             } else {
                 activeAudio.pause();
                 activeAudio.src = s.audio;
-                activeGain.gain.setValueAtTime(replayGainValue, audioCtx.currentTime);
+                activeGain.gain.setValueAtTime(1.0, audioCtx.currentTime);
                 activeAudio.play().catch(()=>{});
             }
             currentIndex = idx;
@@ -254,7 +268,7 @@
             
             // Fade in canción nueva hasta alcanzar ReplayGain
             activeGain.gain.setValueAtTime(0, audioCtx.currentTime);
-            activeGain.gain.setTargetAtTime(replayGainValue, audioCtx.currentTime, crossfadeDuration / 3);
+            activeGain.gain.setTargetAtTime(1.0, audioCtx.currentTime, crossfadeDuration / 3);
             currentIndex = idx;
         }
 
@@ -340,8 +354,8 @@
         else { activeAudio.play().catch(()=>{}); isPlaying=true; btnPlay.textContent='⏸'; }
         postState();
     });
-    btnNext.addEventListener('click', ()=>{ if (playlist.length || queuedSongs.length) playIndex(getNextIndex({consumeQueue: true})); });
-    btnPrev.addEventListener('click', ()=>{ if (playlist.length) playIndex(currentIndex<=0?playlist.length-1:currentIndex-1); });
+    btnNext.addEventListener('click', ()=>{ if (playlist.length || queuedSongs.length) playIndex(getNextIndex({consumeQueue: true})).catch(()=>{}); });
+    btnPrev.addEventListener('click', ()=>{ if (playlist.length) playIndex(currentIndex<=0?playlist.length-1:currentIndex-1).catch(()=>{}); });
 
     function bindAudioEvents(aud) {
         aud.addEventListener('loadedmetadata', ()=>{
@@ -359,7 +373,7 @@
             }
             if (playlist.length && !crossfadeTriggered) {
                 const nextIdx = getNextIndex({consumeQueue: true});
-                if (nextIdx !== currentIndex) playIndex(nextIdx);
+                if (nextIdx !== currentIndex) playIndex(nextIdx).catch(()=>{});
             }
         });
 
@@ -374,7 +388,7 @@
                     crossfadeTriggered = true;
                     if (playlist.length && repeatMode !== 'one') {
                         const nextIdx = getNextIndex({consumeQueue: true});
-                        if (nextIdx !== currentIndex) playIndex(nextIdx, true);
+                        if (nextIdx !== currentIndex) playIndex(nextIdx, true).catch(()=>{});
                     }
                 }
                 
@@ -400,12 +414,7 @@
                 
                 if (!window._lastPlaybackSave || Date.now() - window._lastPlaybackSave > 3000) {
                     window._lastPlaybackSave = Date.now();
-                    try{
-                        const saved = JSON.parse(localStorage.getItem('player_state')||'{}');
-                        saved.currentIndex = currentIndex;
-                        saved.currentTime = t;
-                        localStorage.setItem('player_state', JSON.stringify(saved));
-                    }catch(e){}
+                    savePlayerState({ currentIndex, currentTime: t });
                 }
             }catch(e){}
         });
@@ -420,21 +429,27 @@
     window.addEventListener('message', (ev)=>{
         if (ev.origin !== window.location.origin) return;
         const msg = ev.data || {};
-        if (msg.type === 'playSong'){
-            const song = normalizeSong(msg.song);
-            const idx = playlist.findIndex(s=>s.id===song.id);
-            if (idx === -1){ playlist.unshift(song); playIndex(0); }
-            else { playIndex(idx); }
-            queuedSongs = queuedSongs.filter(s => s && s.id !== song.id);
+            if (msg.type === 'playSong'){
+                const song = normalizeSong(msg.song);
+                const idx = playlist.findIndex(s=>s.id===song.id);
+                if (idx === -1){ playlist.unshift(song); playIndex(0).catch(()=>{}); }
+                else { playIndex(idx).catch(()=>{}); }
+                queuedSongs = queuedSongs.filter(s => s && s.id !== song.id);
             try{
                 localStorage.setItem('player_playlist', JSON.stringify(playlist));
                 localStorage.setItem('player_queue', JSON.stringify(queuedSongs));
-                localStorage.setItem('player_state', JSON.stringify({currentIndex, isPlaying:true}));
+                savePlayerState({ currentIndex, isPlaying: true });
             }catch(e){}
         } else if (msg.type === 'setPlaylist'){
             playlist = (msg.playlist || []).map(normalizeSong);
             if (isShuffled) rebuildShuffleOrder();
             try{ localStorage.setItem('player_playlist', JSON.stringify(playlist)); }catch(e){}
+            // Precargar la primera canción de la playlist para reducir latencia
+            if (playlist.length > 0 && !activeAudio.src) {
+                const first = normalizeSong(playlist[0]);
+                activeAudio.src = first.audio;
+                currentIndex = 0;
+            }
         } else if (msg.type === 'queueSong'){
             const song = normalizeSong(msg.song);
             if (song && song.id) {
@@ -450,12 +465,12 @@
             if (cmd === 'toggle'){
                 btnPlay.click();
             } else if (cmd === 'next'){
-                if (playlist.length || queuedSongs.length) playIndex(getNextIndex({consumeQueue: true}));
+                if (playlist.length || queuedSongs.length) playIndex(getNextIndex({consumeQueue: true})).catch(()=>{});
             } else if (cmd === 'prev'){
-                if (playlist.length) playIndex(currentIndex<=0?playlist.length-1:currentIndex-1);
+                if (playlist.length) playIndex(currentIndex<=0?playlist.length-1:currentIndex-1).catch(()=>{});
             } else if (cmd === 'playSong'){
                 const idx = parseInt(msg.index);
-                if (!isNaN(idx) && idx >= 0 && idx < playlist.length) playIndex(idx);
+                if (!isNaN(idx) && idx >= 0 && idx < playlist.length) playIndex(idx).catch(()=>{});
             } else if (cmd === 'seek'){
                 const sec = Number(msg.seconds) || 0;
                 try{ activeAudio.currentTime = Math.max(0, (activeAudio.currentTime || 0) + sec); }catch(e){}
@@ -477,6 +492,7 @@
                 const vol = Math.max(0, Math.min(1, Number(msg.value) || 0));
                 _volume = vol;
                 masterGain.gain.value = vol * vol;
+                savePlayerState({ volume: _volume });
                 parent.postMessage({type:'volumeChange', volume: vol}, window.location.origin);
             } else if (cmd === 'toggleMute'){
                 if (masterGain.gain.value > 0){
@@ -516,40 +532,45 @@
         const rawQueue = localStorage.getItem('player_queue');
         if (rawQueue) queuedSongs = (JSON.parse(rawQueue) || []).map(normalizeSong);
         const st = JSON.parse(localStorage.getItem('player_state')||'null');
-        if (st && typeof st.currentIndex==='number'){
-            currentIndex = st.currentIndex;
-            if (playlist[currentIndex]){
-                playlist[currentIndex] = normalizeSong(playlist[currentIndex]);
-                activeAudio.src = playlist[currentIndex].audio;
-                titleEl.textContent = playlist[currentIndex].titulo || 'Sin título';
-                artistEl.textContent = playlist[currentIndex].artista || '';
-                if (playlist[currentIndex].cover) {
-                    cover.innerHTML = `<img src="${playlist[currentIndex].cover}" style="width:100%;height:100%;object-fit:cover;border-radius:6px">`;
-                    extractColor(playlist[currentIndex].cover);
-                }
-                
-                // Inicializar sesión multimedia con la canción actual al arrancar
-                updateMediaSession(playlist[currentIndex]);
-                if ('mediaSession' in navigator) {
-                    navigator.mediaSession.playbackState = 'paused';
-                }
-                
-                fetchReplayGain(playlist[currentIndex].id).then(gain => {
-                    activeGain.gain.value = gain;
-                });
-                
-                if (typeof st.currentTime === 'number' && st.currentTime > 0) {
-                    _seekTo = st.currentTime;
-                    _seekListener = () => {
-                        try{
-                            activeAudio.currentTime = Math.min(_seekTo, activeAudio.duration || 0);
-                        }catch(e){}
-                    };
-                    activeAudio.addEventListener('loadedmetadata', _seekListener);
-                }
+        if (st) {
+            if (typeof st.volume === 'number') {
+                _volume = st.volume;
+                masterGain.gain.value = _volume * _volume;
             }
-            setTimeout(postState, 200);
-        }
+            if (typeof st.currentIndex==='number'){
+                currentIndex = st.currentIndex;
+                if (playlist[currentIndex]){
+                    playlist[currentIndex] = normalizeSong(playlist[currentIndex]);
+                    activeAudio.src = playlist[currentIndex].audio;
+                    titleEl.textContent = playlist[currentIndex].titulo || 'Sin título';
+                    artistEl.textContent = playlist[currentIndex].artista || '';
+                    if (playlist[currentIndex].cover) {
+                        cover.innerHTML = `<img src="${playlist[currentIndex].cover}" style="width:100%;height:100%;object-fit:cover;border-radius:6px">`;
+                        extractColor(playlist[currentIndex].cover);
+                    }
+                    
+                    // Inicializar sesión multimedia con la canción actual al arrancar
+                    updateMediaSession(playlist[currentIndex]);
+                    if ('mediaSession' in navigator) {
+                        navigator.mediaSession.playbackState = 'paused';
+                    }
+                    
+                    fetchReplayGain(playlist[currentIndex].id).then(gain => {
+                        activeGain.gain.value = gain;
+                    });
+                    
+                    if (typeof st.currentTime === 'number' && st.currentTime > 0) {
+                        _seekTo = st.currentTime;
+                        _seekListener = () => {
+                            try{
+                                activeAudio.currentTime = Math.min(_seekTo, activeAudio.duration || 0);
+                            }catch(e){}
+                        };
+                        activeAudio.addEventListener('loadedmetadata', _seekListener);
+                    }
+                }
+                setTimeout(postState, 200);
+            }
     }catch(e){console.error(e)}
 
     function updateMediaSession(s) {
@@ -598,13 +619,13 @@
 
             navigator.mediaSession.setActionHandler('previoustrack', () => {
                 if (playlist.length) {
-                    playIndex(currentIndex <= 0 ? playlist.length - 1 : currentIndex - 1);
+                    playIndex(currentIndex <= 0 ? playlist.length - 1 : currentIndex - 1).catch(()=>{});
                 }
             });
 
             navigator.mediaSession.setActionHandler('nexttrack', () => {
                 if (playlist.length || queuedSongs.length) {
-                    playIndex(getNextIndex({consumeQueue: true}));
+                    playIndex(getNextIndex({consumeQueue: true})).catch(()=>{});
                 }
             });
 

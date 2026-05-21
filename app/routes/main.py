@@ -68,17 +68,15 @@ def dashboard():
     is_admin = usuario_obj.is_admin() if usuario_obj else False
     
     # 1. Obtener los Mixes Diarios del usuario para el día actual
-    daily_mixes = DailyMix.query.filter_by(usuario_id=session['user_id']).order_by(DailyMix.fecha.desc()).limit(6).all()
+    today = datetime.utcnow().date()
+    daily_mixes = DailyMix.query.filter_by(usuario_id=session['user_id'], fecha=today).all()
     if not daily_mixes:
-        today = datetime.utcnow().date()
-        mixes_hoy = DailyMix.query.filter_by(usuario_id=session['user_id'], fecha=today).first()
-        if not mixes_hoy:
-            # Generar dinámicamente utilizando el servicio desacoplado
-            try:
-                generate_daily_mixes_for_user(session['user_id'])
-                daily_mixes = DailyMix.query.filter_by(usuario_id=session['user_id']).order_by(DailyMix.fecha.desc()).limit(6).all()
-            except Exception as e:
-                current_app.logger.error(f"Error generando mixes diarios en dashboard: {e}")
+        # Generar dinámicamente utilizando el servicio desacoplado
+        try:
+            generate_daily_mixes_for_user(session['user_id'])
+            daily_mixes = DailyMix.query.filter_by(usuario_id=session['user_id'], fecha=today).all()
+        except Exception as e:
+            current_app.logger.error(f"Error generando mixes diarios en dashboard: {e}")
                 
     # 2. Obtener feeds de descubrimiento para la interfaz fluida
     albumes_recientes = Album.query.order_by(Album.id.desc()).limit(12).all()
@@ -208,26 +206,6 @@ def coleccion_detail(coleccion_id):
 # ==============================================================================
 # SECCIÓN 5: RECOMENDACIONES DIARIAS (DAILY MIXES)
 # ==============================================================================
-
-@main_bp.route('/daily-mixes')
-def daily_mixes():
-    """Muestra los mixes de descubrimiento generados para el día de hoy."""
-    if 'user_id' not in session:
-        return redirect(url_for('auth.login'))
-        
-    usuario_obj = db.session.get(Usuario, session['user_id'])
-    is_admin = usuario_obj.is_admin() if usuario_obj else False
-    today = datetime.utcnow().date()
-    
-    mixes = DailyMix.query.filter_by(usuario_id=session['user_id'], fecha=today).all()
-    if not mixes:
-        try:
-            generate_daily_mixes_for_user(session['user_id'])
-            mixes = DailyMix.query.filter_by(usuario_id=session['user_id'], fecha=today).all()
-        except Exception as e:
-            current_app.logger.error(f"Fallo al forzar la generación de mixes diarios: {e}")
-            
-    return render_template('daily_mixes.html', mixes=mixes, is_admin=is_admin)
 
 
 @main_bp.route('/daily-mix/<int:mix_id>')

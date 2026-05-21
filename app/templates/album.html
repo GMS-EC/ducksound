@@ -8,7 +8,7 @@
     <div class="album-header">
         <div class="album-header-cover">
             {% if cover_url %}
-            <img src="{{ cover_url }}" alt="{{ album.titulo }}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+            <img src="{{ cover_url }}" alt="{{ album.titulo }}" loading="lazy" decoding="async" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
             <div class="album-header-placeholder" style="display:none"><i class="fa-solid fa-compact-disc"></i></div>
             {% else %}
             <div class="album-header-placeholder"><i class="fa-solid fa-compact-disc"></i></div>
@@ -32,8 +32,8 @@
 
     <!-- TRACK LIST -->
     <div class="tracklist-header spotify-tracklist-header">
-        <span></span>
         <span class="tracklist-col-num">#</span>
+        <span></span> <!-- Espaciador para la carátula -->
         <span class="tracklist-col-title">Título</span>
         <span class="tracklist-col-artist">Artista</span>
         <span class="tracklist-col-duration">Duración</span>
@@ -52,7 +52,8 @@
         <div class="track-item" data-cancion-id="{{ s.id }}" 
              data-audio="{{ url_for('servir_audio', cancion_id=s.id) }}"
              data-lyrics="{{ url_for('servir_lyrics', cancion_id=s.id) }}"
-             data-cover="{{ cover_url if cover_url else url_for('servir_album_art', cancion_id=s.id) }}"
+              data-cover="{{ cover_url if cover_url else url_for('servir_album_art', cancion_id=s.id, size='small') }}"
+
              data-titulo="{{ s.titulo }}"
              data-artista="{{ s.artista_obj.nombre if s.artista_obj else 'Desconocido' }}"
              data-context="album" data-album-id="{{ album.id }}">
@@ -63,7 +64,7 @@
             </span>
             <div class="track-cover-sm">
                 {% if cover_url %}
-                <img src="{{ cover_url }}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                <img src="{{ cover_url }}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
                 <div class="cover-fallback" style="display:none"><i class="fa-solid fa-music"></i></div>
                 {% else %}
                 <div class="cover-fallback"><i class="fa-solid fa-music"></i></div>
@@ -94,34 +95,7 @@
         {% endfor %}
     </div>
 </div>
-{% endblock %}
 
-{% block extra_css %}
-<style>
-/* Disc separator */
-.album-detail .disc-separator {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    padding: 16px 0 8px;
-}
-.album-detail .disc-separator .disc-line {
-    flex: 1;
-    height: 1px;
-    background: rgba(255,255,255,0.08);
-}
-.album-detail .disc-separator .disc-label {
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    white-space: nowrap;
-}
-</style>
-{% endblock %}
-
-{% block extra_js %}
 <script>
 (function(){
     function playPlaylist(playlist, idx){
@@ -162,13 +136,11 @@
             if (first) playTrack(first);
         });
     }
-    // Shuffle button
     const shuffleBtn = document.getElementById('btn-shuffle-album');
     if (shuffleBtn) {
         shuffleBtn.addEventListener('click', function() {
             const tracks = Array.from(document.querySelectorAll('.track-item'));
             if (tracks.length === 0) return;
-            // Shuffle local playlist and play first
             const playlist = tracks.map(t => ({
                 id: parseInt(t.dataset.cancionId),
                 titulo: t.dataset.titulo,
@@ -184,7 +156,6 @@
             playPlaylist(playlist, 0);
         });
     }
-    // Track click to play (solo desde el botón play)
     document.querySelectorAll('.track-item').forEach(function(item) {
         item.addEventListener('click', function(e) {
             if (!e.target.closest('.track-play-btn')) return;
@@ -194,3 +165,29 @@
 })();
 </script>
 {% endblock %}
+
+{% block extra_css %}
+<style>
+/* Disc separator */
+.album-detail .disc-separator {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px 0 8px;
+}
+.album-detail .disc-separator .disc-line {
+    flex: 1;
+    height: 1px;
+    background: rgba(255,255,255,0.08);
+}
+.album-detail .disc-separator .disc-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    white-space: nowrap;
+}
+</style>
+{% endblock %}
+
