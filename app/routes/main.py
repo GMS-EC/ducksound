@@ -23,7 +23,7 @@ from sqlalchemy.orm import joinedload
 
 from flask import Blueprint, render_template, request, redirect, url_for, session, abort, current_app
 from config import Config
-from app.models import db, Usuario, Artista, Album, Cancion, Favorito, Coleccion, DailyMix
+from app.models import db, Usuario, Artista, Album, Cancion, Favorito, Coleccion, DailyMix, HistorialEscucha
 
 # Importación de servicios de recomendación desacoplados
 from app.services.recommender import generate_daily_mixes_for_user
@@ -77,11 +77,35 @@ def dashboard():
             daily_mixes = DailyMix.query.filter_by(usuario_id=session['user_id'], fecha=today).all()
         except Exception as e:
             current_app.logger.error(f"Error generando mixes diarios en dashboard: {e}")
-                
+
+    current_hour = datetime.now().hour
+    if 5 <= current_hour < 12:
+        target_mix_name = 'Morning Vibes'
+    elif 12 <= current_hour < 19:
+        target_mix_name = 'Afternoon Chill'
+    else:
+        target_mix_name = 'Night Beats'
+    spotlight_mix = next((mix for mix in daily_mixes if mix.nombre == target_mix_name), None)
+    if spotlight_mix is None and daily_mixes:
+        spotlight_mix = daily_mixes[0]
+
     # 2. Obtener feeds de descubrimiento para la interfaz fluida
     albumes_recientes = Album.query.order_by(Album.id.desc()).limit(12).all()
     artistas_recientes = Artista.query.order_by(Artista.id.desc()).limit(12).all()
-    canciones_recientes = Cancion.query.order_by(Cancion.fecha_agregada.desc()).limit(10).all()
+    top_canciones = db.session.query(
+        Cancion,
+        sqlfunc.count(HistorialEscucha.id).label('plays')
+    ).join(
+        HistorialEscucha,
+        HistorialEscucha.cancion_id == Cancion.id
+    ).filter(
+        HistorialEscucha.skip == False
+    ).group_by(
+        Cancion
+    ).order_by(
+        db.desc('plays')
+    ).limit(5).all()
+    canciones_recientes = Cancion.query.order_by(Cancion.fecha_agregada.desc()).limit(5).all()
     dashboard_stats = {
         'canciones': Cancion.query.count(),
         'albumes': Album.query.count(),
@@ -95,9 +119,11 @@ def dashboard():
                            is_admin=is_admin, 
                            es_favoritos=False,
                            daily_mixes=daily_mixes,
+                           spotlight_mix=spotlight_mix,
                            albumes_recientes=albumes_recientes,
                            artistas_recientes=artistas_recientes,
                            dashboard_stats=dashboard_stats,
+                           top_canciones=top_canciones,
                            canciones_recientes=canciones_recientes)
 
 

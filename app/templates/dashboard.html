@@ -61,7 +61,7 @@
 {% else %}
 <!-- VISTA TIPO SPOTIFY PARA HOME -->
 
-{% set spotlight_mix = daily_mixes[0] if daily_mixes else none %}
+{% set spotlight_mix = spotlight_mix if spotlight_mix is defined else (daily_mixes[0] if daily_mixes else none) %}
 {% set spotlight_album = albumes_recientes[0] if albumes_recientes else none %}
 {% set spotlight_song = spotlight_mix.canciones.first() if spotlight_mix else (canciones_recientes[0] if canciones_recientes else none) %}
 {% set spotlight_cover = url_for('audio.servir_portada_daily_mix', mix_id=spotlight_mix.id) if spotlight_mix else none %}
@@ -75,7 +75,7 @@
 <section class="dashboard-spotlight">
     <div class="dashboard-spotlight-art">
         {% if spotlight_cover %}
-        <img src="{{ spotlight_cover }}" alt="" loading="eager" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+        <img src="{{ spotlight_cover }}" alt="" loading="eager" id="spotlight-cover" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
         <div class="dashboard-spotlight-fallback" style="display:none"><i class="fa-solid fa-music"></i></div>
         {% else %}
         <div class="dashboard-spotlight-fallback"><i class="fa-solid fa-music"></i></div>
@@ -84,12 +84,12 @@
     <div class="dashboard-spotlight-copy">
         <div class="dashboard-kicker">
             <i class="fa-solid fa-wand-magic-sparkles"></i>
-            <span>{{ 'Mezcla diaria' if spotlight_mix else 'Inicio rapido' }}</span>
+            <span>{{ spotlight_mix.nombre if spotlight_mix else 'Inicio rapido' }}</span>
         </div>
-        <h2>{{ spotlight_mix.nombre if spotlight_mix else (spotlight_album.titulo if spotlight_album else 'Tu biblioteca esta lista') }}</h2>
+        <h2 id="spotlight-title">{{ spotlight_mix.nombre if spotlight_mix else (spotlight_album.titulo if spotlight_album else 'Tu biblioteca esta lista') }}</h2>
         <p>
             {% if spotlight_mix %}
-                {{ spotlight_mix.canciones.count() }} canciones seleccionadas para hoy.
+                <span id="spotlight-description">{{ spotlight_mix.canciones.count() }} canciones seleccionadas para hoy.</span>
             {% elif spotlight_album %}
                 Lo mas reciente de {{ spotlight_album.artista.nombre if spotlight_album.artista else 'tu coleccion' }}.
             {% else %}
@@ -98,7 +98,7 @@
         </p>
         <div class="dashboard-spotlight-actions">
             {% if spotlight_song %}
-            <button class="dashboard-play-now"
+            <button class="dashboard-play-now" id="spotlight-play"
                 data-cancion-id="{{ spotlight_song.id }}"
                 data-titulo="{{ spotlight_song.titulo }}"
                 data-artista="{{ spotlight_song.artista_obj.nombre if spotlight_song.artista_obj else 'Desconocido' }}"
@@ -108,7 +108,7 @@
             </button>
             {% endif %}
             {% if spotlight_mix %}
-            <a href="{{ url_for('daily_mix_detail', mix_id=spotlight_mix.id) }}" class="dashboard-secondary-action">Abrir mix</a>
+            <a href="{{ url_for('daily_mix_detail', mix_id=spotlight_mix.id) }}" class="dashboard-secondary-action" id="spotlight-link">Abrir mix</a>
             {% elif spotlight_album %}
             <a href="{{ url_for('browse.album_detail', album_id=spotlight_album.id) }}" class="dashboard-secondary-action">Ver album</a>
             {% else %}
@@ -131,30 +131,6 @@
         </a>
     </div>
 </section>
-
-{% if daily_mixes %}
-<section class="home-shelf">
-    <div class="home-shelf-header">
-        <h2 class="home-shelf-title">Especialmente para ti</h2>
-    </div>
-    <div class="horizontal-scroll-grid">
-        {% for mix in daily_mixes %}
-        <a href="{{ url_for('daily_mix_detail', mix_id=mix.id) }}" class="album-card" style="text-decoration:none">
-            <div class="album-card-cover">
-                <img src="{{ url_for('audio.servir_portada_daily_mix', mix_id=mix.id) }}" alt="{{ mix.nombre }}" loading="lazy" style="width:100%;height:100%;object-fit:cover;border-radius:var(--radius-lg)">
-                <div class="album-card-overlay">
-                    <button class="album-card-play" data-mix-id="{{ mix.id }}"><i class="fa-solid fa-play"></i></button>
-                </div>
-            </div>
-            <div class="album-card-info">
-                <div class="album-card-title">{{ mix.nombre }}</div>
-                <div class="album-card-artist">{{ mix.fecha.strftime('%d %b %Y') }}</div>
-            </div>
-        </a>
-        {% endfor %}
-    </div>
-</section>
-{% endif %}
 
 {% if albumes_recientes %}
 <section class="home-shelf">
@@ -218,13 +194,16 @@
 </section>
 {% endif %}
 
-{% if canciones_recientes %}
+{% set top_items = top_canciones if top_canciones is defined and top_canciones else [] %}
+{% if top_items or canciones_recientes %}
 <section class="home-shelf">
     <div class="home-shelf-header">
-        <h2 class="home-shelf-title">Últimas pistas agregadas</h2>
+        <h2 class="home-shelf-title">Top músicas</h2>
     </div>
     <div class="tracklist spotify-tracklist" id="dashboard-tracklist">
-        {% for cancion in canciones_recientes %}
+        {% for item in top_items %}
+        {% set cancion = item[0] %}
+        {% set plays = item[1] %}
         <div class="track-item" data-cancion-id="{{ cancion.id }}"
             data-audio="{{ url_for('servir_audio', cancion_id=cancion.id) }}"
             data-cover="{{ url_for('servir_album_art', cancion_id=cancion.id, size='small') }}" data-titulo="{{ cancion.titulo }}"
@@ -245,11 +224,39 @@
             </div>
             <span class="track-artist-col">{{ cancion.artista_obj.nombre if cancion.artista_obj else '' }}</span>
             <span class="track-duration">
-                {% if cancion.duracion %}{{ (cancion.duracion // 60) }}:{{ '%02d' % (cancion.duracion % 60) }}{% else
-                %}--:--{% endif %}
+                <span class="duration-text">{{ plays }} rep.</span>
             </span>
         </div>
         {% endfor %}
+        {% if not top_items %}
+        {% for cancion in canciones_recientes[:5] %}
+        <div class="track-item" data-cancion-id="{{ cancion.id }}"
+            data-audio="{{ url_for('servir_audio', cancion_id=cancion.id) }}"
+            data-cover="{{ url_for('servir_album_art', cancion_id=cancion.id, size='small') }}" data-titulo="{{ cancion.titulo }}"
+            data-artista="{{ cancion.artista_obj.nombre if cancion.artista_obj else 'Desconocido' }}">
+            <button class="track-play-btn" title="Reproducir"><i class="fa-solid fa-play"></i></button>
+            <span class="track-num">
+                <span class="num-text">{{ loop.index }}</span>
+                <span class="playing-eq"><span></span><span></span><span></span></span>
+            </span>
+            <div class="track-cover-sm">
+                <img src="{{ url_for('servir_album_art', cancion_id=cancion.id, size='small') }}" alt="" loading="lazy"
+                    onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                <div class="cover-fallback" style="display:none"><i class="fa-solid fa-music"></i></div>
+            </div>
+            <div class="track-info">
+                <span class="track-title">{{ cancion.titulo }}</span>
+                <span class="track-artist-mobile">{{ cancion.artista_obj.nombre if cancion.artista_obj else '' }}</span>
+            </div>
+            <span class="track-artist-col">{{ cancion.artista_obj.nombre if cancion.artista_obj else '' }}</span>
+            <span class="track-duration">
+                <span class="duration-text">
+                    {% if cancion.duracion %}{{ (cancion.duracion // 60) }}:{{ '%02d' % (cancion.duracion % 60) }}{% else %}--:--{% endif %}
+                </span>
+            </span>
+        </div>
+        {% endfor %}
+        {% endif %}
     </div>
 </section>
 {% endif %}
@@ -262,6 +269,60 @@
 {% block extra_js %}
 <script>
     (function () {
+        const spotlightMixes = [
+            {% for mix in daily_mixes %}
+            {% set mix_song = mix.canciones.first() %}
+            {
+                id: {{ mix.id }},
+                nombre: {{ mix.nombre|tojson }},
+                count: {{ mix.canciones.count() }},
+                cover: {{ url_for('audio.servir_portada_daily_mix', mix_id=mix.id)|tojson }},
+                url: {{ url_for('daily_mix_detail', mix_id=mix.id)|tojson }},
+                song: {% if mix_song %}{
+                    id: {{ mix_song.id }},
+                    titulo: {{ mix_song.titulo|tojson }},
+                    artista: {{ (mix_song.artista_obj.nombre if mix_song.artista_obj else 'Desconocido')|tojson }},
+                    audio: {{ url_for('servir_audio', cancion_id=mix_song.id)|tojson }},
+                    cover: {{ url_for('servir_album_art', cancion_id=mix_song.id, size='small')|tojson }}
+                }{% else %}null{% endif %}
+            }{% if not loop.last %},{% endif %}
+            {% endfor %}
+        ];
+
+        function preferredMixName() {
+            const hour = new Date().getHours();
+            if (hour >= 5 && hour < 12) return 'Morning Vibes';
+            if (hour >= 12 && hour < 19) return 'Afternoon Chill';
+            return 'Night Beats';
+        }
+
+        function applySpotlightMix() {
+            if (!spotlightMixes.length) return;
+            const mix = spotlightMixes.find(m => m.nombre === preferredMixName()) || spotlightMixes[0];
+            const title = document.getElementById('spotlight-title');
+            const description = document.getElementById('spotlight-description');
+            const cover = document.getElementById('spotlight-cover');
+            const link = document.getElementById('spotlight-link');
+            const play = document.getElementById('spotlight-play');
+
+            if (title) title.textContent = mix.nombre;
+            if (description) description.textContent = `${mix.count} canciones seleccionadas para hoy.`;
+            if (cover) {
+                cover.style.display = '';
+                cover.src = mix.cover;
+            }
+            if (link) link.href = mix.url;
+            if (play && mix.song) {
+                play.dataset.cancionId = mix.song.id;
+                play.dataset.titulo = mix.song.titulo;
+                play.dataset.artista = mix.song.artista;
+                play.dataset.audio = mix.song.audio;
+                play.dataset.cover = mix.song.cover;
+            }
+        }
+
+        applySpotlightMix();
+
         // Saludo dinámico según la hora local del dispositivo
         const greetEl = document.getElementById('dynamic-greeting');
         const subEl = document.getElementById('dashboard-subtitle');
