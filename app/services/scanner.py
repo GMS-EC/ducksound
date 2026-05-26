@@ -1099,8 +1099,8 @@ def escanear_carpeta_audio(progress_callback=None):
                 db.session.execute(db.delete(daily_mix_canciones).where(daily_mix_canciones.c.cancion_id == cancion.id))
                 db.session.execute(db.delete(playlist_canciones).where(playlist_canciones.c.cancion_id == cancion.id))
                 db.session.execute(db.delete(coleccion_canciones).where(coleccion_canciones.c.cancion_id == cancion.id))
-                Favorito.query.filter_by(cancion_id=cancion.id).delete()
-                HistorialEscucha.query.filter_by(cancion_id=cancion.id).delete()
+                db.session.execute(db.delete(Favorito).where(Favorito.cancion_id == cancion.id))
+                db.session.execute(db.delete(HistorialEscucha).where(HistorialEscucha.cancion_id == cancion.id))
                 
                 db.session.delete(cancion)
                 huerfanas += 1
@@ -1663,8 +1663,8 @@ def escaneo_rapido(progress_callback=None):
                     db.session.execute(db.delete(daily_mix_canciones).where(daily_mix_canciones.c.cancion_id == cancion.id))
                     db.session.execute(db.delete(playlist_canciones).where(playlist_canciones.c.cancion_id == cancion.id))
                     db.session.execute(db.delete(coleccion_canciones).where(coleccion_canciones.c.cancion_id == cancion.id))
-                    Favorito.query.filter_by(cancion_id=cancion.id).delete()
-                    HistorialEscucha.query.filter_by(cancion_id=cancion.id).delete()
+                    db.session.execute(db.delete(Favorito).where(Favorito.cancion_id == cancion.id))
+                    db.session.execute(db.delete(HistorialEscucha).where(HistorialEscucha.cancion_id == cancion.id))
                     
                     db.session.delete(cancion)
                     canciones_eliminadas += 1
