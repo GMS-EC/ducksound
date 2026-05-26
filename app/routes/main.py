@@ -359,7 +359,12 @@ def artist_detail(artist_id):
         return redirect(url_for('auth.login'))
         
     artist = Artista.query.get_or_404(artist_id)
-    songs = Cancion.query.filter_by(artista_id=artist.id).order_by(Cancion.album_id, Cancion.ruta_archivo_audio).all()
+    songs = Cancion.query.filter_by(artista_id=artist.id).order_by(
+        Cancion.album_id,
+        Cancion.numero_disco.asc(),
+        Cancion.numero_pista.asc(),
+        Cancion.titulo.asc()
+    ).all()
     
     album_stats = db.session.query(
         Album, sqlfunc.count(Cancion.id).label('track_count')
@@ -407,7 +412,11 @@ def album_detail(album_id):
         return redirect(url_for('auth.login'))
         
     album = Album.query.get_or_404(album_id)
-    songs = Cancion.query.filter_by(album_id=album.id).all()
+    songs = Cancion.query.filter_by(album_id=album.id).order_by(
+        Cancion.numero_disco.asc(),
+        Cancion.numero_pista.asc(),
+        Cancion.titulo.asc()
+    ).all()
     
     # Separar canciones por volumen / disco físico
     discos_dict = {}

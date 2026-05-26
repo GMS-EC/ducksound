@@ -85,6 +85,7 @@
             {% for s in songs %}
             <div class="track-item" data-cancion-id="{{ s.id }}"
                  data-album-id="{{ s.album_obj.id if s.album_obj else 'none' }}"
+                 data-pista="{{ s.numero_pista if s.numero_pista is not none else '' }}"
                  data-audio="{{ url_for('servir_audio', cancion_id=s.id) }}"
                  data-lyrics="{{ url_for('servir_lyrics', cancion_id=s.id) }}"
                   data-cover="{{ url_for('servir_album_art', cancion_id=s.id, size='small') }}"
@@ -170,7 +171,7 @@
 <script>
 (function() {
     function playArtistSongs(shuffle) {
-        const tracks = Array.from(document.querySelectorAll('#artist-tracklist .track-item'));
+        const tracks = Array.from(document.querySelectorAll('#artist-tracklist .track-item')).filter(t => t.style.display !== 'none');
         if (tracks.length === 0) return;
         const playlist = tracks.map(t => ({
             id: parseInt(t.dataset.cancionId),
@@ -200,7 +201,7 @@
     document.querySelectorAll('#artist-tracklist .track-item').forEach(function(item) {
         item.addEventListener('click', function(e) {
             if (!e.target.closest('.track-play-btn')) return;
-            const allTracks = Array.from(document.querySelectorAll('#artist-tracklist .track-item'));
+            const allTracks = Array.from(document.querySelectorAll('#artist-tracklist .track-item')).filter(t => t.style.display !== 'none');
             const playlist = allTracks.map(t => ({
                 id: parseInt(t.dataset.cancionId),
                 titulo: t.dataset.titulo,
@@ -232,10 +233,21 @@
     const trackItems = document.querySelectorAll('#artist-tracklist .track-item');
 
     function filterTracks(albumId) {
+        let visibleIndex = 1;
         trackItems.forEach(item => {
             const itemAlbumId = item.dataset.albumId;
             if (albumId === 'all' || itemAlbumId === albumId) {
                 item.style.display = 'grid';
+                const numText = item.querySelector('.num-text');
+                if (numText) {
+                    if (albumId === 'all') {
+                        numText.textContent = visibleIndex;
+                    } else {
+                        const pista = item.dataset.pista;
+                        numText.textContent = (pista && pista !== '') ? pista : visibleIndex;
+                    }
+                }
+                visibleIndex++;
             } else {
                 item.style.display = 'none';
             }

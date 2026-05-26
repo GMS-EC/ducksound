@@ -101,9 +101,13 @@ def extraer_metadatos(ruta_archivo):
             """Función interna para extraer y limpiar un valor de etiqueta desde los diccionarios de Mutagen."""
             if audio_file is None or not hasattr(audio_file, 'tags') or audio_file.tags is None:
                 return None
+            # Crear un mapeo case-insensitive de las claves existentes
+            tags_lower = {k.lower(): k for k in audio_file.tags.keys()}
             for k in keys:
-                if k in audio_file.tags:
-                    v = audio_file.tags[k]
+                k_lower = k.lower()
+                if k_lower in tags_lower:
+                    real_key = tags_lower[k_lower]
+                    v = audio_file.tags[real_key]
                     if v is not None:
                         # Si es una lista o tupla, nos quedamos con el primer elemento
                         if isinstance(v, (list, tuple)):
