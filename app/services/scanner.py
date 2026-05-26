@@ -1090,19 +1090,20 @@ def escanear_carpeta_audio(progress_callback=None):
     print("🧹 Buscando canciones huérfanas en BD...")
     canciones_db = Cancion.query.all()
     huerfanas = 0
-    for cancion in canciones_db:
-        # Si el archivo registrado en BD ya no existe en el disco, lo eliminamos
-        if not os.path.exists(cancion.ruta_archivo_audio):
-            print(f"  🗑 Eliminando de BD (no encontrada en disco): {cancion.ruta_archivo_audio}")
-            # Eliminar referencias en tablas intermedias para evitar violar restricciones de FK en PostgreSQL
-            db.session.execute(db.delete(daily_mix_canciones).where(daily_mix_canciones.c.cancion_id == cancion.id))
-            db.session.execute(db.delete(playlist_canciones).where(playlist_canciones.c.cancion_id == cancion.id))
-            db.session.execute(db.delete(coleccion_canciones).where(coleccion_canciones.c.cancion_id == cancion.id))
-            Favorito.query.filter_by(cancion_id=cancion.id).delete()
-            HistorialEscucha.query.filter_by(cancion_id=cancion.id).delete()
-            
-            db.session.delete(cancion)
-            huerfanas += 1
+    with db.session.no_autoflush:
+        for cancion in canciones_db:
+            # Si el archivo registrado en BD ya no existe en el disco, lo eliminamos
+            if not os.path.exists(cancion.ruta_archivo_audio):
+                print(f"  🗑 Eliminando de BD (no encontrada en disco): {cancion.ruta_archivo_audio}")
+                # Eliminar referencias en tablas intermedias para evitar violar restricciones de FK en PostgreSQL
+                db.session.execute(db.delete(daily_mix_canciones).where(daily_mix_canciones.c.cancion_id == cancion.id))
+                db.session.execute(db.delete(playlist_canciones).where(playlist_canciones.c.cancion_id == cancion.id))
+                db.session.execute(db.delete(coleccion_canciones).where(coleccion_canciones.c.cancion_id == cancion.id))
+                Favorito.query.filter_by(cancion_id=cancion.id).delete()
+                HistorialEscucha.query.filter_by(cancion_id=cancion.id).delete()
+                
+                db.session.delete(cancion)
+                huerfanas += 1
     
     if huerfanas > 0:
         db.session.commit()
@@ -1654,18 +1655,19 @@ def escaneo_rapido(progress_callback=None):
             'message': f'Eliminando {len(archivos_eliminados)} archivos obsoletos...',
             'percent': 5, 'processed': 0, 'total': len(archivos_nuevos)
         })
-        for ruta_eliminada in archivos_eliminados:
-            cancion = Cancion.query.filter_by(ruta_archivo_audio=ruta_eliminada).first()
-            if cancion:
-                # Eliminar referencias en tablas intermedias para evitar violar restricciones de FK en PostgreSQL
-                db.session.execute(db.delete(daily_mix_canciones).where(daily_mix_canciones.c.cancion_id == cancion.id))
-                db.session.execute(db.delete(playlist_canciones).where(playlist_canciones.c.cancion_id == cancion.id))
-                db.session.execute(db.delete(coleccion_canciones).where(coleccion_canciones.c.cancion_id == cancion.id))
-                Favorito.query.filter_by(cancion_id=cancion.id).delete()
-                HistorialEscucha.query.filter_by(cancion_id=cancion.id).delete()
-                
-                db.session.delete(cancion)
-                canciones_eliminadas += 1
+        with db.session.no_autoflush:
+            for ruta_eliminada in archivos_eliminados:
+                cancion = Cancion.query.filter_by(ruta_archivo_audio=ruta_eliminada).first()
+                if cancion:
+                    # Eliminar referencias en tablas intermedias para evitar violar restricciones de FK en PostgreSQL
+                    db.session.execute(db.delete(daily_mix_canciones).where(daily_mix_canciones.c.cancion_id == cancion.id))
+                    db.session.execute(db.delete(playlist_canciones).where(playlist_canciones.c.cancion_id == cancion.id))
+                    db.session.execute(db.delete(coleccion_canciones).where(coleccion_canciones.c.cancion_id == cancion.id))
+                    Favorito.query.filter_by(cancion_id=cancion.id).delete()
+                    HistorialEscucha.query.filter_by(cancion_id=cancion.id).delete()
+                    
+                    db.session.delete(cancion)
+                    canciones_eliminadas += 1
         db.session.commit()
         # Se ejecuta la limpieza de artistas y álbumes vacíos para evitar registros huérfanos
         limpiar_entidades_vacias()
