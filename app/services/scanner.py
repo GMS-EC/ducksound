@@ -1651,7 +1651,7 @@ def escaneo_rapido(progress_callback=None):
     commit_counter = 0
     batch_size = 50
 
-    for idx, archivo in enumerate(archivos_nuevos_lista, start=1):
+    for idx, archivo in enumerate(archivos_procesar_lista, start=1):
         # Reportar el progreso por cada archivo procesado mediante el callback
         emit_progress({
             'stage': 'file_done',
