@@ -32,7 +32,7 @@ from tinytag import TinyTag
 
 # Importaciones del ecosistema DuckSound
 from config import Config
-from app.models import db, Artista, Album, Cancion
+from app.models import db, Artista, Album, Cancion, Favorito, HistorialEscucha, daily_mix_canciones, playlist_canciones, coleccion_canciones
 from app.services.metadata import (
     enrich_artist, 
     enrich_all, 
@@ -1094,6 +1094,13 @@ def escanear_carpeta_audio(progress_callback=None):
         # Si el archivo registrado en BD ya no existe en el disco, lo eliminamos
         if not os.path.exists(cancion.ruta_archivo_audio):
             print(f"  🗑 Eliminando de BD (no encontrada en disco): {cancion.ruta_archivo_audio}")
+            # Eliminar referencias en tablas intermedias para evitar violar restricciones de FK en PostgreSQL
+            db.session.execute(db.delete(daily_mix_canciones).where(daily_mix_canciones.c.cancion_id == cancion.id))
+            db.session.execute(db.delete(playlist_canciones).where(playlist_canciones.c.cancion_id == cancion.id))
+            db.session.execute(db.delete(coleccion_canciones).where(coleccion_canciones.c.cancion_id == cancion.id))
+            Favorito.query.filter_by(cancion_id=cancion.id).delete()
+            HistorialEscucha.query.filter_by(cancion_id=cancion.id).delete()
+            
             db.session.delete(cancion)
             huerfanas += 1
     
@@ -1650,6 +1657,13 @@ def escaneo_rapido(progress_callback=None):
         for ruta_eliminada in archivos_eliminados:
             cancion = Cancion.query.filter_by(ruta_archivo_audio=ruta_eliminada).first()
             if cancion:
+                # Eliminar referencias en tablas intermedias para evitar violar restricciones de FK en PostgreSQL
+                db.session.execute(db.delete(daily_mix_canciones).where(daily_mix_canciones.c.cancion_id == cancion.id))
+                db.session.execute(db.delete(playlist_canciones).where(playlist_canciones.c.cancion_id == cancion.id))
+                db.session.execute(db.delete(coleccion_canciones).where(coleccion_canciones.c.cancion_id == cancion.id))
+                Favorito.query.filter_by(cancion_id=cancion.id).delete()
+                HistorialEscucha.query.filter_by(cancion_id=cancion.id).delete()
+                
                 db.session.delete(cancion)
                 canciones_eliminadas += 1
         db.session.commit()
