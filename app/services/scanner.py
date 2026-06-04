@@ -95,7 +95,10 @@ def extraer_metadatos(ruta_archivo):
 
     try:
         # Intentamos instanciar el parser principal Mutagen
-        audio_file = File(str(ruta_archivo))
+        try:
+            audio_file = File(str(ruta_archivo))
+        except Exception as mutagen_err:
+            audio_file = None
         
         def _tag_val(*keys):
             """Función interna para extraer y limpiar un valor de etiqueta desde los diccionarios de Mutagen."""
@@ -117,6 +120,8 @@ def extraer_metadatos(ruta_archivo):
         
         def _tiny_val(attr, *extra_keys):
             """Función interna para obtener valores desde TinyTag o sus campos extra en caso de fallback."""
+            if tag is None:
+                return None
             val = getattr(tag, attr, None)
             if not val:
                 extra = getattr(tag, 'extra', None) or {}
@@ -146,27 +151,33 @@ def extraer_metadatos(ruta_archivo):
         
         # Fallback a TinyTag: Si Mutagen no devolvió nada utilizable, cargamos la cabecera mediante TinyTag
         if not artista or es_corrupto(artista) or not titulo:
-            tag = TinyTag.get(str(ruta_archivo), image=False)
-            if tag is None:
-                return None
+            try:
+                tag = TinyTag.get(str(ruta_archivo), image=False)
+            except Exception:
+                tag = None
             
-            if not titulo:
-                titulo = _tiny_val('title', 'TITLE') or Path(ruta_archivo).stem
-            if not artista or es_corrupto(artista):
-                artista = _tiny_val('artist', 'ARTIST')
-                # Si TinyTag tampoco lo resuelve, intentamos recuperar el nombre desde el disco
+            if tag is not None:
+                if not titulo:
+                    titulo = _tiny_val('title', 'TITLE') or Path(ruta_archivo).stem
+                if not artista or es_corrupto(artista):
+                    artista = _tiny_val('artist', 'ARTIST')
+                    # Si TinyTag tampoco lo resuelve, intentamos recuperar el nombre desde el disco
+                    if not artista or es_corrupto(artista):
+                        artista = recuperar_desde_ruta(ruta_archivo)
+                if not album:
+                    album = _tiny_val('album', 'ALBUM')
+                if not genero:
+                    genero = _tiny_val('genre', 'GENRE')
+                if not track_str:
+                    t = _tiny_val('track', 'tracknumber', 'TRCK', 'TRACKNUMBER')
+                    track_str = str(t) if t else None
+                if not disc_str:
+                    d = _tiny_val('disc', 'discnumber', 'DISCNUMBER', 'TPA')
+                    disc_str = str(d) if d else None
+            else:
+                # Fallback de último recurso: deducir de la ruta física
                 if not artista or es_corrupto(artista):
                     artista = recuperar_desde_ruta(ruta_archivo)
-            if not album:
-                album = _tiny_val('album', 'ALBUM')
-            if not genero:
-                genero = _tiny_val('genre', 'GENRE')
-            if not track_str:
-                t = _tiny_val('track', 'tracknumber', 'TRCK', 'TRACKNUMBER')
-                track_str = str(t) if t else None
-            if not disc_str:
-                d = _tiny_val('disc', 'discnumber', 'DISCNUMBER', 'TPA')
-                disc_str = str(d) if d else None
         
         def parse_track_num(val):
             """Parsea el número de pista/disco. Soporta formatos como '3/12' (pista 3 de 12)."""
