@@ -1191,6 +1191,13 @@
     let currentPlayerTime = 0;
     let isPlayerPlaying = false;
 
+    // Comunicar con el reproductor iframe
+    function sendToPlayer(msg){
+        const iframe = document.getElementById('player-frame');
+        if (!iframe || !iframe.contentWindow) return;
+        iframe.contentWindow.postMessage(msg, window.location.origin);
+    }
+
     // Buscador con debounce
     let searchTimeout = null;
     const searchInput = document.getElementById('lyrics-search-input');
