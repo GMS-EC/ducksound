@@ -189,6 +189,15 @@ def extraer_metadatos(ruta_archivo):
         albumartist = _tag_val('TPE2', 'albumartist', 'album artist', 'album_artist', 'ALBUMARTIST', 'ALBUM ARTIST') or artista
         if es_corrupto(albumartist):
             albumartist = recuperar_desde_ruta(ruta_archivo) or artista
+        # Si el título contiene un guion y el artista está definido, limpiamos el nombre del artista en el título
+        if titulo and artista and ' - ' in titulo:
+            partes_titulo = [p.strip() for p in titulo.split(' - ')]
+            # Caso 1: "Intro - Psychonaut 4"
+            if partes_titulo[-1].lower() == artista.lower() or normalizar_artista(partes_titulo[-1]) == normalizar_artista(artista):
+                titulo = ' - '.join(partes_titulo[:-1])
+            # Caso 2: "Psychonaut 4 - Intro"
+            elif partes_titulo[0].lower() == artista.lower() or normalizar_artista(partes_titulo[0]) == normalizar_artista(artista):
+                titulo = ' - '.join(partes_titulo[1:])
  
         # Construimos el diccionario de metadatos procesados
         metadatos = {
@@ -1022,8 +1031,12 @@ def inferir_metadatos_desde_ruta(ruta_archivo, carpeta_base_audio):
             filtered_dirs.append(dir_name)
         
         if len(filtered_dirs) == 1:
+            dir_name = filtered_dirs[0]
+            if ' - ' in dir_name:
+                partes_dir = dir_name.split(' - ', 1)
+                return partes_dir[0].strip(), partes_dir[1].strip()
             # Estructura: Artista/Cancion.mp3
-            return filtered_dirs[0], None
+            return dir_name, None
         elif len(filtered_dirs) >= 2:
             # Estructura: .../Artista/Album/Cancion.mp3
             return filtered_dirs[-2], filtered_dirs[-1]
