@@ -798,6 +798,9 @@
     background: rgba(255, 64, 64, 0.05);
     box-shadow: inset 0 0 8px rgba(255, 64, 64, 0.05);
 }
+.main-wrapper-modal-open {
+    z-index: 99999 !important;
+}
 </style>
 {% endblock %}
 
@@ -1279,6 +1282,10 @@
     function openLyricsEditor(songId) {
         currentEditingSongId = songId;
         
+        // Elevar z-index de .main-wrapper para superar el playbar inferior
+        const mainWrapper = document.querySelector('.main-wrapper');
+        if (mainWrapper) mainWrapper.classList.add('main-wrapper-modal-open');
+        
         document.getElementById('lyrics-modal-title').textContent = 'Cargando...';
         document.getElementById('lyrics-modal-artist').textContent = '';
         document.getElementById('lyrics-modal-cover').src = '';
@@ -1332,6 +1339,10 @@
     }
 
     function closeLyricsEditorModal() {
+        // Restaurar z-index de .main-wrapper
+        const mainWrapper = document.querySelector('.main-wrapper');
+        if (mainWrapper) mainWrapper.classList.remove('main-wrapper-modal-open');
+
         const modal = document.getElementById('lyrics-editor-modal');
         if (!modal) return;
         modal.style.opacity = '0';
