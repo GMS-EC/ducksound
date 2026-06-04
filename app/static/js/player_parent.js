@@ -567,21 +567,44 @@
     function parseLRC(txt){
         const lines = txt.split(/\r?\n/);
         const timeTag = /\[(\d+):(\d{2})(?:\.(\d{1,3}))?\]/g;
-        const cues = [];
-        for (let raw of lines){
-            let match; const tags = [];
-            while ((match = timeTag.exec(raw)) !== null){
-                const m = parseInt(match[1],10), s = parseInt(match[2],10);
-                const ms = match[3] ? parseInt((match[3]+'00').slice(0,3),10) : 0;
-                tags.push(m*60 + s + ms/1000);
+        
+        // Verificar si el archivo tiene al menos alguna marca de tiempo [mm:ss
+        let hasTimestamps = false;
+        for (let raw of lines) {
+            if (raw.match(/\[\d+:\d{2}/)) {
+                hasTimestamps = true;
+                break;
             }
-            const text = raw.replace(timeTag, '').trim();
-            if (!tags.length) continue;
-            if (!text) continue;
-            if (/contribuciones/i.test(text)) continue;
-            for (const t of tags) cues.push({start: t, text: text});
         }
-        return cues.sort((a,b)=>a.start - b.start);
+        
+        const cues = [];
+        
+        if (hasTimestamps) {
+            for (let raw of lines){
+                let match; const tags = [];
+                timeTag.lastIndex = 0;
+                while ((match = timeTag.exec(raw)) !== null){
+                    const m = parseInt(match[1],10), s = parseInt(match[2],10);
+                    const ms = match[3] ? parseInt((match[3]+'00').slice(0,3),10) : 0;
+                    tags.push(m*60 + s + ms/1000);
+                }
+                const text = raw.replace(timeTag, '').trim();
+                if (!tags.length) continue;
+                if (!text) continue;
+                if (/contribuciones/i.test(text)) continue;
+                for (const t of tags) cues.push({start: t, text: text});
+            }
+            return cues.sort((a,b)=>a.start - b.start);
+        } else {
+            // Si es texto plano (sin marcas de tiempo), guardar cada línea
+            for (let i = 0; i < lines.length; i++) {
+                const text = lines[i].trim();
+                if (!text) continue;
+                if (/contribuciones/i.test(text)) continue;
+                cues.push({start: null, text: text});
+            }
+            return cues;
+        }
     }
 
     /**
@@ -814,7 +837,12 @@
         const lP = document.getElementById('lyrics-content-panel');
         if (lP) lP.addEventListener('click', (ev)=>{
             const line = ev.target.closest('.lyric-line');
-            if (line) sendToPlayer({type:'command', cmd:'seekTo', seconds: parseFloat(line.dataset.start)});
+            if (line) {
+                const secs = parseFloat(line.dataset.start);
+                if (!isNaN(secs)) {
+                    sendToPlayer({type:'command', cmd:'seekTo', seconds: secs});
+                }
+            }
         });
         const pC = document.getElementById('mini-progress-container');
         if (pC) pC.addEventListener('click', seekViaProgressBar);
