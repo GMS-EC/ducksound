@@ -275,22 +275,25 @@ def _descargar_letras_impl(batch_size):
     print("🎤 INICIANDO DESCARGA DE LETRAS EN SEGUNDO PLANO (MODULAR)")
     print("=" * 60)
     
-    # Obtener todas las canciones sin archivo de letra registrado o con referencias rotas
-    canciones_sin_letra = Cancion.query.filter(
+    # Obtener todas las canciones sin archivo de letra registrado (None o vacía)
+    canciones_sin_letra_db = Cancion.query.filter(
         db.or_(
             Cancion.ruta_archivo_lrc.is_(None),
-            Cancion.ruta_archivo_lrc == '',
-            Cancion.ruta_archivo_lrc.notin_(
-                db.session.query(Cancion.ruta_archivo_lrc).filter(
-                    Cancion.ruta_archivo_lrc.isnot(None),
-                    Cancion.ruta_archivo_lrc != ''
-                ).all()
-            )
+            Cancion.ruta_archivo_lrc == ''
         )
     ).all()
     
-    # Filtrar solo aquellas cuyas rutas en disco realmente no existan físicamente
-    canciones_sin_letra = [c for c in canciones_sin_letra if not c.ruta_archivo_lrc or not os.path.exists(c.ruta_archivo_lrc)]
+    # Obtener todas las canciones con letra registrada para verificar referencias rotas
+    canciones_con_letra_db = Cancion.query.filter(
+        Cancion.ruta_archivo_lrc.isnot(None),
+        Cancion.ruta_archivo_lrc != ''
+    ).all()
+    
+    # Filtrar aquellas cuyas referencias de archivo no existen físicamente
+    canciones_rotas = [c for c in canciones_con_letra_db if not os.path.exists(c.ruta_archivo_lrc)]
+    
+    # Combinar ambas listas
+    canciones_sin_letra = canciones_sin_letra_db + canciones_rotas
     
     if not canciones_sin_letra:
         print("✅ Todas las canciones ya tienen letras locales indexadas correctamente.")
