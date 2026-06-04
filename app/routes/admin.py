@@ -179,13 +179,26 @@ def admin_clean_metadata():
                     artista_existente = Artista.query.filter(Artista.nombre == nombre_norm, Artista.id < artista.id).first()
                     if artista_existente:
                         # Reasignar obras y colecciones al artista canonical principal
+                        from app.services.metadata import actualizar_tags_disco
                         for cancion in artista.canciones:
                             cancion.artista_id = artista_existente.id
+                            if cancion.ruta_archivo_audio:
+                                try:
+                                    actualizar_tags_disco(cancion.ruta_archivo_audio, artista=artista_existente.nombre)
+                                except Exception:
+                                    pass
                         for album in artista.albums:
                             album.artista_id = artista_existente.id
                         db.session.delete(artista)
                         mergeados += 1
                     elif nombre_norm != artista.nombre:
+                        from app.services.metadata import actualizar_tags_disco
+                        for cancion in artista.canciones:
+                            if cancion.ruta_archivo_audio:
+                                try:
+                                    actualizar_tags_disco(cancion.ruta_archivo_audio, artista=nombre_norm)
+                                except Exception:
+                                    pass
                         artista.nombre = nombre_norm
                         renombrados += 1
                 db.session.commit()
@@ -209,10 +222,23 @@ def admin_clean_metadata():
                         Album.id < album.id
                     ).first()
                     if album_existente:
+                        from app.services.metadata import actualizar_tags_disco
                         for cancion in album.canciones:
                             cancion.album_id = album_existente.id
+                            if cancion.ruta_archivo_audio:
+                                try:
+                                    actualizar_tags_disco(cancion.ruta_archivo_audio, album=album_existente.titulo)
+                                except Exception:
+                                    pass
                         db.session.delete(album)
                     elif titulo_norm != album.titulo:
+                        from app.services.metadata import actualizar_tags_disco
+                        for cancion in album.canciones:
+                            if cancion.ruta_archivo_audio:
+                                try:
+                                    actualizar_tags_disco(cancion.ruta_archivo_audio, album=titulo_norm)
+                                except Exception:
+                                    pass
                         album.titulo = titulo_norm
                 db.session.commit()
                 
@@ -685,6 +711,18 @@ def admin_update_artist_mbid(artist_id):
         updated_metadata['mbid'] = artista.musicbrainz_id or ''
         if 'nombre' not in updated_metadata:
             updated_metadata['nombre'] = artista.nombre
+
+        # Sincronizar nombre en los tags físicos en disco si cambió
+        if artista.nombre != old_nombre:
+            from app.services.metadata import actualizar_tags_disco
+            for cancion in artista.canciones:
+                if cancion.ruta_archivo_audio:
+                    try:
+                        actualizar_tags_disco(cancion.ruta_archivo_audio, artista=artista.nombre)
+                    except Exception as tag_err:
+                        current_app.logger.warning(
+                            f"[Admin Artist Update] Error escribiendo tag al disco para {cancion.ruta_archivo_audio}: {tag_err}"
+                        )
  
         return jsonify({
             'success': True,
@@ -1026,6 +1064,9 @@ def admin_update_album_metadata(album_id):
     if not album:
         return jsonify({'error': 'Álbum no encontrado'}), 404
         
+    old_titulo = album.titulo
+    old_anio = album.anio
+        
     data = request.get_json(force=True)
     if not data:
         return jsonify({'error': 'Datos inválidos'}), 400
@@ -1074,6 +1115,18 @@ def admin_update_album_metadata(album_id):
         album.portada_url = foto_desde_deezer
         
     db.session.commit()
+    
+    # Sincronizar título y año en los tags físicos en disco si cambiaron
+    if album.titulo != old_titulo or album.anio != old_anio:
+        from app.services.metadata import actualizar_tags_disco
+        for cancion in album.canciones:
+            if cancion.ruta_archivo_audio:
+                try:
+                    actualizar_tags_disco(cancion.ruta_archivo_audio, album=album.titulo, anio=album.anio)
+                except Exception as tag_err:
+                    current_app.logger.warning(
+                        f"[Admin Album Update] Error escribiendo tag al disco para {cancion.ruta_archivo_audio}: {tag_err}"
+                    )
     
     # Si la portada del álbum cambió o se actualizó, limpiamos el caché de miniaturas WebP de sus canciones asociadas
     if foto_desde_deezer and foto_desde_deezer != old_portada:
