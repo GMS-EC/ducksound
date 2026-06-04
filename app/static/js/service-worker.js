@@ -6,18 +6,21 @@ self.addEventListener('install', event => {
     self.skipWaiting();
 });
 
-// Evento de activación: limpia cachés antiguos para liberar espacio y evitar conflictos de versión
+// Evento de activación: limpia cachés antiguos y toma control inmediato de los clientes
 self.addEventListener('activate', event => {
     event.waitUntil(
-        caches.keys().then(cacheNames => {
-            return Promise.all(
-                cacheNames.map(cacheName => {
-                    if (cacheName !== CACHE_NAME) {
-                        return caches.delete(cacheName);
-                    }
-                })
-            );
-        })
+        Promise.all([
+            self.clients.claim(),
+            caches.keys().then(cacheNames => {
+                return Promise.all(
+                    cacheNames.map(cacheName => {
+                        if (cacheName !== CACHE_NAME) {
+                            return caches.delete(cacheName);
+                        }
+                    })
+                );
+            })
+        ])
     );
 });
 
@@ -38,11 +41,21 @@ self.addEventListener('fetch', event => {
         return;
     }
 
-    // 1. Peticiones de Navegación (HTML de páginas): estrategia Network-First
-    // Intenta cargar del servidor para asegurar la versión más reciente; si falla (offline), usa el caché.
-    if (request.mode === 'navigate') {
+    // Identificar si la solicitud es para un recurso estático (imágenes, fuentes, estilos, scripts)
+    const isStaticAsset = url.pathname.match(/\.(png|jpg|jpeg|gif|svg|webp|ico|woff|woff2|ttf|eot|css|js)$/);
+
+    // 1. Peticiones de Navegación y Páginas Dinámicas HTML (incluyendo AJAX SPA): Network-First
+    // Intenta cargar del servidor para asegurar la versión más reciente; si tiene éxito actualiza el caché,
+    // si falla (offline), usa el caché como fallback.
+    if (request.mode === 'navigate' || !isStaticAsset) {
         event.respondWith(
-            fetch(request).catch(() => caches.match(request))
+            fetch(request)
+                .then(response => {
+                    const clone = response.clone();
+                    caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
+                    return response;
+                })
+                .catch(() => caches.match(request))
         );
         return;
     }
@@ -62,7 +75,7 @@ self.addEventListener('fetch', event => {
         return;
     }
 
-    // 3. Demás recursos (Imágenes, Fuentes, etc.): estrategia Cache-First con actualización asíncrona
+    // 3. Demás recursos estáticos (Imágenes, Fuentes, etc.): estrategia Cache-First con actualización asíncrona
     // Devuelve inmediatamente la versión del caché si existe para velocidad instantánea,
     // y al mismo tiempo dispara una petición de red en segundo plano para actualizar el caché silenciosamente.
     event.respondWith(

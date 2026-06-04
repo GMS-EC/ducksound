@@ -93,6 +93,7 @@
         </div>
         {% endif %}
         {% block content %}{% endblock %}
+        {% block extra_js %}{% endblock %}
     </main>
     
     <!-- Panel derecho tipo YT Music (independiente de navegación) -->
@@ -116,7 +117,6 @@
             <div id="related-content" class="tab-content"></div>
         </div>
     </aside>
-    {% block extra_js %}{% endblock %}
     
     <!-- ===== BARRA DE REPRODUCCIÓN INFERIOR ===== -->
     <!-- Diseño profesional con 3 columnas: info canción | controles+progreso | volumen+extras -->
@@ -643,8 +643,8 @@
             return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
         }
     })();
-    // Dynamic greeting (runs on every load including SPA)
-    (function(){
+    // Dynamic greeting
+    window.updateDynamicGreeting = function(){
         const el = document.getElementById('dynamic-greeting');
         if (!el) return;
         const hour = new Date().getHours();
@@ -653,7 +653,8 @@
         if (hour >= 12 && hour < 20) greeting = 'Buenas tardes';
         else if (hour >= 20 || hour < 5) greeting = 'Buenas noches';
         el.textContent = userName ? greeting + ' ' + userName : greeting;
-    })();
+    };
+    window.updateDynamicGreeting();
     // Global toast notifications
     function showToast(message, type){
         type = type || 'info';

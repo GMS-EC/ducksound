@@ -936,6 +936,9 @@
                 if (it) it.classList.add('playing');
             }
             sendToPlayer({type:'command', cmd:'getState'});
+            if (typeof window.updateDynamicGreeting === 'function') {
+                window.updateDynamicGreeting();
+            }
         };
 
         // ===== ACCESIBILIDAD Y TECLAS DE ACCESO RÁPIDO (Keyboard Shortcuts) =====
