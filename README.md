@@ -8,10 +8,11 @@
 ![Redis](https://img.shields.io/badge/Redis-7-red)
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue)
 ![License](https://img.shields.io/badge/License-AGPL_v3-blue)
-[![Android Client](https://img.shields.io/badge/Android_Client-Kotlin_/_Compose-orange?style=flat-square&logo=android)](https://github.com/GMS-EC/ducksound-android)
-
-📖 **[Ver documentación completa de arquitectura →](ARCHITECTURE.md)** ·
-📋 **[Ver changelog →](CHANGELOG.md)**
+<p align="center">
+  <a href="https://github.com/GMS-EC/ducksound-android">📱 Cliente Android</a> •
+  <a href="ARCHITECTURE.md">📖 Documentación de Arquitectura</a> •
+  <a href="CHANGELOG.md">📋 Changelog</a>
+</p>
 
 ---
 
