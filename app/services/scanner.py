@@ -747,8 +747,14 @@ def normalizar_biblioteca(progress_callback=None, percent_start=90, percent_end=
                 origen = artista_existente
             
             # Reasignar todas las relaciones en la base de datos
+            from app.services.metadata import actualizar_tags_disco
             for cancion in list(origen.canciones):
                 cancion.artista_id = destino.id
+                if cancion.ruta_archivo_audio:
+                    try:
+                        actualizar_tags_disco(cancion.ruta_archivo_audio, artista=destino.nombre)
+                    except Exception as e:
+                        print(f"⚠️ Error actualizando tag de artista en fusión: {e}")
             for album in list(origen.albums):
                 album.artista_id = destino.id
                 
@@ -764,6 +770,13 @@ def normalizar_biblioteca(progress_callback=None, percent_start=90, percent_end=
             eliminados.add(origen.id)
             resumen['artistas_fusionados'] += 1
         elif nombre_norm != artista.nombre:
+            from app.services.metadata import actualizar_tags_disco
+            for cancion in artista.canciones:
+                if cancion.ruta_archivo_audio:
+                    try:
+                        actualizar_tags_disco(cancion.ruta_archivo_audio, artista=nombre_norm)
+                    except Exception as e:
+                        print(f"⚠️ Error actualizando tag de artista en renombrado: {e}")
             artista.nombre = nombre_norm
             resumen['artistas_renombrados'] += 1
 
@@ -792,6 +805,13 @@ def normalizar_biblioteca(progress_callback=None, percent_start=90, percent_end=
 
             # Renombrar si difiere del título físico
             if titulo_norm and titulo_norm != album.titulo:
+                from app.services.metadata import actualizar_tags_disco
+                for cancion in album.canciones:
+                    if cancion.ruta_archivo_audio:
+                        try:
+                            actualizar_tags_disco(cancion.ruta_archivo_audio, album=titulo_norm)
+                        except Exception as e:
+                            print(f"⚠️ Error actualizando tag de álbum en renombrado: {e}")
                 album.titulo = titulo_norm
                 resumen['albumes_renombrados'] += 1
 
@@ -799,8 +819,14 @@ def normalizar_biblioteca(progress_callback=None, percent_start=90, percent_end=
             album_existente = obtener_album_base_fuzz(titulo_norm or album.titulo, albumes_base)
             if album_existente and album_existente.id != album.id:
                 # Traspasar canciones al álbum destino/canónico
+                from app.services.metadata import actualizar_tags_disco
                 for cancion in list(album.canciones):
                     cancion.album_id = album_existente.id
+                    if cancion.ruta_archivo_audio:
+                        try:
+                            actualizar_tags_disco(cancion.ruta_archivo_audio, album=album_existente.titulo)
+                        except Exception as e:
+                            print(f"⚠️ Error actualizando tag de álbum en fusión: {e}")
                 # Traspasar metadatos ricos (portada y año) si el destino no los tenía
                 if not album_existente.portada_url and album.portada_url:
                     album_existente.portada_url = album.portada_url

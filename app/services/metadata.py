@@ -816,3 +816,80 @@ def preview_album_metadata(mbid=None, deezer_id=None):
         'artista_nombre': artist_name,
         'mbid': mbid or resolved_mbid
     }
+
+
+def actualizar_tags_disco(ruta_archivo, titulo=None, artista=None, album=None, anio=None):
+    """
+    Actualiza físicamente los metadatos (tags) de un archivo de audio en disco usando Mutagen.
+    Soporta MP3 (ID3/EasyID3), FLAC, M4A/MP4 (EasyMP4), WAV y OGG.
+    """
+    if not os.path.exists(ruta_archivo):
+        return False
+    try:
+        from mutagen import File as MFile
+        audio = MFile(ruta_archivo)
+        if audio is None:
+            return False
+            
+        ext = os.path.splitext(ruta_archivo)[1].lower()
+        
+        if ext == '.mp3':
+            from mutagen.easyid3 import EasyID3
+            try:
+                tags = EasyID3(ruta_archivo)
+            except Exception:
+                # Si no tiene cabecera ID3, agregarla
+                from mutagen.id3 import ID3
+                id3 = ID3()
+                id3.save(ruta_archivo)
+                tags = EasyID3(ruta_archivo)
+            if artista:
+                tags['artist'] = artista
+            if album:
+                tags['album'] = album
+            if titulo:
+                tags['title'] = titulo
+            if anio:
+                tags['date'] = str(anio)
+            tags.save()
+            
+        elif ext == '.m4a':
+            from mutagen.easymp4 import EasyMP4
+            try:
+                tags = EasyMP4(ruta_archivo)
+            except Exception:
+                tags = EasyMP4()
+            if artista:
+                tags['artist'] = [artista]
+            if album:
+                tags['album'] = [album]
+            if titulo:
+                tags['title'] = [titulo]
+            if anio:
+                tags['date'] = [str(anio)]
+            tags.save(ruta_archivo)
+            
+        else:
+            # FLAC, OGG, WAV (Vorbis Comments / standard mapping)
+            modified = False
+            if artista:
+                audio['artist'] = [artista]
+                modified = True
+            if album:
+                audio['album'] = [album]
+                modified = True
+            if titulo:
+                audio['title'] = [titulo]
+                modified = True
+            if anio:
+                audio['date'] = [str(anio)]
+                audio['year'] = [str(anio)]
+                modified = True
+            if modified:
+                audio.save()
+        return True
+    except Exception as e:
+        import logging
+        logging.error(f"[Tag Writer] Error actualizando tags de {ruta_archivo}: {e}")
+        return False
+
