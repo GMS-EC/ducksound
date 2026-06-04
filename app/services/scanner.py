@@ -1216,79 +1216,97 @@ def escanear_carpeta_audio(progress_callback=None):
             else:
                 print(f"  ✅ Letra ya existente: {Path(cancion_existente.ruta_archivo_lrc).name}")
 
-            # En un escaneo completo, forzamos la actualización de los metadatos ricos y su vinculación (artista, álbum, título, etc.)
-            # para solventar problemas de importación previa defectuosa.
-            metadatos = metadatos_extraidos.get(str(archivo)) or extraer_metadatos(archivo)
-            if metadatos:
-                titulo_tag = metadatos.get('titulo') or archivo.stem
-                artista_tag = metadatos.get('artista')
-                album_tag = metadatos.get('album')
-                
-                # Intentar inferir si faltan
-                if not artista_tag or not album_tag:
-                    artista_carpeta, album_carpeta = inferir_metadatos_desde_ruta(archivo, carpeta_audio)
-                    if artista_carpeta and not artista_tag:
-                        artista_tag = artista_carpeta
-                    if album_carpeta and not album_tag:
-                        album_tag = album_carpeta
-                
-                albumartist_tag = metadatos.get('albumartist') or artista_tag
-                artista_principal = metadatos.get('artista_principal') or normalizar_artista(albumartist_tag or artista_tag)
-                
-                # Obtener/crear objetos correctos de Artista y Álbum
-                artista_obj = obtener_o_crear_artista(artista_principal)
-                if not artista_obj and artista_principal:
-                    artista_obj = Artista(nombre=artista_principal, nombre_normalizado=artista_principal)
-                    db.session.add(artista_obj)
-                    db.session.flush()
-                
-                album_obj = obtener_o_crear_album(album_tag, artista_principal) if (album_tag and artista_principal) else None
-                
-                # Comparar y actualizar si son distintos
-                if cancion_existente.titulo != titulo_tag:
-                    cancion_existente.titulo = titulo_tag
-                    actualizada_localmente = True
-                
-                new_artista_id = artista_obj.id if artista_obj else None
-                if cancion_existente.artista_id != new_artista_id:
-                    cancion_existente.artista_id = new_artista_id
-                    actualizada_localmente = True
-                    
-                new_album_id = album_obj.id if album_obj else None
-                if cancion_existente.album_id != new_album_id:
-                    cancion_existente.album_id = new_album_id
-                    actualizada_localmente = True
-                    
-                pista_tag = metadatos.get('numero_pista')
-                if cancion_existente.numero_pista != pista_tag:
-                    cancion_existente.numero_pista = pista_tag
-                    actualizada_localmente = True
-                    
-                disco_tag = metadatos.get('numero_disco')
-                if cancion_existente.numero_disco != disco_tag:
-                    cancion_existente.numero_disco = disco_tag
-                    actualizada_localmente = True
+            # Verificar si el archivo en disco ha sido modificado desde que fue agregado
+            from datetime import datetime
+            import os
+            try:
+                mtime_utc = datetime.utcfromtimestamp(os.path.getmtime(archivo))
+                # Consideramos modificado si la fecha de modificación en disco es posterior a la fecha de agregado en BD
+                # con un pequeño margen de 5 segundos para evitar falsos positivos
+                modificado = (mtime_utc - cancion_existente.fecha_agregada).total_seconds() > 5
+            except Exception:
+                modificado = True
 
-            # Si ya existe pero le faltan los datos técnicos del audio (e.g. sample_rate es None), los analizamos
-            if cancion_existente.sample_rate is None and metadatos:
-                print(f"  🔍 Datos técnicos faltantes para canción ID {cancion_existente.id}. Analizando...")
-                aa = (metadatos or {}).get('analisis') or (metadatos or {}).get('audio_analysis', {})
-                if aa:
-                    cancion_existente.sample_rate = aa.get('sample_rate')
-                    cancion_existente.bit_depth = aa.get('bit_depth')
-                    cancion_existente.channels = aa.get('channels')
-                    cancion_existente.nyquist_freq = aa.get('nyquist_freq')
-                    cancion_existente.dynamic_range = aa.get('dynamic_range')
-                    cancion_existente.peak_level = aa.get('peak_level')
-                    cancion_existente.rms_level = aa.get('rms_level')
-                    cancion_existente.total_samples = aa.get('total_samples')
-                    cancion_existente.bit_rate = aa.get('bit_rate')
-                    cancion_existente.bpm = aa.get('bpm')
-                    # Asegurar el género si no estaba
-                    if not cancion_existente.genero:
-                        cancion_existente.genero = (metadatos or {}).get('genero') or aa.get('genero')
-                    actualizada_localmente = True
-                    print(f"  ✅ Datos técnicos extraídos para canción ID {cancion_existente.id}")
+            # Si faltan datos técnicos obligatorios, forzar procesamiento
+            if cancion_existente.sample_rate is None:
+                modificado = True
+
+            if modificado:
+                # En un escaneo completo, forzamos la actualización de los metadatos ricos y su vinculación (artista, álbum, título, etc.)
+                # para solventar problemas de importación previa defectuosa.
+                metadatos = metadatos_extraidos.get(str(archivo)) or extraer_metadatos(archivo)
+                if metadatos:
+                    titulo_tag = metadatos.get('titulo') or archivo.stem
+                    artista_tag = metadatos.get('artista')
+                    album_tag = metadatos.get('album')
+                    
+                    # Intentar inferir si faltan
+                    if not artista_tag or not album_tag:
+                        artista_carpeta, album_carpeta = inferir_metadatos_desde_ruta(archivo, carpeta_audio)
+                        if artista_carpeta and not artista_tag:
+                            artista_tag = artista_carpeta
+                        if album_carpeta and not album_tag:
+                            album_tag = album_carpeta
+                    
+                    albumartist_tag = metadatos.get('albumartist') or artista_tag
+                    artista_principal = metadatos.get('artista_principal') or normalizar_artista(albumartist_tag or artista_tag)
+                    
+                    # Obtener/crear objetos correctos de Artista y Álbum
+                    artista_obj = obtener_o_crear_artista(artista_principal)
+                    if not artista_obj and artista_principal:
+                        artista_obj = Artista(nombre=artista_principal, nombre_normalizado=artista_principal)
+                        db.session.add(artista_obj)
+                        db.session.flush()
+                    
+                    album_obj = obtener_o_crear_album(album_tag, artista_principal) if (album_tag and artista_principal) else None
+                    
+                    # Comparar y actualizar si son distintos
+                    if cancion_existente.titulo != titulo_tag:
+                        cancion_existente.titulo = titulo_tag
+                        actualizada_localmente = True
+                    
+                    new_artista_id = artista_obj.id if artista_obj else None
+                    if cancion_existente.artista_id != new_artista_id:
+                        cancion_existente.artista_id = new_artista_id
+                        actualizada_localmente = True
+                        
+                    new_album_id = album_obj.id if album_obj else None
+                    if cancion_existente.album_id != new_album_id:
+                        cancion_existente.album_id = new_album_id
+                        actualizada_localmente = True
+                        
+                    pista_tag = metadatos.get('numero_pista')
+                    if cancion_existente.numero_pista != pista_tag:
+                        cancion_existente.numero_pista = pista_tag
+                        actualizada_localmente = True
+                        
+                    disco_tag = metadatos.get('numero_disco')
+                    if cancion_existente.numero_disco != disco_tag:
+                        cancion_existente.numero_disco = disco_tag
+                        actualizada_localmente = True
+
+                # Si ya existe pero le faltan los datos técnicos del audio (e.g. sample_rate es None), los analizamos
+                if cancion_existente.sample_rate is None and metadatos:
+                    print(f"  🔍 Datos técnicos faltantes para canción ID {cancion_existente.id}. Analizando...")
+                    aa = (metadatos or {}).get('analisis') or (metadatos or {}).get('audio_analysis', {})
+                    if aa:
+                        cancion_existente.sample_rate = aa.get('sample_rate')
+                        cancion_existente.bit_depth = aa.get('bit_depth')
+                        cancion_existente.channels = aa.get('channels')
+                        cancion_existente.nyquist_freq = aa.get('nyquist_freq')
+                        cancion_existente.dynamic_range = aa.get('dynamic_range')
+                        cancion_existente.peak_level = aa.get('peak_level')
+                        cancion_existente.rms_level = aa.get('rms_level')
+                        cancion_existente.total_samples = aa.get('total_samples')
+                        cancion_existente.bit_rate = aa.get('bit_rate')
+                        cancion_existente.bpm = aa.get('bpm')
+                        # Asegurar el género si no estaba
+                        if not cancion_existente.genero:
+                            cancion_existente.genero = (metadatos or {}).get('genero') or aa.get('genero')
+                        actualizada_localmente = True
+                        print(f"  ✅ Datos técnicos extraídos para canción ID {cancion_existente.id}")
+            else:
+                print(f"  Omitiendo actualización de metadatos (archivo de música sin cambios desde su indexación)")
 
             if actualizada_localmente:
                 db.session.add(cancion_existente)
