@@ -18,19 +18,24 @@
         {% for a in artists[:12] %}
         <a class="artist-card" href="{{ url_for('browse.artist_detail', artist_id=a.id) }}">
             <div class="artist-card-cover">
-                {% if a.foto_url %}
-                <img src="{{ a.foto_url }}" alt="{{ a.nombre }}" loading="lazy">
-                {% else %}
-                {% set found = false %}
+                {% set album_cover = None %}
                 {% for album in a.albums[:1] %}
                     {% if album.canciones %}
-                    <img src="{{ url_for('servir_album_art', cancion_id=album.canciones[0].id, size='small') }}" alt="{{ a.nombre }}" loading="lazy">
-                    {% set found = true %}
+                        {% set album_cover = url_for('audio.servir_album_art', cancion_id=album.canciones[0].id, size='small') %}
                     {% endif %}
                 {% endfor %}
-                {% if not found %}
+                
+                {% if a.foto_url %}
+                <img src="{{ a.foto_url }}" alt="{{ a.nombre }}" loading="lazy"
+                    data-fallback-src="{{ album_cover or '' }}"
+                    onerror="if (this.dataset.fallbackSrc && this.src !== this.dataset.fallbackSrc) { this.src = this.dataset.fallbackSrc; } else { this.style.display='none'; this.nextElementSibling.style.display='flex'; }">
+                <div class="artist-card-placeholder" style="display:none">{{ a.nombre[:1] }}</div>
+                {% elif album_cover %}
+                <img src="{{ album_cover }}" alt="{{ a.nombre }}" loading="lazy"
+                    onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                <div class="artist-card-placeholder" style="display:none">{{ a.nombre[:1] }}</div>
+                {% else %}
                 <div class="artist-card-placeholder">{{ a.nombre[:1] }}</div>
-                {% endif %}
                 {% endif %}
             </div>
             <div class="artist-card-info">

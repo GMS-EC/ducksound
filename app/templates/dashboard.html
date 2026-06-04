@@ -202,8 +202,20 @@
         <a href="{{ url_for('browse.artist_detail', artist_id=artista.id) }}" class="artist-card"
             style="text-decoration:none; width:160px;">
             <div class="artist-card-cover">
+                {% set album_cover = None %}
+                {% for album in artista.albums[:1] %}
+                    {% if album.canciones %}
+                        {% set album_cover = url_for('audio.servir_album_art', cancion_id=album.canciones[0].id) %}
+                    {% endif %}
+                {% endfor %}
+                
                 {% if artista.foto_url %}
                 <img src="{{ artista.foto_url }}" alt="{{ artista.nombre }}" loading="lazy"
+                    data-fallback-src="{{ album_cover or '' }}"
+                    onerror="if (this.dataset.fallbackSrc && this.src !== this.dataset.fallbackSrc) { this.src = this.dataset.fallbackSrc; } else { this.style.display='none'; this.nextElementSibling.style.display='flex'; }">
+                <div class="artist-card-placeholder" style="display:none"><i class="fa-solid fa-user"></i></div>
+                {% elif album_cover %}
+                <img src="{{ album_cover }}" alt="{{ artista.nombre }}" loading="lazy"
                     onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
                 <div class="artist-card-placeholder" style="display:none"><i class="fa-solid fa-user"></i></div>
                 {% else %}

@@ -13,10 +13,14 @@
     <a class="artist-card" href="{{ url_for('browse.artist_detail', artist_id=item.artist.id) }}">
         <div class="artist-card-cover">
             {% if item.artist.foto_url %}
-            <img src="{{ item.artist.foto_url }}" alt="{{ item.artist.nombre }}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+            <img src="{{ item.artist.foto_url }}" alt="{{ item.artist.nombre }}" loading="lazy"
+                data-fallback-src="{{ item.cover_url or '' }}"
+                onerror="if (this.dataset.fallbackSrc && this.src !== this.dataset.fallbackSrc) { this.src = this.dataset.fallbackSrc; } else { this.style.display='none'; this.nextElementSibling.style.display='flex'; }">
             <div class="artist-card-placeholder" style="display:none">{{ item.artist.nombre[:1] }}</div>
             {% elif item.cover_url %}
-            <img src="{{ item.cover_url }}" alt="{{ item.artist.nombre }}" loading="lazy">
+            <img src="{{ item.cover_url }}" alt="{{ item.artist.nombre }}" loading="lazy"
+                onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+            <div class="artist-card-placeholder" style="display:none">{{ item.artist.nombre[:1] }}</div>
             {% else %}
             <div class="artist-card-placeholder">{{ item.artist.nombre[:1] }}</div>
             {% endif %}
