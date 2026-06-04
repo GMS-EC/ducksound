@@ -8,6 +8,7 @@
 ![Redis](https://img.shields.io/badge/Redis-7-red)
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue)
 ![License](https://img.shields.io/badge/License-AGPL_v3-blue)
+[![Android Client](https://img.shields.io/badge/Android_Client-Kotlin_/_Compose-orange?style=flat-square&logo=android)](https://github.com/GMS-EC/ducksound-android)
 
 📖 **[Ver documentación completa de arquitectura →](ARCHITECTURE.md)** ·
 📋 **[Ver changelog →](CHANGELOG.md)**
@@ -91,10 +92,11 @@ Ve a **Panel de Administración → Escaneo completo** para indexar tu música.
 
 ---
 
-## 📚 Documentación
+## 📚 Recursos y Documentación
 
-| Recurso | Enlace |
-|---|---|
-| 🏗️ Arquitectura, stack, endpoints, servicios Docker, modelo de datos | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| 📋 Historial de versiones y cambios | [CHANGELOG.md](CHANGELOG.md) |
-| 📄 Licencia | [LICENSE](LICENSE) |
+| Recurso | Descripción | Enlace |
+|---|---|---|
+| 📱 Cliente Android | Aplicación nativa oficial en Kotlin con soporte offline | [ducksound-android](https://github.com/GMS-EC/ducksound-android) |
+| 🏗️ Arquitectura | Stack, endpoints, servicios Docker y modelo de datos | [ARCHITECTURE.md](ARCHITECTURE.md) |
+| 📋 Historial | Historial de versiones y cambios del servidor | [CHANGELOG.md](CHANGELOG.md) |
+| 📄 Licencia | Licencia de software libre AGPLv3 | [LICENSE](LICENSE) |
