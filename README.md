@@ -8,10 +8,13 @@
 ![Redis](https://img.shields.io/badge/Redis-7-red)
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue)
 ![License](https://img.shields.io/badge/License-AGPL_v3-blue)
+[![Sponsor](https://img.shields.io/badge/Sponsor-Takenos-orange)](https://app.takenos.com/pay/b6515307-a660-446d-8117-3214a4a89a80)
+
 <p align="center">
   <a href="https://github.com/GMS-EC/ducksound-android">📱 Cliente Android</a> •
   <a href="ARCHITECTURE.md">📖 Documentación de Arquitectura</a> •
-  <a href="CHANGELOG.md">📋 Changelog</a>
+  <a href="CHANGELOG.md">📋 Changelog</a> •
+  <a href="https://app.takenos.com/pay/b6515307-a660-446d-8117-3214a4a89a80">💖 Donar (Takenos)</a>
 </p>
 
 ---
