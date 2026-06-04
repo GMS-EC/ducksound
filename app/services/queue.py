@@ -221,3 +221,19 @@ def run_quick_scan(task_id):
                 scan_task_set(task_id, t)
         finally:
             scan_set_active(None)
+
+
+def run_generate_daily_mixes(usuario_id):
+    """
+    Ejecuta la generación de mixes diarios en segundo plano dentro del worker RQ.
+    """
+    from app import create_app
+    from app.services.recommender import generate_daily_mixes_for_user
+
+    app = create_app()
+    with app.app_context():
+        try:
+            generate_daily_mixes_for_user(usuario_id)
+        except Exception as e:
+            app.logger.error(f"[RQ Daily Mixes] Error al generar mixes en segundo plano: {e}")
+

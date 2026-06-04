@@ -58,11 +58,9 @@ def dashboard():
     if 'user_id' not in session:
         return redirect(url_for('auth.login'))
     
-    # Consulta optimizada precargando relaciones para evitar consultas N+1
-    canciones = Cancion.query.options(
-        joinedload(Cancion.artista_obj),
-        joinedload(Cancion.album_obj)
-    ).order_by(Cancion.titulo).all()
+    # Evitamos cargar la biblioteca completa (Cancion.query.all()) en el dashboard
+    # ya que no se renderiza en la vista principal y degrada masivamente el rendimiento.
+    canciones = []
     
     usuario_obj = db.session.get(Usuario, session['user_id'])
     is_admin = usuario_obj.is_admin() if usuario_obj else False
@@ -71,12 +69,12 @@ def dashboard():
     today = datetime.utcnow().date()
     daily_mixes = DailyMix.query.filter_by(usuario_id=session['user_id'], fecha=today).all()
     if not daily_mixes:
-        # Generar dinámicamente utilizando el servicio desacoplado
+        # Encolar la generación asíncrona en Redis RQ para no bloquear la carga HTTP
+        from app.services.queue import enqueue, run_generate_daily_mixes
         try:
-            generate_daily_mixes_for_user(session['user_id'])
-            daily_mixes = DailyMix.query.filter_by(usuario_id=session['user_id'], fecha=today).all()
+            enqueue(run_generate_daily_mixes, session['user_id'])
         except Exception as e:
-            current_app.logger.error(f"Error generando mixes diarios en dashboard: {e}")
+            current_app.logger.error(f"Error encolando generación de mixes diarios: {e}")
 
     current_hour = datetime.now().hour
     if 5 <= current_hour < 12:
