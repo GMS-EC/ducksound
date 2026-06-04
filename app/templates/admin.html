@@ -13,7 +13,6 @@
     <!-- Tab Navigation -->
 <div class="admin-tabs">
     <button type="button" class="admin-tab active" data-tab="panel"><i class="fa-solid fa-gauge-high"></i> Panel</button>
-    <button type="button" class="admin-tab" data-tab="letras"><i class="fa-solid fa-microphone"></i> Letras</button>
     <button type="button" class="admin-tab" data-tab="actualizaciones"><i class="fa-solid fa-code-branch"></i> Actualizaciones</button>
 </div>
 
@@ -62,6 +61,14 @@
                 <p>Edita nombres y asigna MusicBrainz IDs</p>
             </div>
         </a>
+
+        <div class="admin-action-card" id="card-manage-lyrics" style="cursor:pointer">
+            <div class="admin-action-icon"><i class="fa-solid fa-microphone"></i></div>
+            <div class="admin-action-info">
+                <h3>Gestionar letras</h3>
+                <p>Busca, edita y sincroniza las letras de las canciones</p>
+            </div>
+        </div>
     </div>
 
     <div id="scan-progress-panel" style="display:none;margin-top:20px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:14px">
@@ -178,6 +185,9 @@
     </div> <!-- /tab-actualizaciones -->
 
     <div class="admin-tab-content" id="tab-letras">
+        <button type="button" class="btn-back" id="btn-back-to-panel" style="background:transparent;border:none;color:var(--accent);cursor:pointer;padding:0;font-size:14px;display:flex;align-items:center;gap:6px;margin-bottom:18px;font-family:inherit;transition:opacity 0.2s">
+            <i class="fa-solid fa-arrow-left"></i> Volver al Panel
+        </button>
         <h2><i class="fa-solid fa-microphone" style="color:var(--accent);margin-right:8px"></i> Gestionar Letras</h2>
         <p class="admin-subtitle">Busca canciones para ver, editar o sincronizar sus letras</p>
         
@@ -821,6 +831,32 @@
             const tabId = btn.dataset.tab;
             const target = document.getElementById('tab-' + tabId);
             if (target) target.classList.add('active');
+        });
+    }
+
+    // ===== Lyrics Card & Back Button Navigation =====
+    const manageLyricsCard = document.getElementById('card-manage-lyrics');
+    if (manageLyricsCard) {
+        manageLyricsCard.addEventListener('click', function() {
+            document.querySelectorAll('.admin-tab').forEach(function(b) { b.classList.remove('active'); });
+            document.querySelectorAll('.admin-tab-content').forEach(function(c) { c.classList.remove('active'); });
+            
+            const target = document.getElementById('tab-letras');
+            if (target) target.classList.add('active');
+        });
+    }
+
+    const backToPanelBtn = document.getElementById('btn-back-to-panel');
+    if (backToPanelBtn) {
+        backToPanelBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            document.querySelectorAll('.admin-tab').forEach(function(b) { b.classList.remove('active'); });
+            document.querySelectorAll('.admin-tab-content').forEach(function(c) { c.classList.remove('active'); });
+            
+            const panelTabBtn = document.querySelector('.admin-tab[data-tab="panel"]');
+            if (panelTabBtn) panelTabBtn.classList.add('active');
+            const panelContent = document.getElementById('tab-panel');
+            if (panelContent) panelContent.classList.add('active');
         });
     }
 
