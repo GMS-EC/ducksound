@@ -695,7 +695,12 @@ def normalizar_biblioteca(progress_callback=None, percent_start=90, percent_end=
     mid_percent = percent_start + int((percent_end - percent_start) * 0.45)
 
     # --- FASE A: NORMALIZACIÓN Y FUSIÓN DE ARTISTAS ---
+    from sqlalchemy import func
+    eliminados = set()
     for idx, artista in enumerate(artistas, start=1):
+        if artista.id in eliminados:
+            continue
+
         nombre_norm = normalizar_artista(artista.nombre)
         emit({
             'stage': 'normalizing',
@@ -709,23 +714,54 @@ def normalizar_biblioteca(progress_callback=None, percent_start=90, percent_end=
             continue
 
         # Buscar si ya existe otro artista registrado con ese mismo nombre normalizado.
+        # Hacemos comparación case-insensitive y eliminando espacios laterales sobre nombre y nombre_normalizado
         artista_existente = Artista.query.filter(
-            Artista.nombre == nombre_norm,
+            (func.lower(func.trim(Artista.nombre_normalizado)) == nombre_norm.lower().strip()) |
+            (func.lower(func.trim(Artista.nombre)) == nombre_norm.lower().strip()),
             Artista.id != artista.id
         ).order_by(Artista.id).first()
 
         if artista_existente:
-            # Consolidar en el ID más bajo (suele ser el registro original / principal)
-            destino = artista_existente if artista_existente.id < artista.id else artista
-            origen = artista if destino.id == artista_existente.id else artista_existente
+            # Determinar cuál es el artista canónico (destino) y cuál se fusionará (origen).
+            # Priorizamos al que tenga MusicBrainz ID, luego al que tenga más metadatos (foto/biografía), 
+            # y finalmente al ID más bajo.
+            def obtener_puntaje(a):
+                p = 0
+                if a.musicbrainz_id:
+                    p += 1000
+                if a.foto_url:
+                    p += 100
+                if a.biografia:
+                    p += 10
+                p -= a.id * 0.0001
+                return p
+                
+            p_existente = obtener_puntaje(artista_existente)
+            p_actual = obtener_puntaje(artista)
             
-            # Reasignar todas las relaciones en BD
+            if p_existente >= p_actual:
+                destino = artista_existente
+                origen = artista
+            else:
+                destino = artista
+                origen = artista_existente
+            
+            # Reasignar todas las relaciones en la base de datos
             for cancion in list(origen.canciones):
                 cancion.artista_id = destino.id
             for album in list(origen.albums):
                 album.artista_id = destino.id
+                
+            # Conservar metadatos valiosos del origen si el destino carecía de ellos
+            if not destino.musicbrainz_id and origen.musicbrainz_id:
+                destino.musicbrainz_id = origen.musicbrainz_id
+            if not destino.foto_url and origen.foto_url:
+                destino.foto_url = origen.foto_url
+            if not destino.biografia and origen.biografia:
+                destino.biografia = origen.biografia
             
             db.session.delete(origen)
+            eliminados.add(origen.id)
             resumen['artistas_fusionados'] += 1
         elif nombre_norm != artista.nombre:
             artista.nombre = nombre_norm

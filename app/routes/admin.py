@@ -617,6 +617,7 @@ def admin_update_artist_mbid(artist_id):
                 return jsonify({'error': f'El MBID ya pertenece a {existing.nombre}'}), 400
         
         old_mbid = artista.musicbrainz_id
+        old_nombre = artista.nombre
         artista.musicbrainz_id = final_mbid or None
         if nombre:
             artista.nombre = nombre
@@ -625,14 +626,16 @@ def admin_update_artist_mbid(artist_id):
 
         updated_metadata = {}
         mbid_changed = (final_mbid or None) != old_mbid
-        deezer_only = bool(deezer_id) and not final_mbid
+        nombre_changed = nombre and (nombre != old_nombre)
+        deezer_provided = bool(deezer_id)
+        deezer_only = deezer_provided and not final_mbid
         
-        if mbid_changed or deezer_only:
+        if mbid_changed or nombre_changed or deezer_provided:
             old_foto_url = artista.foto_url
             old_biografia = artista.biografia
             
-            if mbid_changed:
-                # Resetear metadatos anteriores si la identidad de MBID cambió
+            if mbid_changed or nombre_changed:
+                # Resetear metadatos anteriores si la identidad (MBID o nombre) cambió
                 artista.foto_url = None
                 artista.biografia = None
                 db.session.commit()
@@ -667,11 +670,12 @@ def admin_update_artist_mbid(artist_id):
             updated_metadata['foto_url'] = artista.foto_url or old_foto_url
             updated_metadata['biografia'] = artista.biografia or old_biografia
             
-            # Preservar datos anteriores como fallback si no se encontraron nuevos
-            if not artista.foto_url and old_foto_url:
-                artista.foto_url = old_foto_url
-            if not artista.biografia and old_biografia:
-                artista.biografia = old_biografia
+            # Preservar datos anteriores como fallback si no se encontraron nuevos y no hubo cambio de identidad
+            if not mbid_changed and not nombre_changed:
+                if not artista.foto_url and old_foto_url:
+                    artista.foto_url = old_foto_url
+                if not artista.biografia and old_biografia:
+                    artista.biografia = old_biografia
             db.session.commit()
         else:
             updated_metadata['foto_url'] = artista.foto_url
