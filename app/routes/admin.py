@@ -914,8 +914,8 @@ def admin_get_lyrics(cancion_id):
         'letra': letra,
         'titulo': cancion.titulo,
         'artista': cancion.artista_obj.nombre if cancion.artista_obj else 'Desconocido',
-        'audio': url_for('servir_audio', cancion_id=cancion_id),
-        'cover': url_for('servir_album_art', cancion_id=cancion_id, size='small')
+        'audio': url_for('audio.servir_audio', cancion_id=cancion_id),
+        'cover': url_for('audio.servir_album_art', cancion_id=cancion_id, size='small')
     })
 
 
