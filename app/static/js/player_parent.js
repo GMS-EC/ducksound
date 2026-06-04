@@ -441,16 +441,26 @@
                 const lyricsScroll = lyricsPanel ? lyricsPanel.querySelector('.lyrics-content-scroll') : null;
                 if (lyricsPanel && lyricsScroll){
                     if (song && song.lyrics){
+                        // Mostrar estado de carga inmediatamente con un spinner animado
+                        lyricsScroll.innerHTML = '<p class="no-lyrics"><span class="no-lyrics-icon"><i class="fa-solid fa-spinner fa-spin"></i></span>Buscando letra...</p>';
+                        window._currentLyrics = null;
+                        updateTranslateBtn(false);
+
                         // Consulta la letra sincronizada (.lrc) con cache-buster para cargar ediciones al instante
                         fetch(song.lyrics + '?_t=' + Date.now()).then(r=> r.ok ? r.text() : Promise.reject())
                         .then(txt=>{
+                            // Validar que la petición corresponde a la canción actualmente activa (evita condiciones de carrera)
+                            if (window._currentSongId !== song.id) return;
                             const cues = parseLRC(txt);
                             renderLyrics(cues, song.id);
                             // Auto-selecciona la pestaña de letras si no se está visualizando la cola
                             if (window._activeRightTab !== 'upnext') selectRightTab('lyrics');
                         }).catch(()=>{
+                            // Validar que la petición corresponde a la canción actualmente activa (evita condiciones de carrera)
+                            if (window._currentSongId !== song.id) return;
                             lyricsScroll.innerHTML = '<p class="no-lyrics"><span class="no-lyrics-icon"><i class="fa-solid fa-music"></i></span>Letra no encontrada</p>';
                             window._currentLyrics = null;
+                            updateTranslateBtn(false);
                         });
                     } else {
                         lyricsScroll.innerHTML = '<p class="no-lyrics"><span class="no-lyrics-icon"><i class="fa-solid fa-music"></i></span>Selecciona una canción</p>';
@@ -461,10 +471,16 @@
                 if (song && song.id){
                     const relatedDiv = document.getElementById('related-content');
                     if (relatedDiv){
+                        // Mostrar estado de carga para similares
+                        relatedDiv.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);"><i class="fa-solid fa-spinner fa-spin"></i> Cargando similares...</div>';
                         fetch(`/api/similares/${song.id}`).then(r=>r.json()).then(similares=>{
+                            // Validar correspondencia de ID de canción activa
+                            if (window._currentSongId !== song.id) return;
                             window._currentSimilar = similares || [];
                             renderSimilar(similares);
                         }).catch(()=> {
+                            // Validar correspondencia de ID de canción activa
+                            if (window._currentSongId !== song.id) return;
                             window._currentSimilar = [];
                             relatedDiv.innerHTML = '<p class="muted">No hay similares</p>';
                         });
@@ -629,6 +645,8 @@
      * @param {number} songId - ID de la canción en reproducción.
      */
     function renderLyrics(cues, songId){
+        // Evitar renderizar letras si no coinciden con la canción activa actual
+        if (window._currentSongId !== songId) return;
         const lyricsPanel = document.getElementById('lyrics-content-panel');
         if (!lyricsPanel) return;
         const scrollDiv = lyricsPanel.querySelector('.lyrics-content-scroll');
