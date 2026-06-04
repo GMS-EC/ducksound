@@ -376,6 +376,12 @@
     window.addEventListener('message', (event) => {
         if (event.origin !== window.location.origin) return;
         const data = event.data || {};
+
+        // Sincronizar estado cuando el iframe indica que está listo
+        if (data.type === 'ready') {
+            sendToPlayer({type:'command', cmd:'getState'});
+            return;
+        }
         
         // 1. Sincronización del Color de Acento Dinámico (Extraído de carátulas vía ColorThief)
         if (data.type === 'themeColor' && data.color) {
@@ -901,8 +907,7 @@
         // Listener del deslizador de volumen
         const vS = document.getElementById('volume-slider');
         if (vS) vS.addEventListener('input', function(){ updateVolumeIcon(this.value); sendToPlayer({type:'command', cmd:'volume', value: parseFloat(this.value)}); });
-
-        sendToPlayer({type:'command', cmd:'getState'});
+        // El estado se sincronizará automáticamente cuando el iframe emita el evento 'ready'
         
         // Evento permanente asociado al botón del traductor automático
         const btnTrans = document.getElementById('btn-translate-lyrics');

@@ -686,4 +686,7 @@
     // Inicializar manejadores de Media Session al inicio
     setupMediaSessionHandlers();
 
+    // Notificar al parent que el iframe está listo para recibir comandos
+    parent.postMessage({type: 'ready'}, window.location.origin);
+
 })();

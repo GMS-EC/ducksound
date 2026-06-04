@@ -119,9 +119,26 @@ def api_search():
 
 @api_bp.route('/api/canciones')
 def api_canciones():
-    """Retorna la lista completa de todas las canciones indexadas en formato JSON."""
-    canciones = Cancion.query.all()
-    return jsonify([c.to_dict() for c in canciones])
+    """
+    Retorna la lista de canciones indexadas en formato JSON.
+    Soporta parámetros de consulta opcionales 'limit' y 'offset' para paginación.
+    """
+    try:
+        limit = request.args.get('limit', type=int)
+        offset = request.args.get('offset', type=int)
+        
+        query = Cancion.query.order_by(Cancion.titulo)
+        
+        if limit is not None:
+            if offset is not None:
+                query = query.offset(offset)
+            query = query.limit(limit)
+            
+        canciones = query.all()
+        return jsonify([c.to_dict() for c in canciones])
+    except Exception as e:
+        current_app.logger.error(f"[API Canciones] Error en paginación: {e}")
+        return jsonify([]), 500
 
 
 @api_bp.route('/api/cancion/<int:cancion_id>')
