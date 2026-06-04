@@ -162,7 +162,7 @@ def servir_lyrics(cancion_id):
     if resultado and resultado.get('letra'):
         # Servir el texto plano con codificación UTF-8 explícita
         response = make_response(Response(resultado['letra'], mimetype='text/plain; charset=utf-8'))
-        response.headers['Cache-Control'] = 'public, max-age=3600'
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
         return response
     
     # Fallback físico directo si el scraping falló
@@ -170,7 +170,7 @@ def servir_lyrics(cancion_id):
     tried_paths = [original_path]
 
     if original_path and os.path.exists(original_path):
-        return send_file(original_path, mimetype='text/plain', max_age=3600)
+        return send_file(original_path, mimetype='text/plain', max_age=0)
 
     # Conversión de rutas Windows a volúmenes Docker
     try:

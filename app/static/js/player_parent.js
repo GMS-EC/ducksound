@@ -441,8 +441,8 @@
                 const lyricsScroll = lyricsPanel ? lyricsPanel.querySelector('.lyrics-content-scroll') : null;
                 if (lyricsPanel && lyricsScroll){
                     if (song && song.lyrics){
-                        // Consulta la letra sincronizada (.lrc)
-                        fetch(song.lyrics).then(r=> r.ok ? r.text() : Promise.reject())
+                        // Consulta la letra sincronizada (.lrc) con cache-buster para cargar ediciones al instante
+                        fetch(song.lyrics + '?_t=' + Date.now()).then(r=> r.ok ? r.text() : Promise.reject())
                         .then(txt=>{
                             const cues = parseLRC(txt);
                             renderLyrics(cues, song.id);
