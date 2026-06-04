@@ -89,3 +89,16 @@ Este lanzamiento representa el estado consolidado de DuckSound como una aplicaci
 #### ⚙️ Mejoras de Robustez del Analizador de Audio
 - **Fallback de librosa documentado**: El `audio_analyzer.py` usa librosa cuando está disponible para análisis avanzado (RMS, Peak, Dynamic Range, BPM). Cuando librosa no está instalado en el contenedor, la app recae automáticamente en el análisis básico con Mutagen (extracción de cabeceras: `sample_rate`, `bit_depth`, `channels`, `bit_rate`) sin errores ni caídas.
 - **Análisis paralelo con ThreadPoolExecutor**: El proceso `extraer_metadatos_paralelo` ya usa múltiples hilos (hasta 6 workers) para extraer metadatos técnicos de todos los archivos de forma concurrente, con un impacto mínimo en la I/O del disco.
+
+#### 📝 Gestor, Editor y Sincronizador de Letras (LRC)
+- **Panel CRUD en Administración**: Añadida la tarjeta de acción "Gestionar letras" en el panel principal con un buscador debounce de 300ms y badges informativos sobre el formato y sincronización.
+- **Sincronizador Interactivo por Renglones**: Modal interactivo con editor plano y timeline de líneas que permite estampar marcas de tiempo en caliente presionando la `Barra Espaciadora` con scroll suave y centrado automático.
+- **Control de Velocidad (playbackRate)**: Selector dinámico para reproducir el audio a velocidad reducida (0.5x a 1.5x) para mayor precisión.
+- **Prevención de Condiciones de Carrera**: Sistema de descarte para peticiones asíncronas tardías cuando el usuario cambia de canción rápidamente e indicadores de carga (`fa-spinner`).
+
+#### 💿 Gestor de Álbumes e Invalidation de Caché de Imágenes
+- **Módulo CRUD de Álbumes**: Panel premium de gestión de álbumes (`admin_albumes.html`) y tarjeta de acción rápida en administración para editar títulos, años de lanzamiento, MBID y Deezer Album ID.
+- **Metadatos y Portada Deezer**: El backend resuelve de forma transparente portadas de alta resolución desde Deezer, guardándolas como `portada_url` en base de datos.
+- **Evicción de Caché Física y Cabeceras de Revalidación**: El servidor borra automáticamente los archivos de miniaturas WebP (`thumb_*.webp`) al cambiar la portada de un álbum, y sirve `/album-art/` bajo la directiva `Cache-Control: public, no-cache, must-revalidate`, forzando al navegador a solicitar cambios rápidos con ETag/304.
+- **Refresco en Caliente del DOM**: Inyección dinámica en el cliente de query parameters (`?t=timestamp`) a todas las imágenes de portada del DOM tras guardar cambios, propagando el arte al mini-reproductor y tracklists al instante sin pausar la música.
+
