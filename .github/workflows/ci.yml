@@ -32,14 +32,19 @@ jobs:
         run: |
           python -m py_compile app.py
           python -m py_compile config.py
-          python -m py_compile models.py
-          python -m py_compile scan_songs.py
-          python -m py_compile metadata_normalizer.py
-          python -m py_compile metadata_fetcher.py
-          python -m py_compile recommender.py
-          python -m py_compile lyrics_fetcher.py
-          python -m py_compile musicbrainz_client.py
-          python -m py_compile task_queue.py
+          python -m py_compile app/models.py
+          python -m py_compile app/__init__.py
+          python -m py_compile app/routes/admin.py
+          python -m py_compile app/routes/api.py
+          python -m py_compile app/routes/audio.py
+          python -m py_compile app/routes/auth.py
+          python -m py_compile app/routes/main.py
+          python -m py_compile app/services/audio_analyzer.py
+          python -m py_compile app/services/lyrics.py
+          python -m py_compile app/services/metadata.py
+          python -m py_compile app/services/queue.py
+          python -m py_compile app/services/recommender.py
+          python -m py_compile app/services/scanner.py
 
       - name: Run tests
         run: |
