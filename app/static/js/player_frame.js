@@ -534,6 +534,12 @@
                 if (typeof msg.crossfade_enabled !== 'undefined') {
                     crossfadeEnabled = msg.crossfade_enabled === true;
                 }
+            } else if (cmd === 'setSpeed'){
+                const speed = Number(msg.speed) || 1.0;
+                try {
+                    audio1.playbackRate = speed;
+                    audio2.playbackRate = speed;
+                } catch(e){}
             } else if (cmd === 'getState'){
                 postState();
             }

@@ -826,3 +826,133 @@ def admin_crear_usuario():
         'role': nuevo_usuario.role,
         'message': 'Usuario creado exitosamente'
     }), 201
+
+
+# ==============================================================================
+# SECCIÓN 6: GESTIÓN DE LETRAS (BUSCAR, OBTENER Y GUARDAR)
+# ==============================================================================
+
+@admin_bp.route('/api/admin/lyrics/search', methods=['GET'])
+def admin_lyrics_search():
+    """
+    Busca canciones por título o artista y retorna el estado de sus letras.
+    """
+    if not _is_admin_request():
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    query_str = request.args.get('q', '').strip()
+    if not query_str:
+        return jsonify([])
+
+    from app.models import Artista
+    canciones = Cancion.query.join(Artista, Cancion.artista_id == Artista.id, isouter=True)\
+        .filter(
+            db.or_(
+                Cancion.titulo.ilike(f'%{query_str}%'),
+                Artista.nombre.ilike(f'%{query_str}%')
+            )
+        ).order_by(Cancion.titulo).limit(50).all()
+
+    resultados = []
+    for c in canciones:
+        tiene_letra = False
+        sincronizada = 'Ninguno'
+        
+        if c.ruta_archivo_lrc and os.path.exists(c.ruta_archivo_lrc):
+            tiene_letra = True
+            from app.services.lyrics import _detectar_tipo_lyrics
+            try:
+                with open(c.ruta_archivo_lrc, 'r', encoding='utf-8') as f:
+                    contenido = f.read()
+                tipo = _detectar_tipo_lyrics(contenido)
+                sincronizada = 'LRC (Sincronizada)' if tipo == 'lrc' else 'TXT (Plana)'
+            except Exception:
+                sincronizada = 'TXT (Plana)'
+
+        resultados.append({
+            'id': c.id,
+            'titulo': c.titulo,
+            'artista': c.artista_obj.nombre if c.artista_obj else 'Desconocido',
+            'tiene_letra': tiene_letra,
+            'sincronizada': sincronizada
+        })
+
+    return jsonify(resultados)
+
+
+@admin_bp.route('/admin/lyrics/<int:cancion_id>', methods=['GET'])
+def admin_get_lyrics(cancion_id):
+    """
+    Retorna la letra cruda de una canción para editar.
+    """
+    if not _is_admin_request():
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    cancion = db.session.get(Cancion, cancion_id)
+    if not cancion:
+        return jsonify({'error': 'Song not found'}), 404
+
+    letra = ""
+    exists = False
+    
+    if cancion.ruta_archivo_lrc and os.path.exists(cancion.ruta_archivo_lrc):
+        try:
+            with open(cancion.ruta_archivo_lrc, 'r', encoding='utf-8') as f:
+                letra = f.read()
+            exists = True
+        except Exception as e:
+            current_app.logger.error(f"Error leyendo archivo de letras: {e}")
+    else:
+        from app.services.lyrics import obtener_o_descargar_letra
+        res = obtener_o_descargar_letra(cancion_id)
+        if res and res.get('letra'):
+            letra = res['letra']
+            exists = True
+
+    return jsonify({
+        'exists': exists,
+        'letra': letra,
+        'titulo': cancion.titulo,
+        'artista': cancion.artista_obj.nombre if cancion.artista_obj else 'Desconocido',
+        'audio': url_for('servir_audio', cancion_id=cancion_id),
+        'cover': url_for('servir_album_art', cancion_id=cancion_id, size='small')
+    })
+
+
+@admin_bp.route('/admin/lyrics/<int:cancion_id>/save', methods=['POST'])
+def admin_save_lyrics(cancion_id):
+    """
+    Guarda las letras editadas/sincronizadas de una canción.
+    """
+    if not _is_admin_request():
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    cancion = db.session.get(Cancion, cancion_id)
+    if not cancion:
+        return jsonify({'error': 'Song not found'}), 404
+
+    data = request.get_json() or {}
+    letra_contenido = data.get('letra', '').strip()
+
+    # Si se vacía, eliminar el archivo físico y quitar la referencia en DB
+    if not letra_contenido:
+        if cancion.ruta_archivo_lrc and os.path.exists(cancion.ruta_archivo_lrc):
+            try:
+                os.remove(cancion.ruta_archivo_lrc)
+            except Exception:
+                pass
+        cancion.ruta_archivo_lrc = None
+        db.session.commit()
+        from app.services.lyrics import _lyrics_cache
+        _lyrics_cache.pop(cancion_id, None)
+        return jsonify({'success': True, 'message': 'Letra eliminada'})
+
+    from app.services.lyrics import _guardar_letra, _detectar_tipo_lyrics
+    tipo = _detectar_tipo_lyrics(letra_contenido)
+    res = _guardar_letra(cancion, letra_contenido, tipo, cancion_id)
+
+    if res:
+        return jsonify({'success': True, 'message': 'Letra guardada con éxito'})
+        
+    return jsonify({'error': 'Failed to save lyrics file'}), 500
+

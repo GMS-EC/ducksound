@@ -13,6 +13,7 @@
     <!-- Tab Navigation -->
 <div class="admin-tabs">
     <button type="button" class="admin-tab active" data-tab="panel"><i class="fa-solid fa-gauge-high"></i> Panel</button>
+    <button type="button" class="admin-tab" data-tab="letras"><i class="fa-solid fa-microphone"></i> Letras</button>
     <button type="button" class="admin-tab" data-tab="actualizaciones"><i class="fa-solid fa-code-branch"></i> Actualizaciones</button>
 </div>
 
@@ -176,7 +177,134 @@
     </div>
     </div> <!-- /tab-actualizaciones -->
 
+    <div class="admin-tab-content" id="tab-letras">
+        <h2><i class="fa-solid fa-microphone" style="color:var(--accent);margin-right:8px"></i> Gestionar Letras</h2>
+        <p class="admin-subtitle">Busca canciones para ver, editar o sincronizar sus letras</p>
+        
+        <div style="margin-bottom:20px;max-width:500px;display:flex;gap:12px;background:var(--surface-2);border:1px solid var(--border-light);padding:6px 14px;border-radius:var(--radius-md);align-items:center">
+            <i class="fa-solid fa-magnifying-glass" style="color:var(--muted)"></i>
+            <input type="text" id="lyrics-search-input" style="flex:1;background:transparent;border:none;color:white;outline:none;font-size:14px" placeholder="Buscar canciones por título o artista..." autocomplete="off">
+        </div>
+        
+        <div class="table-container">
+            <table class="admin-table" id="lyrics-songs-table">
+                <thead>
+                    <tr>
+                        <th>Título</th>
+                        <th>Artista</th>
+                        <th>Estado Letra</th>
+                        <th>Tipo</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="lyrics-songs-list">
+                    <tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted)">Escribe en el buscador para encontrar canciones</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div> <!-- /tab-letras -->
+
     <a href="{{ url_for('dashboard') }}" class="admin-back">← Volver al dashboard</a>
+</div>
+
+<!-- Modal del Sincronizador de Letras -->
+<div id="lyrics-editor-modal" class="modal-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:99999;justify-content:center;align-items:center;opacity:0;transition:opacity 0.2s">
+    <div class="modal-content" style="background:var(--surface);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:0;width:95%;max-width:900px;height:90vh;display:flex;flex-direction:column;box-shadow:0 10px 30px rgba(0,0,0,0.5);transform:scale(0.95);transition:transform 0.2s;overflow:hidden">
+        <!-- Modal Header -->
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid var(--border-light);background:var(--surface-2)">
+            <div style="display:flex;align-items:center;gap:12px;min-width:0">
+                <img id="lyrics-modal-cover" src="" style="width:48px;height:48px;border-radius:6px;object-fit:cover;background:#222">
+                <div style="min-width:0">
+                    <h3 id="lyrics-modal-title" style="margin:0;font-size:16px;color:var(--text-bright)">Título de la canción</h3>
+                    <p id="lyrics-modal-artist" style="margin:0;font-size:12px;color:var(--muted)">Artista</p>
+                </div>
+            </div>
+            <button type="button" id="lyrics-modal-close" style="background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:20px;padding:8px;border-radius:50%;display:flex;align-items:center;justify-content:center;transition:background 0.2s"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        
+        <!-- Modal Tabs -->
+        <div style="display:flex;background:var(--surface-2);border-bottom:1px solid var(--border-light);padding:0 24px">
+            <button type="button" class="lyrics-modal-tab active" data-tab="edit-text" style="background:transparent;border:none;border-bottom:2px solid var(--accent);color:var(--accent);padding:12px 16px;cursor:pointer;font-weight:600;font-size:14px">1. Editar Texto</button>
+            <button type="button" class="lyrics-modal-tab" data-tab="sync-timeline" style="background:transparent;border:none;border-bottom:2px solid transparent;color:var(--muted);padding:12px 16px;cursor:pointer;font-weight:600;font-size:14px">2. Sincronizar Tiempos</button>
+        </div>
+        
+        <!-- Modal Body (Flex grow) -->
+        <div style="flex:1;overflow:hidden;position:relative">
+            <!-- Tab 1: Editar Texto -->
+            <div class="lyrics-modal-tab-content active" id="modal-tab-edit-text" style="display:flex;flex-direction:column;height:100%;padding:24px;box-sizing:border-box">
+                <p style="font-size:13px;color:var(--muted);margin-top:0;margin-bottom:12px">Pega o escribe las letras de la canción aquí (una línea por renglón). Puedes incluir marcas de tiempo manuales `[mm:ss.xx]` o dejar la letra limpia en texto plano para sincronizarla en la siguiente pestaña.</p>
+                <textarea id="lyrics-editor-textarea" style="flex:1;background:var(--surface-2);border:1px solid var(--border-light);color:var(--text);border-radius:var(--radius-md);padding:16px;font-family:monospace;font-size:14px;line-height:1.6;resize:none;outline:none;transition:border-color 0.2s" placeholder="Escribe o pega la letra aquí..."></textarea>
+            </div>
+            
+            <!-- Tab 2: Sincronizar Tiempos -->
+            <div class="lyrics-modal-tab-content" id="modal-tab-sync-timeline" style="display:none;flex-direction:column;height:100%;box-sizing:border-box">
+                <!-- Split layout: left list / right instructions & controls -->
+                <div style="display:flex;height:100%;overflow:hidden">
+                    <!-- Left: Scrollable Lyrics list -->
+                    <div id="lyrics-sync-scroll" style="flex:1;overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:12px;background:var(--surface-2);border-right:1px solid var(--border-light)">
+                        <!-- Se llena con JS -->
+                    </div>
+                    
+                    <!-- Right: Actions, Instructions & Audio Controls -->
+                    <div style="width:320px;padding:24px;display:flex;flex-direction:column;justify-content:space-between;box-sizing:border-box;background:var(--surface)">
+                        <div>
+                            <h4 style="margin-top:0;margin-bottom:12px;color:var(--text-bright)">Instrucciones</h4>
+                            <ul style="padding-left:16px;margin:0;font-size:12px;color:var(--muted);line-height:1.6;display:flex;flex-direction:column;gap:8px">
+                                <li>Reproduce la canción con los controles.</li>
+                                <li>Pulsa la **Barra Espaciadora** o el botón gigante para asignarle el tiempo actual a la línea activa (resaltada).</li>
+                                <li>El listado avanzará automáticamente a la siguiente línea.</li>
+                                <li>Haz clic en cualquier línea para seleccionarla y corregir/asignar su tiempo.</li>
+                                <li>Usa **Deshacer** si te equivocas.</li>
+                            </ul>
+                            
+                            <!-- Botón Gigante de Sincronización -->
+                            <button type="button" id="btn-sync-trigger" style="width:100%;margin-top:24px;padding:20px;background:var(--accent);border:none;border-radius:var(--radius-lg);color:white;font-weight:700;font-size:15px;cursor:pointer;box-shadow:0 4px 15px var(--accent-glow);transition:transform 0.1s, background 0.2s;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px">
+                                <i class="fa-solid fa-clock" style="font-size:24px"></i>
+                                <span>Marcar Tiempo</span>
+                                <span style="font-size:10px;font-weight:400;opacity:0.8">Presiona Barra Espaciadora</span>
+                            </button>
+                            
+                            <div style="display:flex;gap:8px;margin-top:10px">
+                                <button type="button" id="btn-sync-undo" class="btn" style="flex:1;padding:10px;font-size:12px"><i class="fa-solid fa-rotate-left"></i> Deshacer</button>
+                                <button type="button" id="btn-sync-clear" class="btn" style="flex:1;padding:10px;font-size:12px;color:#ff8a8a"><i class="fa-regular fa-trash-can"></i> Limpiar</button>
+                            </div>
+                        </div>
+                        
+                        <!-- Reproducción + Velocidad -->
+                        <div style="border-top:1px solid var(--border-light);padding-top:18px;display:flex;flex-direction:column;gap:12px">
+                            <!-- Controles mini-reproductor integrados -->
+                            <div style="display:flex;align-items:center;justify-content:center;gap:16px">
+                                <button type="button" id="modal-player-prev" style="background:none;border:none;color:var(--text);font-size:18px;cursor:pointer"><i class="fa-solid fa-backward-step"></i></button>
+                                <button type="button" id="modal-player-play" style="width:40px;height:40px;border-radius:50%;background:var(--text-bright);color:var(--surface);border:none;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center"><i class="fa-solid fa-play"></i></button>
+                                <button type="button" id="modal-player-next" style="background:none;border:none;color:var(--text);font-size:18px;cursor:pointer"><i class="fa-solid fa-forward-step"></i></button>
+                            </div>
+                            
+                            <!-- Selector de Velocidad -->
+                            <div style="display:flex;align-items:center;justify-content:space-between;font-size:12px">
+                                <span style="color:var(--muted)">Velocidad:</span>
+                                <select id="modal-player-speed" style="background:var(--surface-3);border:1px solid var(--border-light);color:white;padding:4px 8px;border-radius:4px;outline:none;cursor:pointer">
+                                    <option value="0.5">0.50x</option>
+                                    <option value="0.75">0.75x</option>
+                                    <option value="1.0" selected>1.00x</option>
+                                    <option value="1.25">1.25x</option>
+                                    <option value="1.5">1.50x</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Modal Footer -->
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-top:1px solid var(--border-light);background:var(--surface-2)">
+            <div id="lyrics-modal-save-message" style="font-size:13px;font-weight:600"></div>
+            <div style="display:flex;gap:12px">
+                <button type="button" id="lyrics-modal-cancel" class="btn">Cancelar</button>
+                <button type="button" id="lyrics-modal-save" class="btn btn-accent" style="padding:10px 24px"><i class="fa-solid fa-floppy-disk"></i> Guardar Letra</button>
+            </div>
+        </div>
+    </div>
 </div>
 
 
@@ -596,6 +724,80 @@
     0% { background-position: 200% 0; }
     100% { background-position: -200% 0; }
 }
+
+/* Letras search & badges */
+.status-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 99px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.status-badge-green {
+    background: rgba(46, 204, 113, 0.15);
+    color: #2ecc71;
+}
+.status-badge-gray {
+    background: rgba(255, 255, 255, 0.08);
+    color: #8e9297;
+}
+.status-badge-blue {
+    background: rgba(52, 152, 219, 0.15);
+    color: #3498db;
+}
+.status-badge-orange {
+    background: rgba(230, 126, 34, 0.15);
+    color: #e67e22;
+}
+
+/* Sincronizador de letras */
+.lyrics-sync-line {
+    padding: 12px 16px;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    font-size: 14px;
+    color: var(--text-normal);
+    user-select: none;
+}
+.lyrics-sync-line:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+.lyrics-sync-line.active {
+    background: var(--accent-soft);
+    border-left: 4px solid var(--accent);
+    border-color: var(--accent-soft);
+    color: var(--text-bright);
+    font-weight: 600;
+    transform: translateX(4px);
+}
+.lyrics-sync-badge {
+    font-family: monospace;
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--muted);
+    flex-shrink: 0;
+}
+.lyrics-sync-line.synced .lyrics-sync-badge {
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: bold;
+}
+.lyrics-sync-line.current-playing {
+    border-color: rgba(255, 64, 64, 0.4);
+    background: rgba(255, 64, 64, 0.05);
+    box-shadow: inset 0 0 8px rgba(255, 64, 64, 0.05);
+}
 </style>
 {% endblock %}
 
@@ -976,6 +1178,573 @@
 
     pollMBProgress();
     setInterval(pollMBProgress, 2500);
+
+
+    // =========================================================================
+    // ===== SECCIÓN 6: CONTROLLER DE GESTIÓN Y SINCRONIZACIÓN DE LETRAS ======
+    // =========================================================================
+    let currentEditingSongId = null;
+    let currentEditingSong = null;
+    let currentParsedLines = [];
+    let activeLineIndex = 0;
+    let undoStack = [];
+    let currentPlayerTime = 0;
+    let isPlayerPlaying = false;
+
+    // Buscador con debounce
+    let searchTimeout = null;
+    const searchInput = document.getElementById('lyrics-search-input');
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
+            clearTimeout(searchTimeout);
+            const query = this.value.trim();
+            searchTimeout = setTimeout(() => {
+                performLyricsSearch(query);
+            }, 300);
+        });
+    }
+
+    function performLyricsSearch(query) {
+        const listEl = document.getElementById('lyrics-songs-list');
+        if (!listEl) return;
+        if (!query) {
+            listEl.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted)">Escribe en el buscador para encontrar canciones</td></tr>';
+            return;
+        }
+        
+        listEl.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;"><i class="fa-solid fa-spinner fa-spin"></i> Buscando canciones...</td></tr>';
+        
+        fetch('/api/admin/lyrics/search?q=' + encodeURIComponent(query))
+            .then(res => {
+                if (!res.ok) throw new Error('Error en la búsqueda');
+                return res.json();
+            })
+            .then(songs => {
+                if (songs.length === 0) {
+                    listEl.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted)">No se encontraron canciones</td></tr>';
+                    return;
+                }
+                
+                let html = '';
+                songs.forEach(song => {
+                    const tieneLetraClass = song.tiene_letra ? 'status-badge-green' : 'status-badge-gray';
+                    const tieneLetraText = song.tiene_letra ? 'Con Letra' : 'Sin Letra';
+                    
+                    let tipoClass = 'status-badge-gray';
+                    let tipoText = song.sincronizada;
+                    if (song.sincronizada.includes('LRC')) {
+                        tipoClass = 'status-badge-blue';
+                    } else if (song.sincronizada.includes('TXT')) {
+                        tipoClass = 'status-badge-orange';
+                    } else {
+                        tipoText = 'Sin letra';
+                    }
+                    
+                    html += `
+                    <tr data-song-id="${song.id}">
+                        <td style="font-weight:600;color:var(--text-bright)">${escHtml(song.titulo)}</td>
+                        <td>${escHtml(song.artista)}</td>
+                        <td><span class="status-badge ${tieneLetraClass}">${tieneLetraText}</span></td>
+                        <td><span class="status-badge ${tipoClass}">${tipoText}</span></td>
+                        <td>
+                            <button class="btn btn-sm btn-edit-lyrics" data-id="${song.id}" style="padding:6px 12px;font-size:12px">
+                                <i class="fa-solid fa-microphone"></i> Sincronizar/Editar
+                            </button>
+                        </td>
+                    </tr>`;
+                });
+                listEl.innerHTML = html;
+                
+                // Eventos de botones editar
+                listEl.querySelectorAll('.btn-edit-lyrics').forEach(btn => {
+                    btn.addEventListener('click', function() {
+                        const songId = this.dataset.id;
+                        openLyricsEditor(songId);
+                    });
+                });
+            })
+            .catch(err => {
+                listEl.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:20px;color:#ff8a8a">Error: ${escHtml(err.message)}</td></tr>`;
+            });
+    }
+
+    // Modal abrir / cerrar
+    function openLyricsEditor(songId) {
+        currentEditingSongId = songId;
+        
+        document.getElementById('lyrics-modal-title').textContent = 'Cargando...';
+        document.getElementById('lyrics-modal-artist').textContent = '';
+        document.getElementById('lyrics-modal-cover').src = '';
+        document.getElementById('lyrics-editor-textarea').value = '';
+        document.getElementById('lyrics-modal-save-message').textContent = '';
+        
+        const modal = document.getElementById('lyrics-editor-modal');
+        if (modal) {
+            modal.style.display = 'flex';
+            modal.offsetHeight; // Reflow
+            modal.style.opacity = '1';
+            const modalContent = modal.querySelector('.modal-content');
+            if (modalContent) modalContent.style.transform = 'scale(1)';
+        }
+        
+        fetch(`/admin/lyrics/${songId}`)
+            .then(res => {
+                if (!res.ok) throw new Error('No se pudo obtener información de la canción');
+                return res.json();
+            })
+            .then(song => {
+                currentEditingSong = song;
+                
+                document.getElementById('lyrics-modal-title').textContent = song.titulo;
+                document.getElementById('lyrics-modal-artist').textContent = song.artista;
+                if (song.cover) {
+                    document.getElementById('lyrics-modal-cover').src = song.cover;
+                } else {
+                    document.getElementById('lyrics-modal-cover').src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='8' fill='%23222'/%3E%3Ctext x='50' y='58' font-size='42' text-anchor='middle' fill='%239ca3af'%3E%E2%99%AA%3C/text%3E%3C/svg%3E";
+                }
+                document.getElementById('lyrics-editor-textarea').value = song.letra || '';
+                
+                resetModalTabs();
+                
+                // Reproducir canción en iframe
+                sendToPlayer({
+                    type: 'playSong',
+                    song: {
+                        id: parseInt(songId, 10),
+                        titulo: song.titulo,
+                        artista: song.artista,
+                        audio: song.audio,
+                        cover: song.cover
+                    }
+                });
+            })
+            .catch(err => {
+                showToast('Error al cargar la canción: ' + err.message, 'error');
+                closeLyricsEditorModal();
+            });
+    }
+
+    function closeLyricsEditorModal() {
+        const modal = document.getElementById('lyrics-editor-modal');
+        if (!modal) return;
+        modal.style.opacity = '0';
+        const modalContent = modal.querySelector('.modal-content');
+        if (modalContent) modalContent.style.transform = 'scale(0.95)';
+        
+        setTimeout(() => {
+            modal.style.display = 'none';
+        }, 200);
+        
+        // Restaurar velocidad y controles
+        sendToPlayer({type: 'command', cmd: 'setSpeed', speed: 1.0});
+        const speedSelect = document.getElementById('modal-player-speed');
+        if (speedSelect) speedSelect.value = "1.0";
+        
+        currentEditingSongId = null;
+        currentEditingSong = null;
+    }
+
+    // Modal Tabs logic
+    const modalTabs = document.querySelectorAll('.lyrics-modal-tab');
+    modalTabs.forEach(tab => {
+        tab.addEventListener('click', function() {
+            const targetTab = this.dataset.tab;
+            if (this.classList.contains('active')) return;
+            
+            if (targetTab === 'sync-timeline') {
+                const rawText = document.getElementById('lyrics-editor-textarea').value;
+                currentParsedLines = parseLyrics(rawText);
+                activeLineIndex = 0;
+                undoStack = [];
+                renderSyncLines();
+            } else if (targetTab === 'edit-text') {
+                document.getElementById('lyrics-editor-textarea').value = serializeParsedLines();
+            }
+            
+            modalTabs.forEach(t => {
+                t.classList.remove('active');
+                t.style.borderBottomColor = 'transparent';
+                t.style.color = 'var(--muted)';
+            });
+            this.classList.add('active');
+            this.style.borderBottomColor = 'var(--accent)';
+            this.style.color = 'var(--accent)';
+            
+            document.querySelectorAll('.lyrics-modal-tab-content').forEach(content => {
+                content.style.display = 'none';
+                content.classList.remove('active');
+            });
+            const activeContent = document.getElementById('modal-tab-' + targetTab);
+            if (activeContent) {
+                activeContent.style.display = targetTab === 'sync-timeline' ? 'flex' : 'block';
+                activeContent.classList.add('active');
+            }
+        });
+    });
+
+    function resetModalTabs() {
+        modalTabs.forEach((t, idx) => {
+            if (idx === 0) {
+                t.classList.add('active');
+                t.style.borderBottomColor = 'var(--accent)';
+                t.style.color = 'var(--accent)';
+            } else {
+                t.classList.remove('active');
+                t.style.borderBottomColor = 'transparent';
+                t.style.color = 'var(--muted)';
+            }
+        });
+        
+        document.querySelectorAll('.lyrics-modal-tab-content').forEach((content, idx) => {
+            if (idx === 0) {
+                content.style.display = 'flex';
+                content.classList.add('active');
+            } else {
+                content.style.display = 'none';
+                content.classList.remove('active');
+            }
+        });
+    }
+
+    // Parsing y Serialización de LRC
+    function parseLyrics(rawText) {
+        const lines = rawText.split('\n');
+        const parsed = [];
+        const timePattern = /^\[(\d+):(\d+(?:\.\d+)?)\](.*)/;
+        
+        lines.forEach(line => {
+            const trimmed = line.trim();
+            const match = trimmed.match(timePattern);
+            if (match) {
+                const min = parseInt(match[1], 10);
+                const sec = parseFloat(match[2]);
+                const time = min * 60 + sec;
+                const text = match[3].trim();
+                parsed.push({ time, text });
+            } else {
+                parsed.push({ time: null, text: trimmed });
+            }
+        });
+        return parsed;
+    }
+
+    function serializeParsedLines() {
+        return currentParsedLines.map(line => {
+            if (line.time !== null) {
+                return `[${formatTime(line.time)}] ${line.text}`;
+            } else {
+                return line.text;
+            }
+        }).join('\n');
+    }
+
+    function formatTime(seconds) {
+        const m = Math.floor(seconds / 60);
+        const s = Math.floor(seconds % 60);
+        const ms = Math.floor((seconds % 1) * 100);
+        return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(ms).padStart(2, '0')}`;
+    }
+
+    // Renderizado e interacción del listado de sincronización
+    function renderSyncLines() {
+        const container = document.getElementById('lyrics-sync-scroll');
+        if (!container) return;
+        container.innerHTML = '';
+        
+        currentParsedLines.forEach((line, index) => {
+            const lineEl = document.createElement('div');
+            lineEl.className = 'lyrics-sync-line';
+            lineEl.dataset.index = index;
+            if (index === activeLineIndex) {
+                lineEl.classList.add('active');
+            }
+            
+            const timeBadge = document.createElement('span');
+            timeBadge.className = 'lyrics-sync-badge';
+            timeBadge.textContent = line.time !== null ? formatTime(line.time) : '--:--.--';
+            
+            if (line.time !== null) {
+                lineEl.classList.add('synced');
+            }
+            
+            const textSpan = document.createElement('span');
+            textSpan.className = 'lyrics-sync-text';
+            textSpan.textContent = line.text || '(Instrumental / Línea Vacía)';
+            if (!line.text) {
+                textSpan.style.fontStyle = 'italic';
+                textSpan.style.opacity = '0.5';
+            }
+            
+            lineEl.appendChild(timeBadge);
+            lineEl.appendChild(textSpan);
+            
+            lineEl.addEventListener('click', () => {
+                setActiveLine(index);
+                if (line.time !== null) {
+                    sendToPlayer({type: 'command', cmd: 'seekTo', seconds: line.time});
+                }
+            });
+            
+            container.appendChild(lineEl);
+        });
+        
+        scrollToActiveLine();
+    }
+
+    function setActiveLine(index) {
+        if (index < 0 || index >= currentParsedLines.length) return;
+        
+        const container = document.getElementById('lyrics-sync-scroll');
+        if (!container) return;
+        
+        const oldActive = container.querySelector('.lyrics-sync-line.active');
+        if (oldActive) oldActive.classList.remove('active');
+        
+        activeLineIndex = index;
+        const newActive = container.querySelector(`.lyrics-sync-line[data-index="${index}"]`);
+        if (newActive) {
+            newActive.classList.add('active');
+        }
+        
+        scrollToActiveLine();
+    }
+
+    function scrollToActiveLine() {
+        const container = document.getElementById('lyrics-sync-scroll');
+        if (!container) return;
+        const activeEl = container.querySelector('.lyrics-sync-line.active');
+        if (!activeEl) return;
+        
+        const containerHeight = container.clientHeight;
+        const activeOffsetTop = activeEl.offsetTop;
+        const activeHeight = activeEl.clientHeight;
+        
+        container.scrollTo({
+            top: activeOffsetTop - (containerHeight / 2) + (activeHeight / 2),
+            behavior: 'smooth'
+        });
+    }
+
+    // Sincronización e Interceptor de Teclado
+    function triggerSyncCurrentLine() {
+        if (activeLineIndex < 0 || activeLineIndex >= currentParsedLines.length) return;
+        
+        undoStack.push(JSON.parse(JSON.stringify(currentParsedLines)));
+        if (undoStack.length > 50) undoStack.shift();
+        
+        currentParsedLines[activeLineIndex].time = currentPlayerTime;
+        
+        const container = document.getElementById('lyrics-sync-scroll');
+        if (container) {
+            const lineEl = container.querySelector(`.lyrics-sync-line[data-index="${activeLineIndex}"]`);
+            if (lineEl) {
+                lineEl.classList.add('synced');
+                const badge = lineEl.querySelector('.lyrics-sync-badge');
+                if (badge) badge.textContent = formatTime(currentPlayerTime);
+            }
+        }
+        
+        if (activeLineIndex < currentParsedLines.length - 1) {
+            setActiveLine(activeLineIndex + 1);
+        } else {
+            showToast('¡Letras sincronizadas por completo!', 'success');
+        }
+    }
+
+    function undoLastSync() {
+        if (undoStack.length === 0) {
+            showToast('No hay acciones para deshacer', 'info');
+            return;
+        }
+        currentParsedLines = undoStack.pop();
+        if (activeLineIndex > 0) {
+            activeLineIndex--;
+        }
+        renderSyncLines();
+    }
+
+    function clearAllTimestamps() {
+        if (confirm('¿Limpiar todos los tiempos de sincronización?')) {
+            undoStack.push(JSON.parse(JSON.stringify(currentParsedLines)));
+            currentParsedLines.forEach(line => { line.time = null; });
+            activeLineIndex = 0;
+            renderSyncLines();
+        }
+    }
+
+    // Escuchador de teclado (Barra espaciadora)
+    window.addEventListener('keydown', function(e) {
+        const modal = document.getElementById('lyrics-editor-modal');
+        if (!modal || modal.style.display === 'none') return;
+        
+        const syncTabContent = document.getElementById('modal-tab-sync-timeline');
+        if (!syncTabContent || syncTabContent.style.display === 'none') return;
+        
+        if (e.key === ' ' || e.code === 'Space') {
+            if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
+                return;
+            }
+            e.preventDefault();
+            triggerSyncCurrentLine();
+        }
+    });
+
+    // Escuchador de postMessage de reproducción
+    window.addEventListener('message', function(ev) {
+        if (ev.origin !== window.location.origin) return;
+        const msg = ev.data || {};
+        if (msg.type === 'timeupdate') {
+            currentPlayerTime = Number(msg.currentTime) || 0;
+            highlightSyncLineForTime(currentPlayerTime);
+        } else if (msg.type === 'state') {
+            const state = msg.state || {};
+            isPlayerPlaying = !!state.isPlaying;
+            updateMiniPlayerPlayButton();
+        }
+    });
+
+    function highlightSyncLineForTime(time) {
+        const container = document.getElementById('lyrics-sync-scroll');
+        if (!container) return;
+        
+        container.querySelectorAll('.lyrics-sync-line.current-playing').forEach(el => {
+            el.classList.remove('current-playing');
+        });
+        
+        let matchIndex = -1;
+        for (let i = 0; i < currentParsedLines.length; i++) {
+            const line = currentParsedLines[i];
+            if (line.time !== null && line.time <= time) {
+                matchIndex = i;
+            }
+        }
+        
+        if (matchIndex !== -1) {
+            const lineEl = container.querySelector(`.lyrics-sync-line[data-index="${matchIndex}"]`);
+            if (lineEl) {
+                lineEl.classList.add('current-playing');
+                const rawTextTab = document.getElementById('modal-tab-edit-text');
+                if (rawTextTab && rawTextTab.style.display === 'none') {
+                    if (matchIndex !== activeLineIndex && !document.querySelector('.lyrics-sync-line.active:hover')) {
+                        const containerHeight = container.clientHeight;
+                        const lineOffsetTop = lineEl.offsetTop;
+                        const lineHeight = lineEl.clientHeight;
+                        container.scrollTo({
+                            top: lineOffsetTop - (containerHeight / 2) + (lineHeight / 2),
+                            behavior: 'smooth'
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    function updateMiniPlayerPlayButton() {
+        const playBtn = document.getElementById('modal-player-play');
+        if (playBtn) {
+            playBtn.innerHTML = isPlayerPlaying 
+                ? '<i class="fa-solid fa-pause"></i>' 
+                : '<i class="fa-solid fa-play"></i>';
+        }
+    }
+
+    // Guardar cambios a base de datos
+    function saveLyricsToServer(songId, content) {
+        const btnSave = document.getElementById('lyrics-modal-save');
+        const saveMsg = document.getElementById('lyrics-modal-save-message');
+        if (btnSave) btnSave.disabled = true;
+        if (saveMsg) {
+            saveMsg.style.color = 'var(--text-bright)';
+            saveMsg.textContent = 'Guardando letra...';
+        }
+        
+        fetch(`/admin/lyrics/${songId}/save`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ letra: content })
+        })
+        .then(res => {
+            if (!res.ok) throw new Error('Error al guardar letra en servidor');
+            return res.json();
+        })
+        .then(data => {
+            if (data.success) {
+                showToast('Letra guardada con éxito', 'success');
+                closeLyricsEditorModal();
+                const query = document.getElementById('lyrics-search-input').value.trim();
+                performLyricsSearch(query);
+            } else {
+                throw new Error(data.error || 'Error desconocido');
+            }
+        })
+        .catch(err => {
+            showToast('Error al guardar: ' + err.message, 'error');
+            if (saveMsg) {
+                saveMsg.style.color = '#ff8a8a';
+                saveMsg.textContent = 'Error al guardar';
+            }
+        })
+        .finally(() => {
+            if (btnSave) btnSave.disabled = false;
+        });
+    }
+
+    // Vincular botones de sincronización interactivos
+    const btnSyncTrigger = document.getElementById('btn-sync-trigger');
+    if (btnSyncTrigger) btnSyncTrigger.addEventListener('click', triggerSyncCurrentLine);
+    
+    const btnSyncUndo = document.getElementById('btn-sync-undo');
+    if (btnSyncUndo) btnSyncUndo.addEventListener('click', undoLastSync);
+    
+    const btnSyncClear = document.getElementById('btn-sync-clear');
+    if (btnSyncClear) btnSyncClear.addEventListener('click', clearAllTimestamps);
+
+    // Controles Mini-player
+    const modalPlay = document.getElementById('modal-player-play');
+    if (modalPlay) modalPlay.addEventListener('click', () => { sendToPlayer({type: 'command', cmd: 'toggle'}); });
+    
+    const modalPrev = document.getElementById('modal-player-prev');
+    if (modalPrev) modalPrev.addEventListener('click', () => { sendToPlayer({type: 'command', cmd: 'seek', seconds: -5}); });
+    
+    const modalNext = document.getElementById('modal-player-next');
+    if (modalNext) modalNext.addEventListener('click', () => { sendToPlayer({type: 'command', cmd: 'seek', seconds: 5}); });
+    
+    const modalSpeed = document.getElementById('modal-player-speed');
+    if (modalSpeed) {
+        modalSpeed.addEventListener('change', function() {
+            sendToPlayer({type: 'command', cmd: 'setSpeed', speed: parseFloat(this.value)});
+        });
+    }
+
+    // Botones de guardado y cancelación en pie de modal
+    const lyricsModalSave = document.getElementById('lyrics-modal-save');
+    if (lyricsModalSave) {
+        lyricsModalSave.addEventListener('click', function() {
+            const activeTab = document.querySelector('.lyrics-modal-tab.active');
+            let content = '';
+            if (activeTab && activeTab.dataset.tab === 'sync-timeline') {
+                content = serializeParsedLines();
+            } else {
+                content = document.getElementById('lyrics-editor-textarea').value;
+            }
+            saveLyricsToServer(currentEditingSongId, content);
+        });
+    }
+
+    const lyricsModalCancel = document.getElementById('lyrics-modal-cancel');
+    if (lyricsModalCancel) lyricsModalCancel.addEventListener('click', closeLyricsEditorModal);
+    
+    const lyricsModalClose = document.getElementById('lyrics-modal-close');
+    if (lyricsModalClose) lyricsModalClose.addEventListener('click', closeLyricsEditorModal);
+
+    const modalOverlay = document.getElementById('lyrics-editor-modal');
+    if (modalOverlay) {
+        modalOverlay.addEventListener('click', function(e) {
+            if (e.target === modalOverlay) closeLyricsEditorModal();
+        });
+    }
 
 })();
 </script>
