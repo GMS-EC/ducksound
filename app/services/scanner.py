@@ -1304,7 +1304,6 @@ def escanear_carpeta_audio(progress_callback=None):
 
             # Verificar si el archivo en disco ha sido modificado desde que fue agregado
             from datetime import datetime
-            import os
             try:
                 mtime_utc = datetime.utcfromtimestamp(os.path.getmtime(archivo))
                 # Consideramos modificado si la fecha de modificación en disco es posterior a la fecha de agregado en BD
