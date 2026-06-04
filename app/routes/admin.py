@@ -960,3 +960,141 @@ def admin_save_lyrics(cancion_id):
         
     return jsonify({'error': 'Failed to save lyrics file'}), 500
 
+
+@admin_bp.route('/admin/albumes')
+def admin_albumes():
+    """
+    Panel CRUD y visor para editar álbumes, asignarles MusicBrainz ID,
+    año de lanzamiento y portadas oficiales desde Deezer.
+    """
+    if not _is_admin_request():
+        return redirect(url_for('auth.login'))
+        
+    query = request.args.get('q', '').strip()
+    if query:
+        albumes = Album.query.join(Artista).filter(
+            (Album.titulo.ilike(f'%{query}%')) | (Artista.nombre.ilike(f'%{query}%'))
+        ).order_by(Album.titulo).all()
+    else:
+        albumes = Album.query.order_by(Album.titulo).all()
+        
+    total = Album.query.count()
+    con_mbid = Album.query.filter(Album.musicbrainz_id.isnot(None)).count()
+    con_portada = Album.query.filter(Album.portada_url.isnot(None)).count()
+    
+    return render_template('admin_albumes.html', albumes=albumes, total=total, con_mbid=con_mbid, con_portada=con_portada, query=query)
+
+
+@admin_bp.route('/admin/albumes/preview-metadata', methods=['POST'])
+def admin_preview_album_metadata():
+    """
+    API instantánea de previsualización que consulta al scraper Deezer/MusicBrainz
+    los detalles del álbum a partir de los IDs provistos.
+    """
+    if not _is_admin_request():
+        return jsonify({'error': 'Unauthorized'}), 401
+        
+    data = request.get_json(force=True)
+    if not data:
+        return jsonify({'error': 'Datos inválidos'}), 400
+        
+    mbid = (data.get('mbid') or '').strip()
+    deezer_id = (data.get('deezer_id') or '').strip()
+    
+    if not mbid and not deezer_id:
+        return jsonify({'error': 'Se requiere al menos un MBID o Deezer ID'}), 400
+        
+    from app.services.metadata import preview_album_metadata
+    preview = preview_album_metadata(mbid=mbid if mbid else None, deezer_id=deezer_id if deezer_id else None)
+    
+    if not preview:
+        return jsonify({'success': False, 'message': 'No se encontró ningún álbum con esos IDs'}), 404
+        
+    return jsonify({'success': True, 'metadata': preview})
+
+
+@admin_bp.route('/admin/albumes/<int:album_id>/update-metadata', methods=['POST'])
+def admin_update_album_metadata(album_id):
+    """
+    Actualiza el título, año, MBID y portada de un álbum.
+    Limpia el caché de miniaturas para forzar la actualización de imágenes en toda la app.
+    """
+    if not _is_admin_request():
+        return jsonify({'error': 'Unauthorized'}), 401
+        
+    album = db.session.get(Album, album_id)
+    if not album:
+        return jsonify({'error': 'Álbum no encontrado'}), 404
+        
+    data = request.get_json(force=True)
+    if not data:
+        return jsonify({'error': 'Datos inválidos'}), 400
+        
+    titulo = (data.get('titulo') or '').strip()
+    anio_str = (data.get('anio') or '').strip()
+    mbid = (data.get('mbid') or '').strip()
+    deezer_id = (data.get('deezer_id') or '').strip()
+    
+    final_mbid = mbid
+    if final_mbid:
+        final_mbid = final_mbid.lower()
+        if len(final_mbid) != 36:
+            return jsonify({'error': 'MBID debe tener 36 caracteres (UUID)'}), 400
+        existing = Album.query.filter(Album.musicbrainz_id == final_mbid, Album.id != album_id).first()
+        if existing:
+            return jsonify({'error': f'El MBID ya pertenece a {existing.titulo}'}), 400
+            
+    # Intentar resolver Deezer para la portada
+    foto_desde_deezer = None
+    if deezer_id:
+        from app.services.metadata import get_album_by_deezer_id
+        d_data = get_album_by_deezer_id(deezer_id)
+        if d_data:
+            foto_desde_deezer = d_data.get('cover')
+            if d_data.get('release_date') and not anio_str:
+                try:
+                    anio_str = d_data['release_date'][:4]
+                except:
+                    pass
+                    
+    # Cambios básicos
+    if titulo:
+        album.titulo = titulo
+        
+    if anio_str:
+        try:
+            album.anio = int(anio_str)
+        except ValueError:
+            pass
+            
+    album.musicbrainz_id = final_mbid or None
+    
+    old_portada = album.portada_url
+    if foto_desde_deezer:
+        album.portada_url = foto_desde_deezer
+        
+    db.session.commit()
+    
+    # Si la portada del álbum cambió o se actualizó, limpiamos el caché de miniaturas WebP de sus canciones asociadas
+    if foto_desde_deezer and foto_desde_deezer != old_portada:
+        from pathlib import Path
+        for cancion in album.canciones:
+            for size in ['small', 'medium', 'large']:
+                thumb_file = Config.THUMBNAILS_FOLDER / f"thumb_{size}_{cancion.id}.webp"
+                if thumb_file.exists():
+                    try:
+                        thumb_file.unlink()
+                    except Exception:
+                        pass
+                        
+    return jsonify({
+        'success': True,
+        'message': f'Álbum "{album.titulo}" actualizado',
+        'metadata': {
+            'titulo': album.titulo,
+            'anio': album.anio,
+            'mbid': album.musicbrainz_id or '',
+            'portada_url': album.portada_url or ''
+        }
+    })
+

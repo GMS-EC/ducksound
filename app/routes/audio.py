@@ -277,9 +277,11 @@ def servir_album_art(cancion_id):
     thumbnail_path = Config.THUMBNAILS_FOLDER / thumbnail_filename
     
     if thumbnail_path.exists():
-        return send_file(str(thumbnail_path), mimetype='image/webp', max_age=604800) # 1 semana de caché
+        resp = send_file(str(thumbnail_path), mimetype='image/webp')
+        resp.headers['Cache-Control'] = 'public, no-cache, must-revalidate'
+        return resp
 
-    # 2. Buscar la imagen original usando la cascada de 6 niveles
+    # 2. Buscar la imagen original usando la cascada de niveles
     cancion = db.session.get(Cancion, cancion_id)
     if not cancion:
         return "Canción no encontrada", 404
@@ -288,50 +290,67 @@ def servir_album_art(cancion_id):
     img_source = None
     
     # --- Cascada de búsqueda ---
-    if original_path and os.path.exists(original_path):
-        img_source = original_path
-    elif original_path:
-        alt_path = Config.ALBUM_ART_FOLDER / Path(original_path).name
-        if alt_path.exists(): img_source = str(alt_path)
-    
-    if not img_source and hasattr(Config, 'MEDIA_FOLDER') and original_path:
-        old_path = Path(str(Config.MEDIA_FOLDER)) / 'album_art' / Path(original_path).name
-        if old_path.exists(): img_source = str(old_path)
-        
-    if not img_source and original_path:
-        docker_legacy = Path('/music/album_art') / Path(original_path).name
-        if docker_legacy.exists(): img_source = str(docker_legacy)
+    # Nivel 0: Si el álbum tiene portada_url asociada (Deezer o ruta local)
+    if cancion.album_obj and cancion.album_obj.portada_url:
+        portada = cancion.album_obj.portada_url
+        if portada.startswith(('http://', 'https://')):
+            try:
+                import requests as _requests
+                resp_req = _requests.get(portada, timeout=5)
+                if resp_req.ok:
+                    img_source = resp_req.content
+            except Exception as e:
+                current_app.logger.error(f"[Art Server] Error descargando portada de album {portada}: {e}")
+        elif os.path.exists(portada):
+            img_source = portada
 
     if not img_source:
-        try:
-            if original_path:
-                p = original_path.replace('\\\\', '/').replace(':/', ':/')
+        if original_path and os.path.exists(original_path):
+            img_source = original_path
+        elif original_path:
+            alt_path = Config.ALBUM_ART_FOLDER / Path(original_path).name
+            if alt_path.exists(): img_source = str(alt_path)
+        
+        if not img_source and hasattr(Config, 'MEDIA_FOLDER') and original_path:
+            old_path = Path(str(Config.MEDIA_FOLDER)) / 'album_art' / Path(original_path).name
+            if old_path.exists(): img_source = str(old_path)
+            
+        if not img_source and original_path:
+            docker_legacy = Path('/music/album_art') / Path(original_path).name
+            if docker_legacy.exists(): img_source = str(docker_legacy)
+
+        if not img_source:
+            try:
+                if original_path:
+                    p = original_path.replace('\\\\', '/').replace(':/', ':/')
+                    m = re.match(r'^([A-Za-z]):/(.*)', p)
+                    if m:
+                        alt = '/music/' + m.group(2)
+                        if os.path.exists(alt): img_source = alt
+            except Exception: pass
+
+        if not img_source:
+            rel = os.path.join(os.getcwd(), original_path or '')
+            if original_path and os.path.exists(rel): img_source = rel
+
+        # Nivel final: Extracción binaria como último recurso
+        if not img_source:
+            img_source = _extract_cover_from_file(cancion.ruta_archivo_audio)
+            if img_source is None and cancion.ruta_archivo_audio:
+                p = cancion.ruta_archivo_audio.replace('\\\\', '/').replace(':/', ':/')
                 m = re.match(r'^([A-Za-z]):/(.*)', p)
                 if m:
                     alt = '/music/' + m.group(2)
-                    if os.path.exists(alt): img_source = alt
-        except Exception: pass
-
-    if not img_source:
-        rel = os.path.join(os.getcwd(), original_path or '')
-        if original_path and os.path.exists(rel): img_source = rel
-
-    # 7. Extracción binaria como último recurso
-    if not img_source:
-        img_source = _extract_cover_from_file(cancion.ruta_archivo_audio)
-        if img_source is None and cancion.ruta_archivo_audio:
-            p = cancion.ruta_archivo_audio.replace('\\\\', '/').replace(':/', ':/')
-            m = re.match(r'^([A-Za-z]):/(.*)', p)
-            if m:
-                alt = '/music/' + m.group(2)
-                img_source = _extract_cover_from_file(alt)
+                    img_source = _extract_cover_from_file(alt)
 
     # 3. Generar la miniatura si encontramos una fuente
     if img_source:
         img = _generate_thumbnail(img_source, size_name)
         if img:
             img.save(thumbnail_path, 'WEBP', quality=80)
-            return send_file(str(thumbnail_path), mimetype='image/webp', max_age=604800)
+            resp = send_file(str(thumbnail_path), mimetype='image/webp')
+            resp.headers['Cache-Control'] = 'public, no-cache, must-revalidate'
+            return resp
 
     # 4. Fallback visual total (SVG)
     placeholder_svg = '''<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300">

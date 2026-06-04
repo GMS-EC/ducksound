@@ -69,6 +69,14 @@
                 <p>Busca, edita y sincroniza las letras de las canciones</p>
             </div>
         </div>
+
+        <a href="{{ url_for('admin.admin_albumes') }}" class="admin-action-card">
+            <div class="admin-action-icon"><i class="fa-solid fa-compact-disc"></i></div>
+            <div class="admin-action-info">
+                <h3>Gestionar álbumes</h3>
+                <p>Edita títulos, años y actualiza las portadas oficiales</p>
+            </div>
+        </a>
     </div>
 
     <div id="scan-progress-panel" style="display:none;margin-top:20px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:14px">

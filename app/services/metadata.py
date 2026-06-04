@@ -755,3 +755,64 @@ def enrich_all(commit=True):
     if commit and total > 0:
         db.session.commit()
     return result
+
+
+def get_album_by_deezer_id(deezer_album_id):
+    """Busca directamente un álbum mediante su Deezer Album ID."""
+    try:
+        url = DEEZER_ALBUM_URL.format(deezer_album_id)
+        resp = requests.get(url, timeout=REQUEST_TIMEOUT)
+        resp.raise_for_status()
+        detalles = resp.json()
+        if 'error' in detalles:
+            return None
+        return {
+            'title': detalles.get('title'),
+            'cover': detalles.get('cover_xl') or detalles.get('cover_big') or detalles.get('cover_medium'),
+            'cover_medium': detalles.get('cover_medium'),
+            'release_date': detalles.get('release_date'),
+            'nb_tracks': detalles.get('nb_tracks', 0),
+            'artist_name': detalles.get('artist', {}).get('name', ''),
+            'deezer_url': detalles.get('link', ''),
+        }
+    except Exception as e:
+        logging.error(f"[Deezer] Error en lookup ID de álbum {deezer_album_id}: {e}")
+        return None
+
+
+def preview_album_metadata(mbid=None, deezer_id=None):
+    """Proporciona metadatos del álbum de manera unificada para su validación manual."""
+    resolved_mbid = None
+    title = None
+    cover = None
+    year = None
+    artist_name = None
+
+    if deezer_id:
+        deezer_data = get_album_by_deezer_id(deezer_id)
+        if deezer_data:
+            title = deezer_data.get('title')
+            cover = deezer_data.get('cover')
+            artist_name = deezer_data.get('artist_name')
+            if deezer_data.get('release_date'):
+                try:
+                    year = int(deezer_data['release_date'][:4])
+                except:
+                    pass
+
+    # MusicBrainz lookup if MBID is provided
+    # (En una versión básica, retornamos lo que obtuvimos de Deezer o buscamos en MusicBrainz si se requiere)
+    if mbid and not title:
+        # MusicBrainz release lookup can be added if needed, fallback to basic placeholders
+        resolved_mbid = mbid.lower()
+
+    if not title and not cover:
+        return None
+
+    return {
+        'titulo': title,
+        'portada_url': cover,
+        'anio': year,
+        'artista_nombre': artist_name,
+        'mbid': mbid or resolved_mbid
+    }
