@@ -1,0 +1,431 @@
+{% extends "base.html" %}
+
+{% block title %}Biblioteca - DuckSound{% endblock %}
+
+{% block content %}
+<div class="dashboard-header">
+    <h1 class="dashboard-title">
+        <i class="fa-solid {% if es_favoritos %}fa-heart{% else %}fa-music{% endif %}"
+            style="color:var(--accent);margin-right:8px"></i>
+        {% if es_favoritos %}Tus Favoritos{% else %}<span id="dynamic-greeting" data-user="{{ (current_user.nombre_publico or current_user.nombre_usuario or '') if current_user else '' }}"></span>{% endif %}
+    </h1>
+    <p class="dashboard-subtitle" id="dashboard-subtitle"></p>
+</div>
+
+{% if not canciones and es_favoritos %}
+<div class="empty-state">
+    <div class="empty-icon"><i class="fa-solid fa-inbox"></i></div>
+    <h2 class="empty-title">No hay canciones guardadas</h2>
+    <p class="empty-text">Aún no has marcado ninguna canción como favorita.</p>
+</div>
+{% elif not canciones and not es_favoritos and not albumes_recientes %}
+<div class="empty-state">
+    <div class="empty-icon"><i class="fa-solid fa-inbox"></i></div>
+    <h2 class="empty-title">Tu biblioteca está vacía</h2>
+    <p class="empty-text">Agrega archivos de audio a la carpeta de música y luego escanéalos desde el panel de
+        administración.</p>
+</div>
+{% else %}
+
+{% if es_favoritos %}
+<!-- VISTA CLÁSICA DE LISTA PARA FAVORITOS -->
+<div class="tracklist spotify-tracklist" id="dashboard-tracklist">
+    {% for cancion in canciones %}
+        <div class="track-item" data-cancion-id="{{ cancion.id }}"
+            data-audio="{{ url_for('servir_audio', cancion_id=cancion.id) }}"
+            data-cover="{{ url_for('servir_album_art', cancion_id=cancion.id, size='small') }}" data-titulo="{{ cancion.titulo }}"
+            data-artista="{{ cancion.artista_obj.nombre if cancion.artista_obj else 'Desconocido' }}">
+            <button class="track-play-btn" title="Reproducir"><i class="fa-solid fa-play"></i></button>
+            <span class="track-num">
+                <span class="num-text">{{ loop.index }}</span>
+                <span class="playing-eq"><span></span><span></span><span></span></span>
+            </span>
+            <div class="track-cover-sm">
+                <img src="{{ url_for('servir_album_art', cancion_id=cancion.id, size='small') }}" alt="" loading="lazy"
+                    onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                <div class="cover-fallback" style="display:none"><i class="fa-solid fa-music"></i></div>
+            </div>
+            <div class="track-info">
+                <span class="track-title">{{ cancion.titulo }}</span>
+                <span class="track-artist-mobile">{{ cancion.artista_obj.nombre if cancion.artista_obj else '' }}</span>
+            </div>
+            <span class="track-artist-col">{{ cancion.artista_obj.nombre if cancion.artista_obj else '' }}</span>
+            <span class="track-duration">
+                <span class="duration-text">
+                    {% if cancion.duracion %}{{ (cancion.duracion // 60) }}:{{ '%02d' % (cancion.duracion % 60) }}{% else %}--:--{% endif %}
+                </span>
+            </span>
+        </div>
+    {% endfor %}
+</div>
+{% else %}
+<!-- VISTA TIPO SPOTIFY PARA HOME -->
+
+{% set spotlight_mix = spotlight_mix if spotlight_mix is defined else (daily_mixes[0] if daily_mixes else none) %}
+{% set spotlight_album = albumes_recientes[0] if albumes_recientes else none %}
+{% set spotlight_song = spotlight_mix.canciones[0] if spotlight_mix and spotlight_mix.canciones else (canciones_recientes[0] if canciones_recientes else none) %}
+{% set spotlight_cover = url_for('audio.servir_portada_daily_mix', mix_id=spotlight_mix.id) if spotlight_mix else none %}
+{% if not spotlight_cover and spotlight_album %}
+    {% set spotlight_cover = spotlight_album.portada_url %}
+    {% if not spotlight_cover and spotlight_album.canciones|length > 0 %}
+        {% set spotlight_cover = url_for('servir_album_art', cancion_id=spotlight_album.canciones[0].id, size='medium') %}
+    {% endif %}
+{% endif %}
+
+<section class="dashboard-spotlight">
+    <div class="dashboard-spotlight-art">
+        {% if spotlight_cover %}
+        <img src="{{ spotlight_cover }}" alt="" loading="eager" id="spotlight-cover" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+        <div class="dashboard-spotlight-fallback" style="display:none"><i class="fa-solid fa-music"></i></div>
+        {% else %}
+        <div class="dashboard-spotlight-fallback"><i class="fa-solid fa-music"></i></div>
+        {% endif %}
+    </div>
+    <div class="dashboard-spotlight-copy">
+        <div class="dashboard-kicker">
+            <i class="fa-solid fa-wand-magic-sparkles"></i>
+            <span>{{ spotlight_mix.nombre if spotlight_mix else 'Inicio rapido' }}</span>
+        </div>
+        <h2 id="spotlight-title">{{ spotlight_mix.nombre if spotlight_mix else (spotlight_album.titulo if spotlight_album else 'Tu biblioteca esta lista') }}</h2>
+        <p>
+            {% if spotlight_mix %}
+                <span id="spotlight-description">{{ spotlight_mix.canciones|length }} canciones seleccionadas para hoy.</span>
+            {% elif spotlight_album %}
+                Lo mas reciente de {{ spotlight_album.artista.nombre if spotlight_album.artista else 'tu coleccion' }}.
+            {% else %}
+                Explora tus canciones, albumes y artistas desde un solo lugar.
+            {% endif %}
+        </p>
+        <div class="dashboard-spotlight-actions">
+            {% if spotlight_song %}
+            <button class="dashboard-play-now" id="spotlight-play"
+                data-cancion-id="{{ spotlight_song.id }}"
+                data-titulo="{{ spotlight_song.titulo }}"
+                data-artista="{{ spotlight_song.artista_obj.nombre if spotlight_song.artista_obj else 'Desconocido' }}"
+                data-audio="{{ url_for('servir_audio', cancion_id=spotlight_song.id) }}"
+                data-cover="{{ url_for('servir_album_art', cancion_id=spotlight_song.id, size='small') }}">
+                <i class="fa-solid fa-play"></i>
+            </button>
+            {% endif %}
+            {% if spotlight_mix %}
+            <a href="{{ url_for('daily_mix_detail', mix_id=spotlight_mix.id) }}" class="dashboard-secondary-action" id="spotlight-link">Abrir mix</a>
+            {% elif spotlight_album %}
+            <a href="{{ url_for('browse.album_detail', album_id=spotlight_album.id) }}" class="dashboard-secondary-action">Ver album</a>
+            {% else %}
+            <a href="{{ url_for('browse.explore') }}" class="dashboard-secondary-action">Explorar</a>
+            {% endif %}
+        </div>
+    </div>
+    <div class="dashboard-stat-strip">
+        <a href="{{ url_for('browse.explore') }}" class="dashboard-stat">
+            <strong>{{ dashboard_stats.canciones if dashboard_stats else canciones|length }}</strong>
+            <span>Canciones</span>
+        </a>
+        <a href="{{ url_for('browse.albums_list') }}" class="dashboard-stat">
+            <strong>{{ dashboard_stats.albumes if dashboard_stats else albumes_recientes|length }}</strong>
+            <span>Albumes</span>
+        </a>
+        <a href="{{ url_for('browse.artists_list') }}" class="dashboard-stat">
+            <strong>{{ dashboard_stats.artistas if dashboard_stats else artistas_recientes|length }}</strong>
+            <span>Artistas</span>
+        </a>
+    </div>
+</section>
+
+{% if daily_mixes %}
+<section class="home-shelf">
+    <div class="home-shelf-header">
+        <h2 class="home-shelf-title">Tus Mixes de Hoy</h2>
+    </div>
+    <div class="horizontal-scroll-grid">
+        {% for mix in daily_mixes %}
+        <a href="{{ url_for('daily_mix_detail', mix_id=mix.id) }}" class="album-card" style="text-decoration:none">
+            <div class="album-card-cover">
+                <img src="{{ url_for('audio.servir_portada_daily_mix', mix_id=mix.id) }}" alt="{{ mix.nombre }}" loading="lazy" style="width:100%;height:100%;object-fit:cover;border-radius:var(--radius-lg)">
+                <div class="album-card-overlay">
+                    <button class="album-card-play" data-mix-id="{{ mix.id }}"><i class="fa-solid fa-play"></i></button>
+                </div>
+            </div>
+            <div class="album-card-info">
+                <div class="album-card-title">{{ mix.nombre }}</div>
+                <div class="album-card-artist">{{ mix.fecha.strftime('%d %b %Y') }}</div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+{% if albumes_recientes %}
+<section class="home-shelf">
+    <div class="home-shelf-header">
+        <h2 class="home-shelf-title">Añadidos recientemente</h2>
+    </div>
+    <div class="horizontal-scroll-grid">
+        {% for album in albumes_recientes %}
+        <a href="{{ url_for('browse.album_detail', album_id=album.id) }}" class="album-card"
+            style="text-decoration:none">
+            <div class="album-card-cover">
+                {% set album_cover = album.portada_url %}
+                {% if not album_cover and album.canciones|length > 0 %}
+                {% set album_cover = url_for('servir_album_art', cancion_id=album.canciones[0].id, size='medium') %}
+                {% endif %}
+                {% if album_cover %}
+                <img src="{{ album_cover }}" alt="{{ album.titulo }}" loading="lazy"
+                    onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                <div class="album-card-placeholder" style="display:none"><i class="fa-solid fa-compact-disc"></i></div>
+                {% else %}
+                <div class="album-card-placeholder"><i class="fa-solid fa-compact-disc"></i></div>
+                {% endif %}
+                <div class="album-card-overlay">
+                    <button class="album-card-play" data-album-id="{{ album.id }}"><i
+                            class="fa-solid fa-play"></i></button>
+                </div>
+            </div>
+            <div class="album-card-info">
+                <div class="album-card-title">{{ album.titulo }}</div>
+                <div class="album-card-artist">{{ album.artista.nombre if album.artista else 'Varios' }}</div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+{% if artistas_recientes %}
+<section class="home-shelf">
+    <div class="home-shelf-header">
+        <h2 class="home-shelf-title">Artistas que te podrían gustar</h2>
+    </div>
+    <div class="horizontal-scroll-grid">
+        {% for artista in artistas_recientes %}
+        <a href="{{ url_for('browse.artist_detail', artist_id=artista.id) }}" class="artist-card"
+            style="text-decoration:none; width:160px;">
+            <div class="artist-card-cover">
+                {% set album_cover = None %}
+                {% for album in artista.albums[:1] %}
+                    {% if album.canciones %}
+                        {% set album_cover = url_for('audio.servir_album_art', cancion_id=album.canciones[0].id) %}
+                    {% endif %}
+                {% endfor %}
+                
+                {% if artista.foto_url %}
+                <img src="{{ artista.foto_url }}" alt="{{ artista.nombre }}" loading="lazy"
+                    data-fallback-src="{{ album_cover or '' }}"
+                    onerror="if (this.dataset.fallbackSrc && this.src !== this.dataset.fallbackSrc) { this.src = this.dataset.fallbackSrc; } else { this.style.display='none'; this.nextElementSibling.style.display='flex'; }">
+                <div class="artist-card-placeholder" style="display:none"><i class="fa-solid fa-user"></i></div>
+                {% elif album_cover %}
+                <img src="{{ album_cover }}" alt="{{ artista.nombre }}" loading="lazy"
+                    onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                <div class="artist-card-placeholder" style="display:none"><i class="fa-solid fa-user"></i></div>
+                {% else %}
+                <div class="artist-card-placeholder"><i class="fa-solid fa-user"></i></div>
+                {% endif %}
+            </div>
+            <div class="artist-card-name">{{ artista.nombre }}</div>
+            <div class="artist-card-meta">Artista</div>
+        </a>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+{% set top_items = top_canciones if top_canciones is defined and top_canciones else [] %}
+{% if top_items or canciones_recientes %}
+<section class="home-shelf">
+    <div class="home-shelf-header">
+        <h2 class="home-shelf-title">Top músicas</h2>
+    </div>
+    <div class="tracklist spotify-tracklist" id="dashboard-tracklist">
+        {% for item in top_items %}
+        {% set cancion = item[0] %}
+        {% set plays = item[1] %}
+        <div class="track-item" data-cancion-id="{{ cancion.id }}"
+            data-audio="{{ url_for('servir_audio', cancion_id=cancion.id) }}"
+            data-cover="{{ url_for('servir_album_art', cancion_id=cancion.id, size='small') }}" data-titulo="{{ cancion.titulo }}"
+            data-artista="{{ cancion.artista_obj.nombre if cancion.artista_obj else 'Desconocido' }}">
+            <button class="track-play-btn" title="Reproducir"><i class="fa-solid fa-play"></i></button>
+            <span class="track-num">
+                <span class="num-text">{{ loop.index }}</span>
+                <span class="playing-eq"><span></span><span></span><span></span></span>
+            </span>
+            <div class="track-cover-sm">
+                <img src="{{ url_for('servir_album_art', cancion_id=cancion.id, size='small') }}" alt="" loading="lazy"
+                    onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                <div class="cover-fallback" style="display:none"><i class="fa-solid fa-music"></i></div>
+            </div>
+            <div class="track-info">
+                <span class="track-title">{{ cancion.titulo }}</span>
+                <span class="track-artist-mobile">{{ cancion.artista_obj.nombre if cancion.artista_obj else '' }}</span>
+            </div>
+            <span class="track-artist-col">{{ cancion.artista_obj.nombre if cancion.artista_obj else '' }}</span>
+            <span class="track-duration">
+                <span class="duration-text">{{ plays }} rep.</span>
+            </span>
+        </div>
+        {% endfor %}
+        {% if not top_items %}
+        {% for cancion in canciones_recientes[:5] %}
+        <div class="track-item" data-cancion-id="{{ cancion.id }}"
+            data-audio="{{ url_for('servir_audio', cancion_id=cancion.id) }}"
+            data-cover="{{ url_for('servir_album_art', cancion_id=cancion.id, size='small') }}" data-titulo="{{ cancion.titulo }}"
+            data-artista="{{ cancion.artista_obj.nombre if cancion.artista_obj else 'Desconocido' }}">
+            <button class="track-play-btn" title="Reproducir"><i class="fa-solid fa-play"></i></button>
+            <span class="track-num">
+                <span class="num-text">{{ loop.index }}</span>
+                <span class="playing-eq"><span></span><span></span><span></span></span>
+            </span>
+            <div class="track-cover-sm">
+                <img src="{{ url_for('servir_album_art', cancion_id=cancion.id, size='small') }}" alt="" loading="lazy"
+                    onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                <div class="cover-fallback" style="display:none"><i class="fa-solid fa-music"></i></div>
+            </div>
+            <div class="track-info">
+                <span class="track-title">{{ cancion.titulo }}</span>
+                <span class="track-artist-mobile">{{ cancion.artista_obj.nombre if cancion.artista_obj else '' }}</span>
+            </div>
+            <span class="track-artist-col">{{ cancion.artista_obj.nombre if cancion.artista_obj else '' }}</span>
+            <span class="track-duration">
+                <span class="duration-text">
+                    {% if cancion.duracion %}{{ (cancion.duracion // 60) }}:{{ '%02d' % (cancion.duracion % 60) }}{% else %}--:--{% endif %}
+                </span>
+            </span>
+        </div>
+        {% endfor %}
+        {% endif %}
+    </div>
+</section>
+{% endif %}
+
+{% endif %} <!-- Fin de comprobación es_favoritos -->
+
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    (function () {
+        const spotlightMixes = [
+            {% for mix in daily_mixes %}
+            {% set mix_song = mix.canciones[0] if mix.canciones else none %}
+            {
+                id: {{ mix.id }},
+                nombre: {{ mix.nombre|tojson }},
+                count: {{ mix.canciones|length }},
+                cover: {{ url_for('audio.servir_portada_daily_mix', mix_id=mix.id)|tojson }},
+                url: {{ url_for('daily_mix_detail', mix_id=mix.id)|tojson }},
+                song: {% if mix_song %}{
+                    id: {{ mix_song.id }},
+                    titulo: {{ mix_song.titulo|tojson }},
+                    artista: {{ (mix_song.artista_obj.nombre if mix_song.artista_obj else 'Desconocido')|tojson }},
+                    audio: {{ url_for('servir_audio', cancion_id=mix_song.id)|tojson }},
+                    cover: {{ url_for('servir_album_art', cancion_id=mix_song.id, size='small')|tojson }}
+                }{% else %}null{% endif %}
+            }{% if not loop.last %},{% endif %}
+            {% endfor %}
+        ];
+
+        function preferredMixName() {
+            const hour = new Date().getHours();
+            if (hour >= 5 && hour < 12) return 'Morning Vibes';
+            if (hour >= 12 && hour < 19) return 'Afternoon Chill';
+            return 'Night Beats';
+        }
+
+        function applySpotlightMix() {
+            if (!spotlightMixes.length) return;
+            const mix = spotlightMixes.find(m => m.nombre === preferredMixName()) || spotlightMixes[0];
+            const title = document.getElementById('spotlight-title');
+            const description = document.getElementById('spotlight-description');
+            const cover = document.getElementById('spotlight-cover');
+            const link = document.getElementById('spotlight-link');
+            const play = document.getElementById('spotlight-play');
+
+            if (title) title.textContent = mix.nombre;
+            if (description) description.textContent = `${mix.count} canciones seleccionadas para hoy.`;
+            if (cover) {
+                cover.style.display = '';
+                cover.src = mix.cover;
+            }
+            if (link) link.href = mix.url;
+            if (play && mix.song) {
+                play.dataset.cancionId = mix.song.id;
+                play.dataset.titulo = mix.song.titulo;
+                play.dataset.artista = mix.song.artista;
+                play.dataset.audio = mix.song.audio;
+                play.dataset.cover = mix.song.cover;
+            }
+        }
+
+        applySpotlightMix();
+
+        // Saludo dinámico según la hora local del dispositivo
+        const greetEl = document.getElementById('dynamic-greeting');
+        const subEl = document.getElementById('dashboard-subtitle');
+        if (greetEl) {
+            const hour = new Date().getHours();
+            let saludo, icono, subtexto;
+            if (hour >= 5 && hour < 12) {
+                saludo = 'Buenos días';
+                subtexto = '¿Qué escuchamos hoy?';
+            } else if (hour >= 12 && hour < 19) {
+                saludo = 'Buenas tardes';
+                subtexto = '¿Qué quieres escuchar?';
+            } else {
+                saludo = 'Buenas noches';
+                subtexto = 'Relájate con tu música';
+            }
+            const userName = greetEl.dataset.user;
+            greetEl.textContent = userName ? `${saludo}, ${userName}` : saludo;
+            if (subEl) subEl.textContent = subtexto;
+        } else if (subEl) {
+            subEl.textContent = 'Bienvenido';
+        }
+
+        // Track click to play (solo desde el botón play)
+        document.querySelectorAll('.track-item').forEach(function(item) {
+            item.addEventListener('click', function(e) {
+                if (!e.target.closest('.track-play-btn')) return;
+                const allTracks = Array.from(document.querySelectorAll('.track-item'));
+                const playlist = allTracks.map(t => ({
+                    id: parseInt(t.dataset.cancionId),
+                    titulo: t.dataset.titulo,
+                    artista: t.dataset.artista,
+                    audio: t.dataset.audio,
+                    cover: t.dataset.cover || null,
+                    lyrics: t.dataset.lyrics || null
+                }));
+                const songId = parseInt(item.dataset.cancionId);
+                const iframe = document.getElementById('player-frame');
+                if (iframe && iframe.contentWindow) {
+                    iframe.contentWindow.postMessage({type: 'setPlaylist', playlist: playlist}, window.location.origin);
+                    const song = playlist.find(s => s.id === songId);
+                    if (song) {
+                        setTimeout(function() {
+                            iframe.contentWindow.postMessage({type: 'playSong', song: song}, window.location.origin);
+                        }, 100);
+                    }
+                }
+                document.querySelectorAll('.track-item').forEach(t => t.classList.remove('playing'));
+                item.classList.add('playing');
+            });
+        });
+
+        document.querySelectorAll('.dashboard-play-now').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                const song = {
+                    id: parseInt(this.dataset.cancionId),
+                    titulo: this.dataset.titulo,
+                    artista: this.dataset.artista,
+                    audio: this.dataset.audio,
+                    cover: this.dataset.cover || null
+                };
+                const iframe = document.getElementById('player-frame');
+                if (iframe && iframe.contentWindow) {
+                    iframe.contentWindow.postMessage({type: 'playSong', song: song}, window.location.origin);
+                }
+            });
+        });
+    })();
+</script>
+{% endblock %}

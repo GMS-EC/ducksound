@@ -1,0 +1,86 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ducksound_postgres
+    restart: unless-stopped
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=ducksound
+      - POSTGRES_USER=ducksound
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-ducksound}
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "ducksound"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: ducksound_redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  web:
+    build: .
+    container_name: ducksound_web
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ${MUSIC_PATH}:/music:ro
+      - ducksound_data:/data
+    environment:
+      - ADMIN_SECRET_TOKEN=${ADMIN_SECRET_TOKEN}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=ducksound
+      - DB_USER=ducksound
+      - DB_PASSWORD=${DB_PASSWORD:-ducksound}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - PORT=8604
+      - SECRET_KEY=${SECRET_KEY:-}
+    ports:
+      - '8604:8604'
+    restart: unless-stopped
+
+  worker:
+    build: .
+    container_name: ducksound_worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ${MUSIC_PATH}:/music:ro
+      - ducksound_data:/data
+    environment:
+      - ADMIN_SECRET_TOKEN=${ADMIN_SECRET_TOKEN}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=ducksound
+      - DB_USER=ducksound
+      - DB_PASSWORD=${DB_PASSWORD:-ducksound}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - SECRET_KEY=${SECRET_KEY:-}
+    command: ["worker"]
+    restart: unless-stopped
+
+volumes:
+  ducksound_data:
+    driver: local
+  redis_data:
+    driver: local
+  postgres_data:
+    driver: local

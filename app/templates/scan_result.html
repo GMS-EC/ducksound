@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <title>Resultado del Escaneo</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+      body { font-family: 'Segoe UI', Arial, sans-serif; margin: 2rem; background:#1a1a1f; color:#eaeaea; }
+      .card { border: 1px solid rgba(255,255,255,0.08); padding: 1.5rem; border-radius: 12px; max-width: 640px; background:#222229; }
+      .error { color: #ff6b6b; }
+      a { color: #d95840; }
+    </style>
+  </head>
+  <body>
+    <h1>Resultado del Escaneo</h1>
+
+    {% if error %}
+      <p class="error">Error durante el escaneo: {{ error }}</p>
+    {% elif resumen %}
+      <div class="card">
+        <p><i class="fa-regular fa-circle-check" style="color:#4ade80"></i> Canciones agregadas: <strong>{{ resumen.agregadas }}</strong></p>
+        <p><i class="fa-solid fa-rotate"></i> Canciones actualizadas: <strong>{{ resumen.actualizadas }}</strong></p>
+        <p><i class="fa-solid fa-forward-step"></i> Canciones omitidas (ya existían): <strong>{{ resumen.omitidas }}</strong></p>
+        <p><i class="fa-solid fa-folder"></i> Total procesadas: <strong>{{ resumen.procesadas }}</strong></p>
+      </div>
+    {% else %}
+      <p>No se generó resumen.</p>
+    {% endif %}
+
+    <p><a href="{{ url_for('dashboard') }}">Volver al panel</a></p>
+  </body>
+</html>
+

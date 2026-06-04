@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}{{ mix.nombre }} - DuckSound{% endblock %}
+{% block content %}
+<div class="page-header" style="display:flex;align-items:center;gap:16px">
+    <a href="{{ url_for('main.dashboard') }}" class="btn" style="padding:8px 16px"><i class="fa-solid fa-arrow-left"></i></a>
+    <div style="width:120px;height:120px;flex-shrink:0;border-radius:var(--radius-lg);overflow:hidden">
+        <img src="{{ url_for('audio.servir_portada_daily_mix', mix_id=mix.id) }}" alt="{{ mix.nombre }}" style="width:100%;height:100%;object-fit:cover">
+    </div>
+    <div>
+        <h1 class="page-title" style="margin-bottom:0">{{ mix.nombre }}</h1>
+        <p class="page-subtitle" style="margin-bottom:0">{{ mix.fecha }} · {{ mix.canciones|length }} canciones</p>
+    </div>
+</div>
+
+<div class="tracklist-header spotify-tracklist-header">
+    <span></span>
+    <span class="tracklist-col-num">#</span>
+    <span class="tracklist-col-title">Título</span>
+    <span class="tracklist-col-artist">Artista</span>
+    <span class="tracklist-col-duration">Duración</span>
+</div>
+
+<div class="tracklist spotify-tracklist" id="mix-tracklist">
+    {% for cancion in mix.canciones %}
+    <div class="track-item" data-cancion-id="{{ cancion.id }}"
+         data-audio="{{ url_for('audio.servir_audio', cancion_id=cancion.id) }}"
+         data-cover="{{ url_for('audio.servir_album_art', cancion_id=cancion.id, size='small') }}"
+
+
+         data-titulo="{{ cancion.titulo }}"
+         data-artista="{{ cancion.artista_obj.nombre if cancion.artista_obj else 'Desconocido' }}">
+        <button class="track-play-btn" title="Reproducir"><i class="fa-solid fa-play"></i></button>
+        <span class="track-num">
+            <span class="num-text">{{ loop.index }}</span>
+            <span class="playing-eq"><span></span><span></span><span></span></span>
+        </span>
+        <div class="track-cover-sm">
+                <img src="{{ url_for('audio.servir_album_art', cancion_id=cancion.id, size='small') }}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+
+            <div class="cover-fallback" style="display:none"><i class="fa-solid fa-music"></i></div>
+        </div>
+        <div class="track-info">
+            <span class="track-title">{{ cancion.titulo }}</span>
+            <span class="track-artist-mobile">{{ cancion.artista_obj.nombre if cancion.artista_obj else '' }}</span>
+        </div>
+        <span class="track-artist-col">{{ cancion.artista_obj.nombre if cancion.artista_obj else '' }}</span>
+        <span class="track-duration">
+            {% if cancion.duracion %}{{ (cancion.duracion // 60) }}:{{ '%02d' % (cancion.duracion % 60) }}{% else %}--:--{% endif %}
+        </span>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function(){
+    // Track click to play (solo desde el botón play)
+    document.querySelectorAll('.track-item').forEach(function(item) {
+        item.addEventListener('click', function(e) {
+            if (!e.target.closest('.track-play-btn')) return;
+            const allTracks = Array.from(document.querySelectorAll('.track-item'));
+            const playlist = allTracks.map(t => ({
+                id: parseInt(t.dataset.cancionId),
+                titulo: t.dataset.titulo,
+                artista: t.dataset.artista,
+                audio: t.dataset.audio,
+                cover: t.dataset.cover || null,
+                lyrics: t.dataset.lyrics || null
+            }));
+            const songId = parseInt(item.dataset.cancionId);
+            const iframe = document.getElementById('player-frame');
+            if (iframe && iframe.contentWindow) {
+                iframe.contentWindow.postMessage({type: 'setPlaylist', playlist: playlist}, window.location.origin);
+                const song = playlist.find(s => s.id === songId);
+                if (song) {
+                    setTimeout(function() {
+                        iframe.contentWindow.postMessage({type: 'playSong', song: song}, window.location.origin);
+                    }, 100);
+                }
+            }
+            document.querySelectorAll('.track-item').forEach(t => t.classList.remove('playing'));
+            item.classList.add('playing');
+        });
+    });
+})();
+</script>
+{% endblock %}

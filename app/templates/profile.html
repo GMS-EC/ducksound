@@ -1,0 +1,829 @@
+{% extends "base.html" %}
+{% block title %}Mi Perfil - DuckSound{% endblock %}
+{% block content %}
+<div class="profile-container">
+    <a href="{{ url_for('dashboard') }}" class="btn-back" onclick="if(document.referrer && document.referrer.includes(window.location.host)) { history.back(); return false; }">
+        <i class="fa-solid fa-arrow-left"></i> Volver
+    </a>
+    <div class="page-header">
+        <h1 class="page-title"><i class="fa-solid fa-user-gear" style="color:var(--accent);margin-right:8px"></i> Mi Perfil</h1>
+        <p class="page-subtitle">Administra tu cuenta y mira tus estadísticas de escucha</p>
+    </div>
+
+<!-- User info card - always visible -->
+<div class="profile-user-card">
+    <div style="width:56px;height:56px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0">
+        <i class="fa-solid fa-user"></i>
+    </div>
+    <div>
+        <div style="font-size:18px;font-weight:700;color:var(--text-bright)">{{ usuario.display_name() }}</div>
+        <div style="font-size:13px;color:var(--muted)">@{{ usuario.nombre_usuario }} · 
+            <span class="role-badge" style="display:inline-block;padding:2px 10px;border-radius:999px;font-size:11px;font-weight:600;background:{% if is_admin %}var(--accent-soft){% else %}var(--surface-3){% endif %};color:{% if is_admin %}var(--accent){% else %}var(--muted){% endif %}">
+                {{ 'Administrador' if is_admin else 'Usuario' }}
+            </span>
+        </div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">
+            <i class="fa-regular fa-calendar"></i> Miembro desde {{ usuario.fecha_creacion.strftime('%d/%m/%Y') if usuario.fecha_creacion else '—' }}
+        </div>
+    </div>
+</div>
+
+<!-- Tab Navigation -->
+<div class="profile-tabs">
+    <button class="profile-tab active" data-tab="perfil"><i class="fa-solid fa-user"></i> Perfil</button>
+    <button class="profile-tab" data-tab="seguridad"><i class="fa-solid fa-lock"></i> Seguridad</button>
+    <button class="profile-tab" data-tab="actividad"><i class="fa-solid fa-chart-simple"></i> Actividad</button>
+</div>
+
+<!-- TAB: Perfil -->
+<div class="profile-tab-content active" id="tab-perfil">
+    <form id="profile-form" style="display:flex;flex-direction:column;gap:20px;max-width:100%">
+        <!-- Nombre público -->
+        <div class="form-group">
+            <label class="form-label"><i class="fa-regular fa-id-card" style="margin-right:6px"></i> Nombre público</label>
+            <input type="text" class="form-input" name="nombre_publico" value="{{ usuario.nombre_publico or '' }}" placeholder="Cómo quieres aparecer">
+            <small style="color:var(--muted);font-size:12px">Si lo dejas vacío, se usará tu nombre de usuario</small>
+        </div>
+
+        <hr style="border:none;border-top:1px solid var(--border-color);margin:4px 0">
+
+        <!-- Preferencias -->
+        <div style="font-size:13px;font-weight:700;color:var(--text-bright);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">
+            <i class="fa-solid fa-sliders" style="margin-right:6px"></i> Preferencias
+        </div>
+
+        <!-- Idioma preferido -->
+        <div class="form-group">
+            <label class="form-label"><i class="fa-solid fa-language" style="margin-right:6px"></i> Idioma para traducciones</label>
+            <select class="form-input" name="idioma_preferido" style="cursor:pointer">
+                <option value="es" {% if usuario.idioma_preferido == 'es' %}selected{% endif %}>Español</option>
+                <option value="en" {% if usuario.idioma_preferido == 'en' %}selected{% endif %}>Inglés</option>
+                <option value="fr" {% if usuario.idioma_preferido == 'fr' %}selected{% endif %}>Francés</option>
+                <option value="de" {% if usuario.idioma_preferido == 'de' %}selected{% endif %}>Alemán</option>
+                <option value="it" {% if usuario.idioma_preferido == 'it' %}selected{% endif %}>Italiano</option>
+                <option value="pt" {% if usuario.idioma_preferido == 'pt' %}selected{% endif %}>Portugués</option>
+                <option value="ja" {% if usuario.idioma_preferido == 'ja' %}selected{% endif %}>Japonés</option>
+            </select>
+        </div>
+
+        <!-- Calidad de audio (Streaming) -->
+        <div class="form-group">
+            <label class="form-label"><i class="fa-solid fa-music" style="margin-right:6px"></i> Calidad de audio (Streaming)</label>
+            <select class="form-input" name="audio_quality" style="cursor:pointer">
+                <option value="lossless" {% if usuario.audio_quality == 'lossless' %}selected{% endif %}>Hi-Res Lossless (Original sin pérdidas)</option>
+                <option value="high" {% if usuario.audio_quality == 'high' %}selected{% endif %}>Alta (320kbps MP3)</option>
+                <option value="standard" {% if usuario.audio_quality == 'standard' %}selected{% endif %}>Estándar (192kbps MP3)</option>
+                <option value="saver" {% if usuario.audio_quality == 'saver' %}selected{% endif %}>Ahorro de datos (96kbps MP3)</option>
+            </select>
+            <small style="color:var(--muted);font-size:12px;display:block;margin-top:4px">
+                Hi-Res Lossless transmite el audio original de forma directa y sin pérdidas. Las demás opciones transcodifican para optimizar el consumo de red y datos.
+            </small>
+        </div>
+
+        <!-- Crossfade toggle -->
+        <label class="toggle-row" style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--surface-2);border-radius:var(--radius);border:1px solid var(--border-light);cursor:pointer;transition:all var(--transition)">
+            <div style="width:36px;height:36px;border-radius:var(--radius-sm);background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                <i class="fa-solid fa-wave-square"></i>
+            </div>
+            <div style="flex:1;min-width:0">
+                <div style="font-weight:600;font-size:14px;color:var(--text-bright)">Crossfade</div>
+                <div style="font-size:12px;color:var(--muted)">Transición suave entre canciones</div>
+            </div>
+            <div class="toggle-switch" style="position:relative;width:44px;height:24px;flex-shrink:0">
+                <input type="checkbox" name="crossfade_enabled" {% if usuario.crossfade_enabled %}checked{% endif %} style="opacity:0;width:0;height:0;position:absolute">
+                <span class="toggle-slider" style="position:absolute;inset:0;background:{% if usuario.crossfade_enabled %}var(--accent){% else %}var(--surface-3){% endif %};border-radius:999px;transition:all .25s;cursor:pointer"></span>
+                <span class="toggle-knob" style="position:absolute;top:2px;left:{% if usuario.crossfade_enabled %}22px{% else %}2px{% endif %};width:20px;height:20px;background:#fff;border-radius:50%;transition:all .25s"></span>
+            </div>
+        </label>
+
+        <!-- Activity tracking toggle -->
+        <label class="toggle-row" style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--surface-2);border-radius:var(--radius);border:1px solid var(--border-light);cursor:pointer;transition:all var(--transition)">
+            <div style="width:36px;height:36px;border-radius:var(--radius-sm);background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                <i class="fa-solid fa-chart-line"></i>
+            </div>
+            <div style="flex:1;min-width:0">
+                <div style="font-weight:600;font-size:14px;color:var(--text-bright)">Actividad</div>
+                <div style="font-size:12px;color:var(--muted)">Registrar mi historial de reproducciones</div>
+            </div>
+            <div class="toggle-switch" style="position:relative;width:44px;height:24px;flex-shrink:0">
+                <input type="checkbox" name="activity_tracking" {% if usuario.activity_tracking %}checked{% endif %} style="opacity:0;width:0;height:0;position:absolute">
+                <span class="toggle-slider" style="position:absolute;inset:0;background:{% if usuario.activity_tracking %}var(--accent){% else %}var(--surface-3){% endif %};border-radius:999px;transition:all .25s;cursor:pointer"></span>
+                <span class="toggle-knob" style="position:absolute;top:2px;left:{% if usuario.activity_tracking %}22px{% else %}2px{% endif %};width:20px;height:20px;background:#fff;border-radius:50%;transition:all .25s"></span>
+            </div>
+        </label>
+
+        <!-- Acciones -->
+        <div class="profile-btn-row">
+            <button type="submit" class="btn btn-accent"><i class="fa-solid fa-floppy-disk"></i> Guardar</button>
+            {% if is_admin %}
+            <a href="{{ url_for('admin.admin_panel') }}" class="btn"><i class="fa-solid fa-gear"></i> Admin</a>
+            <a href="https://app.takenos.com/pay/b6515307-a660-446d-8117-3214a4a89a80" target="_blank" rel="noopener noreferrer" class="btn btn-donation">
+                <i class="fa-solid fa-heart"></i> Apoyar
+            </a>
+            {% endif %}
+            <a href="{{ url_for('logout') }}" class="btn btn-logout"><i class="fa-solid fa-right-from-bracket"></i> Salir</a>
+        </div>
+    </form>
+</div>
+
+<!-- TAB: Seguridad -->
+<div class="profile-tab-content" id="tab-seguridad">
+    <div class="security-card" style="max-width:100%">
+        <h3 style="font-size:18px;font-weight:700;color:var(--text-bright);margin:0 0 16px 0;display:flex;align-items:center;gap:8px">
+            <i class="fa-solid fa-lock" style="color:var(--accent)"></i> Cambiar contraseña
+        </h3>
+        <div class="form-group">
+            <label class="form-label"><i class="fa-solid fa-key" style="margin-right:6px"></i> Nueva contraseña</label>
+            <input type="password" class="form-input" id="security-password" placeholder="Ingresa tu nueva contraseña" autocomplete="new-password">
+        </div>
+        <div style="margin-top:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <button id="btn-change-password" class="btn btn-accent"><i class="fa-solid fa-floppy-disk"></i> Cambiar contraseña</button>
+            <span id="security-hint" style="font-size:12px;color:var(--muted)">Mínimo 6 caracteres</span>
+        </div>
+    </div>
+
+    <!-- Dispositivos con sesión activa -->
+    <div class="security-card" style="max-width:100%;margin-top:20px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+            <h3 style="font-size:18px;font-weight:700;color:var(--text-bright);margin:0;display:flex;align-items:center;gap:8px">
+                <i class="fa-solid fa-desktop" style="color:var(--accent)"></i> Dispositivos con sesión activa
+            </h3>
+            <span id="sessions-count" style="font-size:12px;color:var(--muted);background:var(--surface-3);padding:4px 12px;border-radius:999px;font-weight:600"></span>
+        </div>
+        <div id="sessions-list" style="display:flex;flex-direction:column;gap:10px">
+            <div style="text-align:center;padding:24px;color:var(--muted)">
+                <i class="fa-solid fa-spinner fa-spin" style="font-size:20px"></i>
+                <p style="margin:8px 0 0;font-size:13px">Cargando sesiones...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de confirmación de contraseña para revocar sesión -->
+<div id="revoke-modal-overlay" class="modal-overlay" style="display:none">
+    <div class="modal-content" style="max-width:400px">
+        <div class="modal-header">
+            <h3 style="margin:0;font-size:16px;font-weight:700;color:var(--text-bright);display:flex;align-items:center">
+                <i class="fa-solid fa-shield-halved" style="color:var(--accent);margin-right:8px"></i>Confirmar identidad
+            </h3>
+            <button type="button" class="modal-close" onclick="cerrarModalRevoke()" style="background:transparent;border:none;color:var(--muted);font-size:18px;cursor:pointer;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <p style="margin:0;font-size:13px;color:var(--muted);line-height:1.5">
+                Para cerrar la sesión en <strong id="revoke-device-name" style="color:var(--text-bright)"></strong>, por favor ingresa tu contraseña actual.
+            </p>
+            <div class="form-group">
+                <label class="form-label"><i class="fa-solid fa-key" style="margin-right:6px"></i> Contraseña</label>
+                <input type="password" class="form-input" id="revoke-password" placeholder="Tu contraseña actual" autocomplete="current-password">
+            </div>
+            <div id="revoke-error" style="display:none;font-size:13px;color:#e06850;font-weight:500;padding:8px 12px;background:rgba(224,104,80,0.08);border-radius:var(--radius-sm);border:1px solid rgba(224,104,80,0.15)"></div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="cerrarModalRevoke()">Cancelar</button>
+            <button type="button" id="btn-confirm-revoke" class="btn btn-accent">
+                <i class="fa-solid fa-right-from-bracket"></i> Cerrar sesión
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- TAB: Actividad -->
+<div class="profile-tab-content" id="tab-actividad">
+    <h2 style="font-size:18px;margin-top:0;margin-bottom:16px;color:var(--text-bright);display:flex;align-items:center;gap:8px">
+        <i class="fa-solid fa-chart-simple" style="color:var(--accent)"></i> Estadísticas
+    </h2>
+
+    <!-- Stats top cards -->
+    <div class="stats-cards-row">
+        <div class="stat-card">
+            <div class="stat-icon"><i class="fa-solid fa-headphones"></i></div>
+            <div class="stat-value">{{ total_plays }}</div>
+            <div class="stat-label">Total Plays</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon"><i class="fa-regular fa-clock"></i></div>
+            <div class="stat-value">{{ total_hours }}h</div>
+            <div class="stat-label">Listening Time</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon"><i class="fa-solid fa-bolt"></i></div>
+            <div class="stat-value">{{ last_24h }}</div>
+            <div class="stat-label">Last 24h</div>
+        </div>
+    </div>
+
+    <div class="stats-lists-row">
+        <!-- Top Canciones -->
+        <section class="stats-section">
+            <h3 class="stats-section-title"><i class="fa-solid fa-arrow-trend-up"></i> Top Canciones</h3>
+            {% if top_songs %}
+            <div class="tracklist mini-tracklist">
+                {% for cancion, plays in top_songs %}
+                <div class="track-item" style="grid-template-columns:24px minmax(0,1fr) 50px;padding:8px;font-size:13px">
+                    <span class="track-num" style="font-size:12px">{{ loop.index }}</span>
+                    <div class="track-info">
+                        <span class="track-title">{{ cancion.titulo }}</span>
+                        <span class="track-artist-mobile" style="display:block;font-size:11px">{{ cancion.artista_obj.nombre if cancion.artista_obj else '' }}</span>
+                    </div>
+                    <span class="track-duration" style="text-align:right;font-size:11px">{{ plays }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="muted" style="font-size:13px;padding:12px">Aún no hay datos</p>
+            {% endif %}
+        </section>
+
+        <!-- Top Artistas -->
+        <section class="stats-section">
+            <h3 class="stats-section-title"><i class="fa-solid fa-user-group"></i> Top Artistas</h3>
+            {% if top_artists %}
+            <div class="tracklist mini-tracklist">
+                {% for row in top_artists %}
+                <div class="track-item" style="grid-template-columns:24px minmax(0,1fr) 50px;padding:8px;font-size:13px">
+                    <span class="track-num" style="font-size:12px">{{ loop.index }}</span>
+                    <div class="track-info">
+                        <span class="track-title">{{ row[0] }}</span>
+                    </div>
+                    <span class="track-duration" style="text-align:right;font-size:11px">{{ row[2] }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="muted" style="font-size:13px;padding:12px">Aún no hay datos</p>
+            {% endif %}
+        </section>
+    </div>
+</div>
+
+<style>
+/* User info card */
+.profile-user-card {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 20px 24px;
+    background: var(--surface-2);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-color);
+    margin-bottom: 24px;
+    max-width: 100%;
+}
+
+/* Tab Navigation */
+.profile-tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 2px solid var(--border-color);
+    margin-bottom: 24px;
+    max-width: 100%;
+}
+.profile-tab {
+    padding: 10px 20px;
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: all var(--transition);
+    font-family: inherit;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.profile-tab:hover {
+    color: var(--text-bright);
+    background: var(--surface-2);
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+.profile-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+.profile-tab i {
+    font-size: 13px;
+}
+
+/* Tab Content */
+.profile-tab-content {
+    display: none;
+}
+.profile-tab-content.active {
+    display: block;
+}
+
+/* Security Card */
+.security-card {
+    background: var(--surface-2);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+}
+
+/* Stats Styles */
+.stats-cards-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+.stat-card {
+    background: var(--surface-2);
+    padding: 20px 16px;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-light);
+    text-align: center;
+    box-shadow: var(--shadow);
+    transition: transform var(--transition);
+}
+.stat-card:hover {
+    transform: translateY(-4px);
+}
+.stat-icon {
+    font-size: 24px;
+    color: var(--accent);
+    margin-bottom: 12px;
+}
+.stat-value {
+    font-size: 24px;
+    font-weight: 800;
+    color: var(--text-bright);
+    line-height: 1.1;
+}
+.stat-label {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 6px;
+}
+.stats-lists-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+}
+.stats-section-title {
+    margin-top: 0;
+    margin-bottom: 12px;
+    font-size: 15px;
+    color: var(--text-bright);
+}
+.stats-section-title i {
+    color: var(--muted);
+}
+.mini-tracklist .track-item {
+    border-radius: var(--radius-sm);
+    margin-bottom: 2px;
+}
+
+/* Extras */
+.btn-donation {
+    background: linear-gradient(135deg, var(--accent) 0%, #ff8e53 100%);
+    color: white !important;
+    border: none;
+    box-shadow: 0 4px 15px var(--accent-soft);
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+.btn-donation:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(255, 142, 83, 0.4);
+    filter: brightness(1.1);
+}
+.btn-donation i {
+    animation: pulse-heart 2s infinite;
+    margin-right: 6px;
+}
+@keyframes pulse-heart {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.15); }
+    100% { transform: scale(1); }
+}
+
+/* Modal de revocación de sesión */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.75);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+.modal-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+.modal-content {
+    background: var(--surface);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-xl);
+    transform: scale(0.9);
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    overflow: hidden;
+}
+.modal-overlay.active .modal-content {
+    transform: scale(1);
+}
+.modal-header {
+    padding: 20px 24px;
+    background: rgba(255, 255, 255, 0.03);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.modal-body {
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.modal-footer {
+    padding: 16px 24px;
+    background: rgba(0, 0, 0, 0.2);
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}
+    .stats-lists-row {
+        grid-template-columns: 1fr;
+    }
+    .profile-tabs {
+        overflow-x: auto;
+    }
+}
+
+/* ===== Session/Device Items ===== */
+.session-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 14px 16px;
+    background: var(--surface-2);
+    border-radius: var(--radius);
+    border: 1px solid var(--border-light);
+    transition: all var(--transition);
+    flex-wrap: nowrap;
+}
+.session-item:hover {
+    border-color: var(--border-hover);
+    background: rgba(255,255,255,0.03);
+}
+.session-item.session-current {
+    border-color: rgba(217, 88, 64, 0.25);
+    background: rgba(217, 88, 64, 0.04);
+}
+.session-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-sm);
+    background: var(--surface-3);
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+}
+.session-current .session-icon {
+    background: var(--accent-soft);
+    color: var(--accent);
+}
+.session-info {
+    flex: 1;
+    min-width: 0;
+}
+.session-title {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text-bright);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.session-badge {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.session-meta {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 2px;
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.session-meta span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.btn-revoke {
+    padding: 8px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-light);
+    background: rgba(255,255,255,0.03);
+    color: var(--muted);
+    cursor: pointer;
+    transition: all var(--transition);
+    font-family: inherit;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.btn-revoke:hover {
+    color: #e06850;
+    border-color: rgba(224,104,80,0.3);
+    background: rgba(224,104,80,0.06);
+}
+</style>
+
+<script>
+(function(){
+    // ===== Tab switching =====
+    document.querySelectorAll('.profile-tab').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.profile-tab').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.profile-tab-content').forEach(c => c.classList.remove('active'));
+            this.classList.add('active');
+            const tabId = this.dataset.tab;
+            const target = document.getElementById('tab-' + tabId);
+            if (target) target.classList.add('active');
+        });
+    });
+
+    // ===== Profile form =====
+    const form = document.getElementById('profile-form');
+
+    // Toggle switches visual
+    document.querySelectorAll('.toggle-row').forEach(row => {
+        const cb = row.querySelector('input[type=checkbox]');
+        const slider = row.querySelector('.toggle-slider');
+        const knob = row.querySelector('.toggle-knob');
+        row.addEventListener('click', function(e) {
+            if (e.target.closest('.toggle-switch') || e.target.tagName === 'INPUT') return;
+            cb.checked = !cb.checked;
+            updateToggle(cb, slider, knob);
+        });
+        cb.addEventListener('change', function() {
+            updateToggle(cb, slider, knob);
+        });
+    });
+
+    function updateToggle(cb, slider, knob) {
+        slider.style.background = cb.checked ? 'var(--accent)' : 'var(--surface-3)';
+        knob.style.left = cb.checked ? '22px' : '2px';
+    }
+
+    form.addEventListener('submit', function(e){
+        e.preventDefault();
+        const data = {
+            nombre_publico: form.nombre_publico.value,
+            crossfade_enabled: form.crossfade_enabled.checked,
+            activity_tracking: form.activity_tracking.checked,
+            idioma_preferido: form.idioma_preferido.value,
+            audio_quality: form.audio_quality.value
+        };
+
+        fetch('/api/profile/update', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        })
+        .then(r => r.json())
+        .then(d => {
+            if (d.ok) {
+                showToast('Cambios guardados correctamente', 'success');
+                // Notificar al reproductor del cambio de crossfade
+                const pf = document.getElementById('player-frame');
+                if (pf && pf.contentWindow) {
+                    pf.contentWindow.postMessage({
+                        type: 'command',
+                        cmd: 'settings',
+                        crossfade_enabled: d.crossfade_enabled
+                    }, window.location.origin);
+                }
+            } else {
+                showToast('Error: ' + (d.error || 'desconocido'), 'error');
+            }
+        })
+        .catch(() => {
+            showToast('Error de conexión', 'error');
+        });
+    });
+
+    // ===== Security tab: password change =====
+    const btnChangePwd = document.getElementById('btn-change-password');
+    const pwdInput = document.getElementById('security-password');
+
+    if (btnChangePwd) {
+        btnChangePwd.addEventListener('click', function() {
+            const password = pwdInput.value;
+            if (!password || password.length < 6) {
+                showToast('La contraseña debe tener al menos 6 caracteres', 'error');
+                return;
+            }
+
+            fetch('/api/profile/update', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({password: password})
+            })
+            .then(r => r.json())
+            .then(d => {
+                if (d.ok) {
+                    showToast('Contraseña cambiada correctamente', 'success');
+                    pwdInput.value = '';
+                } else {
+                    showToast('Error: ' + (d.error || 'desconocido'), 'error');
+                }
+            })
+            .catch(() => {
+                showToast('Error de conexión', 'error');
+            });
+        });
+    }
+
+    // ===== Security tab: device session management =====
+    let revokeTargetId = null;
+
+    function getDeviceIcon(dispositivo) {
+        switch((dispositivo || '').toLowerCase()) {
+            case 'móvil': return 'fa-mobile-screen-button';
+            case 'tablet': return 'fa-tablet-screen-button';
+            default: return 'fa-desktop';
+        }
+    }
+
+    function formatTimeAgo(isoStr) {
+        if (!isoStr) return 'Desconocido';
+        const date = new Date(isoStr);
+        const now = new Date();
+        const diffMs = now - date;
+        const diffMin = Math.floor(diffMs / 60000);
+        if (diffMin < 1) return 'Ahora mismo';
+        if (diffMin < 60) return `Hace ${diffMin} min`;
+        const diffH = Math.floor(diffMin / 60);
+        if (diffH < 24) return `Hace ${diffH}h`;
+        const diffD = Math.floor(diffH / 24);
+        if (diffD < 7) return `Hace ${diffD} día${diffD > 1 ? 's' : ''}`;
+        return date.toLocaleDateString('es', { day: '2-digit', month: 'short', year: 'numeric' });
+    }
+
+    function loadSessions() {
+        fetch('/api/sessions')
+        .then(r => r.json())
+        .then(sessions => {
+            const list = document.getElementById('sessions-list');
+            const count = document.getElementById('sessions-count');
+            if (!Array.isArray(sessions) || sessions.length === 0) {
+                list.innerHTML = '<p style="text-align:center;padding:20px;color:var(--muted);font-size:13px">No hay sesiones activas</p>';
+                count.textContent = '0 sesiones';
+                return;
+            }
+            count.textContent = sessions.length + ' sesión' + (sessions.length !== 1 ? 'es' : '');
+            list.innerHTML = sessions.map(s => {
+                const icon = getDeviceIcon(s.dispositivo);
+                const isCurrent = s.es_actual;
+                return `
+                    <div class="session-item ${isCurrent ? 'session-current' : ''}">
+                        <div class="session-icon">
+                            <i class="fa-solid ${icon}"></i>
+                        </div>
+                        <div class="session-info">
+                            <div class="session-title">
+                                ${s.navegador} · ${s.sistema}
+                                ${isCurrent ? '<span class="session-badge">Este dispositivo</span>' : ''}
+                            </div>
+                            <div class="session-meta">
+                                <span><i class="fa-solid fa-${icon === 'fa-desktop' ? 'display' : icon.replace('fa-', '')}"></i> ${s.dispositivo}</span>
+                                ${s.ip ? `<span><i class="fa-solid fa-globe"></i> ${s.ip}</span>` : ''}
+                                <span><i class="fa-regular fa-clock"></i> ${formatTimeAgo(s.ultima_actividad)}</span>
+                            </div>
+                        </div>
+                        ${!isCurrent ? `<button class="btn-revoke" onclick="abrirModalRevoke(${s.id}, '${s.navegador} (${s.sistema})')" title="Cerrar esta sesión">
+                            <i class="fa-solid fa-right-from-bracket"></i> Cerrar
+                        </button>` : ''}
+                    </div>
+                `;
+            }).join('');
+        })
+        .catch(() => {
+            document.getElementById('sessions-list').innerHTML = '<p style="text-align:center;padding:20px;color:var(--muted);font-size:13px">Error al cargar sesiones</p>';
+        });
+    }
+
+    // Cargar sesiones al mostrar la pestaña de seguridad
+    document.querySelectorAll('.profile-tab').forEach(btn => {
+        btn.addEventListener('click', function() {
+            if (this.dataset.tab === 'seguridad') {
+                loadSessions();
+            }
+        });
+    });
+
+    // Funciones del modal de revocación (globales para onclick)
+    window.abrirModalRevoke = function(sessionId, deviceName) {
+        revokeTargetId = sessionId;
+        document.getElementById('revoke-device-name').textContent = deviceName;
+        document.getElementById('revoke-password').value = '';
+        document.getElementById('revoke-error').style.display = 'none';
+        const overlay = document.getElementById('revoke-modal-overlay');
+        overlay.style.display = 'flex';
+        setTimeout(() => overlay.classList.add('active'), 10);
+        setTimeout(() => document.getElementById('revoke-password').focus(), 100);
+    };
+
+    window.cerrarModalRevoke = function() {
+        const overlay = document.getElementById('revoke-modal-overlay');
+        overlay.classList.remove('active');
+        setTimeout(() => { overlay.style.display = 'none'; }, 250);
+        revokeTargetId = null;
+    };
+
+    document.getElementById('btn-confirm-revoke').addEventListener('click', function() {
+        if (!revokeTargetId) return;
+        const password = document.getElementById('revoke-password').value.trim();
+        const errorEl = document.getElementById('revoke-error');
+        
+        if (!password) {
+            errorEl.textContent = 'Ingresa tu contraseña';
+            errorEl.style.display = 'block';
+            return;
+        }
+
+        this.disabled = true;
+        errorEl.style.display = 'none';
+
+        fetch('/api/sessions/' + revokeTargetId + '/revoke', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ password: password })
+        })
+        .then(r => r.json())
+        .then(d => {
+            this.disabled = false;
+            if (d.ok) {
+                cerrarModalRevoke();
+                showToast('Sesión cerrada exitosamente', 'success');
+                loadSessions();
+            } else {
+                errorEl.textContent = d.error || 'Error al cerrar sesión';
+                errorEl.style.display = 'block';
+            }
+        })
+        .catch(() => {
+            this.disabled = false;
+            errorEl.textContent = 'Error de conexión';
+            errorEl.style.display = 'block';
+        });
+    });
+
+    // Enter key en el input de contraseña del modal
+    document.getElementById('revoke-password').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            document.getElementById('btn-confirm-revoke').click();
+        }
+    });
+
+    // Cerrar modal con Escape
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            const overlay = document.getElementById('revoke-modal-overlay');
+            if (overlay && overlay.classList.contains('active')) {
+                cerrarModalRevoke();
+            }
+        }
+    });
+
+    // Cerrar modal al clic en overlay
+    document.getElementById('revoke-modal-overlay').addEventListener('click', function(e) {
+        if (e.target === this) cerrarModalRevoke();
+    });
+})();
+</script>
+</div>
+{% endblock %}

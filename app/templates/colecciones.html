@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Playlists - DuckSound{% endblock %}
+{% block content %}
+<div class="page-header" style="display:flex;align-items:center;justify-content:space-between">
+    <div>
+        <h1 class="page-title"><i class="fa-solid fa-list-music" style="color:var(--accent);margin-right:8px"></i> Playlists</h1>
+        <p class="page-subtitle">Agrupa tus canciones favoritas en playlists personalizadas</p>
+    </div>
+    <button class="btn btn-accent" onclick="document.getElementById('new-collection-form').style.display='block'">
+        <i class="fa-solid fa-plus"></i> Nueva
+    </button>
+</div>
+
+<div id="new-collection-form" style="display:none;margin-bottom:24px;background:var(--surface-2);padding:20px;border-radius:var(--radius-lg);border:1px solid var(--border-color)">
+    <form method="POST" action="/api/colecciones/crear" id="coleccion-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-group" style="margin-bottom:12px">
+            <label class="form-label">Nombre</label>
+            <input type="text" name="nombre" class="form-input" required placeholder="Ej: Rock clásico, Road trip...">
+        </div>
+        <div class="form-group" style="margin-bottom:12px">
+            <label class="form-label">Descripción (opcional)</label>
+            <input type="text" name="descripcion" class="form-input" placeholder="Describe tu playlist">
+        </div>
+        <button type="submit" class="btn btn-accent"><i class="fa-solid fa-check"></i> Crear</button>
+        <button type="button" class="btn" onclick="this.closest('#new-collection-form').style.display='none'">Cancelar</button>
+    </form>
+</div>
+
+{% if colecciones %}
+<div class="colecciones-grid">
+    {% for c in colecciones %}
+    <a href="{{ url_for('coleccion_detail', coleccion_id=c.id) }}" class="coleccion-card">
+        <div class="coleccion-icon">
+            <i class="fa-solid fa-list-music"></i>
+        </div>
+        <div class="coleccion-info">
+            <h3 class="coleccion-name">{{ c.nombre }}</h3>
+            <p class="coleccion-meta">
+                {{ c.canciones|length }} canciones
+            </p>
+            {% if c.descripcion %}<p class="coleccion-desc">{{ c.descripcion }}</p>{% endif %}
+        </div>
+    </a>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <div class="empty-icon"><i class="fa-solid fa-list-music"></i></div>
+    <h2 class="empty-title">Sin playlists</h2>
+    <p class="empty-text">Crea tu primera playlist para agrupar tu música favorita</p>
+</div>
+{% endif %}
+
+<style>
+.colecciones-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:16px; }
+.coleccion-card {
+    display:flex; gap:16px; padding:18px; background:var(--surface-2);
+    border-radius:var(--radius-lg); border:1px solid var(--border-light);
+    text-decoration:none; color:var(--text); transition:all var(--transition);
+}
+.coleccion-card:hover {
+    background:var(--surface-3); border-color:var(--border-color);
+    transform:translateY(-2px); box-shadow:var(--shadow-sm);
+}
+.coleccion-icon {
+    width:52px; height:52px; border-radius:var(--radius);
+    background:var(--accent-soft); display:flex; align-items:center; justify-content:center;
+    font-size:22px; color:var(--accent); flex-shrink:0;
+}
+.coleccion-info { min-width:0; flex:1; }
+.coleccion-name { font-size:15px; font-weight:700; color:var(--text-bright); margin-bottom:2px; }
+.coleccion-meta { font-size:12px; color:var(--muted); }
+.coleccion-desc { font-size:12px; color:var(--muted); margin-top:4px; opacity:0.7; }
+</style>
+{% endblock %}

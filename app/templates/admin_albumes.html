@@ -1,0 +1,918 @@
+{% extends "base.html" %}
+
+{% block title %}Gestionar Álbumes - DuckSound{% endblock %}
+
+{% block content %}
+<div class="admin-container">
+    <!-- Breadcrumb / Volver -->
+    <div class="back-nav">
+        <a href="{{ url_for('admin.admin_panel') }}" class="btn-back">
+            <i class="fa-solid fa-arrow-left"></i> Volver al Panel
+        </a>
+    </div>
+
+    <!-- Header Panel -->
+    <div class="admin-card-header">
+        <div class="header-main-info">
+            <div class="header-icon-box">
+                <i class="fa-solid fa-compact-disc"></i>
+            </div>
+            <div class="header-titles">
+                <h1>Gestionar Álbumes</h1>
+                <p class="admin-subtitle">
+                    <span id="stats-mbid">{{ con_mbid }}</span> de {{ total }} con MBID | 
+                    <span id="stats-portada">{{ con_portada }}</span> de {{ total }} con Portada Oficial
+                </p>
+            </div>
+        </div>
+        <div class="header-actions">
+            <form method="GET" style="display:flex; gap:8px; align-items:center">
+                <div class="search-wrapper">
+                    <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                    <input type="text" name="q" class="search-input" placeholder="Buscar álbum..." value="{{ query }}">
+                </div>
+                <button type="submit" class="btn btn-secondary" style="padding: 10px 16px;">Buscar</button>
+                {% if query %}
+                <a href="{{ url_for('admin.admin_albumes') }}" class="btn btn-secondary" style="padding: 10px 14px;" title="Limpiar búsqueda">
+                    <i class="fa-solid fa-xmark"></i>
+                </a>
+                {% endif %}
+            </form>
+        </div>
+    </div>
+
+    <!-- Tabla de Álbumes Registrados -->
+    <div class="artists-table-container">
+        {% if albumes %}
+        <table class="artists-table">
+            <thead>
+                <tr>
+                    <th style="width: 60px;">ID</th>
+                    <th style="width: 70px; text-align: center;">Portada</th>
+                    <th style="min-width: 140px;">Álbum</th>
+                    <th style="min-width: 120px;">Artista</th>
+                    <th style="width: 80px; text-align: center;">Año</th>
+                    <th style="width: 180px;">MusicBrainz ID (MBID)</th>
+                    <th style="text-align: right; width: 70px;">Acción</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for al in albumes %}
+                {% set primer_cancion = al.canciones[0] if al.canciones else None %}
+                <tr class="album-row" data-id="{{ al.id }}" data-titulo="{{ al.titulo }}" data-artist-name="{{ al.artista.nombre if al.artista else 'Desconocido' }}"
+                    data-anio="{{ al.anio or '' }}" data-mbid="{{ al.musicbrainz_id or '' }}" data-portada="{{ al.portada_url or '' }}"
+                    data-cancion-id="{{ primer_cancion.id if primer_cancion else '' }}">
+                    <td class="id-cell">#{{ al.id }}</td>
+                    <td style="text-align: center;">
+                        <div class="album-art-mini">
+                            {% if primer_cancion %}
+                            <img class="album-img-display" src="{{ url_for('audio.servir_album_art', cancion_id=primer_cancion.id, size='small') }}" alt="{{ al.titulo }}">
+                            {% else %}
+                            <i class="fa-solid fa-compact-disc" style="color: var(--muted); font-size: 20px;"></i>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td>
+                        <span class="album-title-text album-title-display">{{ al.titulo }}</span>
+                    </td>
+                    <td>
+                        <span style="color: var(--text-bright); font-weight: 500;">{{ al.artista.nombre if al.artista else 'Desconocido' }}</span>
+                    </td>
+                    <td style="text-align: center; color: var(--muted); font-weight: 500;" class="album-year-display">
+                        {{ al.anio or '-' }}
+                    </td>
+                    <td>
+                        {% if al.musicbrainz_id %}
+                        <span class="mbid-badge mbid-active" title="{{ al.musicbrainz_id }}">
+                            <i class="fa-solid fa-music"></i>
+                            <code class="album-mbid-display" style="font-family: inherit;">{{ al.musicbrainz_id[:18] }}...</code>
+                        </span>
+                        {% else %}
+                        <span class="mbid-badge mbid-none">
+                            <i class="fa-regular fa-circle-question"></i>
+                            <code class="album-mbid-display" style="font-family: inherit;">Sin MBID</code>
+                        </span>
+                        {% endif %}
+                    </td>
+                    <td style="text-align: right;">
+                        <button type="button" class="btn-edit-album" title="Editar álbum">
+                            <i class="fa-solid fa-pen" style="font-size: 11px;"></i>
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state-container">
+            <i class="fa-solid fa-compact-disc empty-icon"></i>
+            <p class="empty-state">
+                {% if query %}
+                No se encontraron álbumes para la búsqueda "<strong>{{ query }}</strong>"
+                {% else %}
+                No hay álbumes en la biblioteca todavía
+                {% endif %}
+            </p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Volver al final -->
+    <div class="bottom-nav">
+        <a href="{{ url_for('admin.admin_panel') }}" class="admin-back">
+            <i class="fa-solid fa-angles-left"></i> Volver al panel de administración
+        </a>
+    </div>
+</div>
+
+<!-- Modal de Edición de Álbum -->
+<div id="album-modal-overlay" class="modal-overlay">
+    <div class="modal-content" style="max-width: 520px;">
+        <div class="modal-header">
+            <h3><i class="fa-solid fa-pen-to-square" style="color:var(--accent);margin-right:8px"></i>Editar Álbum</h3>
+            <button type="button" class="modal-close" onclick="cerrarModal()"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        
+        <div class="modal-body" style="padding: 24px; display: flex; flex-direction: column; gap: 20px; overflow-y: auto;">
+            <div class="artist-modal-profile-row" style="display: flex; gap: 20px; align-items: center;">
+                <div class="avatar-preview-box" style="width: 80px; height: 80px; flex-shrink: 0; position: relative; border-radius: var(--radius-lg); overflow: hidden;">
+                    <img id="modal-cover-preview" src="" style="width: 80px; height: 80px; object-fit: cover; border: 2px solid var(--border-light); box-shadow: 0 4px 10px rgba(0,0,0,0.3); display: none;">
+                    <div id="modal-cover-placeholder" style="width: 80px; height: 80px; background: var(--surface-2); display: flex; align-items: center; justify-content: center; font-size: 28px; color: var(--muted); border: 2px dashed var(--border-light); border-radius: var(--radius-lg);">
+                        <i class="fa-solid fa-compact-disc"></i>
+                    </div>
+                </div>
+                <div style="flex: 1; display: flex; flex-direction: column; gap: 12px;">
+                    <div class="form-group">
+                        <label for="modal-titulo" class="form-label">Título del Álbum</label>
+                        <input type="text" id="modal-titulo" class="form-input" required placeholder="Título del álbum">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Artista</label>
+                        <input type="text" id="modal-artista-readonly" class="form-input" readonly style="background: rgba(255, 255, 255, 0.02); color: var(--muted); border-color: rgba(255, 255, 255, 0.03); cursor: not-allowed;">
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group" style="width: 120px;">
+                <label for="modal-anio" class="form-label">Año de Lanzamiento</label>
+                <input type="number" id="modal-anio" class="form-input" placeholder="Ej: 2026" min="1800" max="2100">
+            </div>
+
+            <div class="form-group">
+                <label for="modal-mbid" class="form-label">MusicBrainz ID (MBID) <span style="text-transform:none; font-weight: normal; color:var(--muted); font-size: 10px;">(UUID de 36 caracteres)</span></label>
+                <input type="text" id="modal-mbid" class="form-input" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" style="font-family: monospace;">
+            </div>
+
+            <div class="form-group">
+                <label for="modal-deezer-id" class="form-label">Deezer Album ID <span style="text-transform:none; font-weight: normal; color:var(--muted); font-size: 10px;">(Para obtener la carátula oficial)</span></label>
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="modal-deezer-id" class="form-input" placeholder="Ej: 302127" style="flex: 1;">
+                    <button type="button" id="btn-preview" class="btn btn-secondary" style="padding: 12px 16px;">
+                        <i class="fa-solid fa-eye"></i> Previsualizar
+                    </button>
+                </div>
+            </div>
+
+            <!-- Vista Previa de Metadata Externa -->
+            <div id="modal-preview-card" style="display: none; padding: 16px; border-radius: var(--radius-lg); background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-light); gap: 16px; align-items: center; animation: fadeIn 0.25s ease-out;">
+                <img id="preview-img" src="" style="width: 64px; height: 64px; border-radius: var(--radius-lg); object-fit: cover; border: 1px solid rgba(255, 255, 255, 0.1); display: none;">
+                <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px;">
+                    <div id="preview-name" style="font-weight: 700; font-size: 14px; color: var(--text-bright); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></div>
+                    <div id="preview-artist-year" style="font-size: 12px; color: var(--muted); line-height: 1.4;"></div>
+                </div>
+                <i id="preview-status" class="fa-solid fa-circle-check" style="color: var(--accent); font-size: 20px;"></i>
+            </div>
+        </div>
+
+        <div class="modal-footer" style="padding: 16px 24px; border-top: 1px solid var(--border-light); background: rgba(0,0,0,0.1); display: flex; justify-content: flex-end; align-items: center; gap: 12px;">
+            <div style="flex: 1; text-align: left; min-width: 0; overflow: hidden; display: flex; align-items: center;">
+                <span id="modal-spinner" style="display: none; color: var(--muted); font-size: 13px; align-items: center; gap: 6px;">
+                    <i class="fa-solid fa-spinner fa-spin" style="color: var(--accent);"></i> Guardando...
+                </span>
+                <span id="modal-error" style="display: none; color: var(--accent); font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></span>
+            </div>
+            <button type="button" class="btn btn-secondary" onclick="cerrarModal()">Cancelar</button>
+            <button type="button" id="btn-save" class="btn btn-accent btn-glow">
+                <i class="fa-solid fa-check"></i> Guardar Cambios
+            </button>
+        </div>
+    </div>
+</div>
+
+<style>
+/* ===== PREMIUM CONTAINER & GRID ===== */
+.admin-container {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 32px 24px var(--player-height) 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.back-nav {
+    display: flex;
+    align-items: center;
+}
+
+.btn-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 8px 16px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    transition: all var(--transition);
+}
+
+.btn-back:hover {
+    color: var(--text-bright);
+    background: rgba(255, 255, 255, 0.06);
+    border-color: var(--border-hover);
+    transform: translateX(-2px);
+}
+
+/* ===== HEADER COMPONENT ===== */
+.admin-card-header {
+    background: var(--surface-2);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-xl);
+    padding: 24px 32px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+    box-shadow: var(--shadow-md);
+    flex-wrap: wrap;
+}
+
+.header-main-info {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.header-icon-box {
+    width: 56px;
+    height: 56px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    border-radius: var(--radius-lg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    border: 1px solid rgba(217, 88, 64, 0.15);
+}
+
+.header-titles h1 {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text-bright);
+    margin: 0 0 4px 0;
+    letter-spacing: -0.5px;
+}
+
+.header-titles .admin-subtitle {
+    color: var(--muted);
+    font-size: 14px;
+    margin: 0;
+}
+
+/* Toolbar search / actions */
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.search-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.search-icon {
+    position: absolute;
+    left: 14px;
+    color: var(--muted);
+    font-size: 13px;
+    pointer-events: none;
+}
+
+.search-input {
+    padding: 10px 16px 10px 38px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: var(--radius-sm);
+    color: var(--text-bright);
+    font-size: 13px;
+    width: 180px;
+    transition: all var(--transition);
+    outline: none;
+}
+
+.search-input:focus {
+    border-color: var(--accent);
+    background: rgba(255, 255, 255, 0.05);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+    width: 230px;
+}
+
+/* Buttons */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 20px;
+    font-size: 13.5px;
+    font-weight: 600;
+    border-radius: var(--radius);
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all var(--transition);
+    font-family: inherit;
+    text-decoration: none;
+}
+
+.btn-accent {
+    background: linear-gradient(135deg, var(--accent) 0%, #e06850 100%);
+    color: #fff;
+    border-color: rgba(217, 88, 64, 0.2);
+}
+
+.btn-accent:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px var(--accent-glow);
+    filter: brightness(1.05);
+}
+
+.btn-secondary {
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text);
+    border: 1px solid var(--border-light);
+}
+
+.btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-bright);
+    border-color: var(--border-hover);
+}
+
+.btn-glow {
+    position: relative;
+    overflow: hidden;
+}
+
+/* ===== TABLE CONTAINER & DESIGN ===== */
+.artists-table-container {
+    background: var(--surface);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-xl);
+    overflow-x: auto;
+    box-shadow: var(--shadow-md);
+}
+
+.artists-table {
+    width: 100%;
+    min-width: 800px;
+    border-collapse: separate;
+    border-spacing: 0;
+    text-align: left;
+}
+
+.artists-table th {
+    background: rgba(0, 0, 0, 0.15);
+    padding: 16px 20px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.artists-table td {
+    padding: 14px 20px;
+    font-size: 13.5px;
+    color: var(--text);
+    border-bottom: 1px solid var(--border-light);
+    vertical-align: middle;
+}
+
+.album-row {
+    transition: background var(--transition);
+}
+
+.album-row:hover {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.album-row:last-child td {
+    border-bottom: none;
+}
+
+/* Table cells */
+.id-cell {
+    font-family: monospace;
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.album-art-mini {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-sm);
+    background: var(--surface-3);
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    border: 1px solid var(--border-light);
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+.album-art-mini img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.album-title-text {
+    font-weight: 600;
+    color: var(--text-bright);
+}
+
+/* Badges */
+.mbid-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.mbid-active {
+    background: var(--accent-soft);
+    color: var(--accent);
+    border: 1px solid rgba(217, 88, 64, 0.15);
+}
+
+.mbid-none {
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--muted);
+    border: 1px solid var(--border-light);
+}
+
+/* Action button edit */
+.btn-edit-album {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-light);
+    color: var(--muted);
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.btn-edit-album:hover {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 10px var(--accent-glow);
+}
+
+/* ===== MODAL GLASSMORPHISM ===== */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 10, 12, 0.85);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    padding: 20px;
+    padding-bottom: calc(20px + var(--player-height));
+    opacity: 0;
+    transition: opacity 0.25s ease;
+}
+
+.modal-overlay.active {
+    display: flex;
+    opacity: 1;
+}
+
+.modal-content {
+    background: var(--surface);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: var(--radius-xl);
+    width: 100%;
+    max-width: 520px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: var(--shadow-xl), 0 0 40px rgba(0, 0, 0, 0.6);
+    overflow: hidden;
+    transform: scale(0.95);
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.modal-overlay.active .modal-content {
+    transform: scale(1);
+}
+
+.modal-header {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border-light);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-header h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-bright);
+    display: flex;
+    align-items: center;
+}
+
+.modal-close {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    font-size: 18px;
+    cursor: pointer;
+    transition: all var(--transition);
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-close:hover {
+    color: var(--text-bright);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.form-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+}
+
+.form-input {
+    padding: 12px 16px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: var(--radius);
+    color: var(--text-bright);
+    font-size: 13.5px;
+    transition: all var(--transition);
+    font-family: inherit;
+    outline: none;
+}
+
+.form-input:focus {
+    border-color: var(--accent);
+    background: rgba(255, 255, 255, 0.04);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+/* Animations */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Empty / Bottom Nav */
+.empty-state-container {
+    padding: 60px 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    text-align: center;
+}
+
+.empty-icon {
+    font-size: 40px;
+    color: var(--muted);
+    opacity: 0.5;
+}
+
+.empty-state {
+    color: var(--muted);
+    font-size: 14px;
+    max-width: 320px;
+    line-height: 1.5;
+}
+
+.bottom-nav {
+    display: flex;
+    justify-content: center;
+}
+
+.admin-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted);
+    font-size: 13px;
+    text-decoration: none;
+    font-weight: 500;
+    transition: color var(--transition);
+}
+
+.admin-back:hover {
+    color: var(--text-bright);
+}
+</style>
+
+<script>
+let albumActual = null;
+
+document.querySelectorAll('.btn-edit-album').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const row = this.closest('.album-row');
+        albumActual = row;
+        const titulo = row.dataset.titulo;
+        const artista = row.dataset.artistName;
+        const anio = row.dataset.anio;
+        const mbid = row.dataset.mbid;
+        const portada = row.dataset.portada;
+        const cancionId = row.dataset.cancionId;
+
+        document.getElementById('modal-titulo').value = titulo;
+        document.getElementById('modal-artista-readonly').value = artista;
+        document.getElementById('modal-anio').value = anio;
+        document.getElementById('modal-mbid').value = mbid;
+        document.getElementById('modal-deezer-id').value = '';
+
+        const coverPreview = document.getElementById('modal-cover-preview');
+        const coverPlaceholder = document.getElementById('modal-cover-placeholder');
+        
+        if (portada || cancionId) {
+            let imgUrl = portada;
+            if (!portada && cancionId) {
+                imgUrl = `/album-art/${cancionId}?size=medium`;
+            }
+            coverPreview.src = imgUrl + (imgUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+            coverPreview.style.display = 'block';
+            coverPlaceholder.style.display = 'none';
+        } else {
+            coverPreview.style.display = 'none';
+            coverPlaceholder.style.display = 'flex';
+        }
+        
+        document.getElementById('modal-error').style.display = 'none';
+        document.getElementById('modal-spinner').style.display = 'none';
+        document.getElementById('modal-preview-card').style.display = 'none';
+        
+        const overlay = document.getElementById('album-modal-overlay');
+        overlay.style.display = 'flex';
+        setTimeout(() => {
+            overlay.classList.add('active');
+        }, 10);
+    });
+});
+
+function cerrarModal() {
+    const overlay = document.getElementById('album-modal-overlay');
+    overlay.classList.remove('active');
+    setTimeout(() => {
+        overlay.style.display = 'none';
+    }, 250);
+    albumActual = null;
+    document.getElementById('modal-error').style.display = 'none';
+}
+
+// Cerrar modal al hacer clic en el fondo translúcido
+document.getElementById('album-modal-overlay').addEventListener('click', function(e) {
+    if (e.target === this) {
+        cerrarModal();
+    }
+});
+
+document.getElementById('btn-preview').addEventListener('click', function() {
+    if (!albumActual) return;
+    const mbid = document.getElementById('modal-mbid').value.trim();
+    const deezerId = document.getElementById('modal-deezer-id').value.trim();
+    const spinner = document.getElementById('modal-spinner');
+    const error = document.getElementById('modal-error');
+    
+    if (!mbid && !deezerId) {
+        error.textContent = 'Introduce un MBID o Deezer ID para previsualizar';
+        error.style.display = 'inline-block';
+        return;
+    }
+    
+    spinner.style.display = 'inline-flex';
+    error.style.display = 'none';
+    document.getElementById('modal-preview-card').style.display = 'none';
+    
+    fetch('/admin/albumes/preview-metadata', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({mbid: mbid, deezer_id: deezerId})
+    })
+    .then(r => {
+        if (r.status === 401) { window.location.href = '/login'; return; }
+        return r.json();
+    })
+    .then(d => {
+        spinner.style.display = 'none';
+        if (d && d.success && d.metadata) {
+            const meta = d.metadata;
+            const card = document.getElementById('modal-preview-card');
+            const img = document.getElementById('preview-img');
+            const name = document.getElementById('preview-name');
+            const artistYear = document.getElementById('preview-artist-year');
+            
+            card.style.display = 'flex';
+            name.textContent = meta.titulo || 'Desconocido';
+            artistYear.textContent = `${meta.artista_nombre || 'Artista Desconocido'} ${meta.anio ? '• ' + meta.anio : ''}`;
+            
+            if (meta.portada_url) {
+                img.src = meta.portada_url;
+                img.style.display = 'block';
+            } else {
+                img.style.display = 'none';
+            }
+        } else {
+            error.textContent = (d && d.error) || 'No se encontró el álbum';
+            error.style.display = 'inline-block';
+        }
+    })
+    .catch(() => { 
+        spinner.style.display = 'none'; 
+        error.textContent = 'Error de red'; 
+        error.style.display = 'inline-block'; 
+    });
+});
+
+document.getElementById('btn-save').addEventListener('click', function() {
+    const row = albumActual;
+    if (!row) return;
+    const id = row.dataset.id;
+    const titulo = document.getElementById('modal-titulo').value.trim();
+    const anio = document.getElementById('modal-anio').value.trim();
+    const mbid = document.getElementById('modal-mbid').value.trim();
+    const deezerId = document.getElementById('modal-deezer-id').value.trim();
+    const spinner = document.getElementById('modal-spinner');
+    const error = document.getElementById('modal-error');
+    
+    if (!titulo) { 
+        error.textContent = 'El título es obligatorio'; 
+        error.style.display = 'inline-block'; 
+        return; 
+    }
+    
+    spinner.style.display = 'inline-flex';
+    error.style.display = 'none';
+    this.disabled = true;
+    
+    fetch('/admin/albumes/' + id + '/update-metadata', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({mbid: mbid, deezer_id: deezerId, titulo: titulo, anio: anio})
+    })
+    .then(r => {
+        if (r.status === 401) { window.location.href = '/login'; return; }
+        return r.json();
+    })
+    .then(d => {
+        this.disabled = false;
+        if (!d) return;
+        spinner.style.display = 'none';
+        if (d.success) {
+            const tituloFinal = d.metadata?.titulo || titulo;
+            const anioFinal = d.metadata?.anio || anio || '-';
+            const mbidFinal = d.metadata?.mbid || '';
+            const portadaFinal = d.metadata?.portada_url || '';
+            
+            row.dataset.titulo = tituloFinal;
+            row.dataset.anio = anioFinal === '-' ? '' : anioFinal;
+            row.dataset.mbid = mbidFinal;
+            row.dataset.portada = portadaFinal;
+            
+            row.querySelector('.album-title-display').textContent = tituloFinal;
+            row.querySelector('.album-year-display').textContent = anioFinal;
+            
+            // Actualizar celda de MBID
+            const mbidCell = row.querySelector('td:nth-child(6)');
+            if (mbidFinal) {
+                mbidCell.innerHTML = `
+                    <span class="mbid-badge mbid-active" title="${mbidFinal}">
+                        <i class="fa-solid fa-music"></i>
+                        <code class="album-mbid-display" style="font-family: inherit;">${mbidFinal.substring(0, 18)}...</code>
+                    </span>
+                `;
+            } else {
+                mbidCell.innerHTML = `
+                    <span class="mbid-badge mbid-none">
+                        <i class="fa-regular fa-circle-question"></i>
+                        <code class="album-mbid-display" style="font-family: inherit;">Sin MBID</code>
+                    </span>
+                `;
+            }
+            
+            // Forzar recarga de portada en la miniatura de la fila (con timestamp para romper caché)
+            const imgDisplay = row.querySelector('.album-img-display');
+            if (imgDisplay) {
+                const baseSrc = imgDisplay.src.split('?')[0];
+                imgDisplay.src = baseSrc + '?size=small&t=' + Date.now();
+            }
+            
+            // Recargar imagen de portada en toda la app
+            const playerIframe = document.getElementById('player-frame');
+            if (playerIframe && playerIframe.contentWindow) {
+                playerIframe.contentWindow.postMessage({
+                    type: 'reloadCover',
+                    albumId: id
+                }, window.location.origin);
+            }
+            
+            // Buscar y refrescar todas las etiquetas <img> de portadas de álbumes en el DOM para actualizar la UI en vivo
+            document.querySelectorAll('img').forEach(img => {
+                if (img.src && (img.src.includes('/album-art/') || img.src.includes('dzcdn.net/images/cover'))) {
+                    try {
+                        const urlObj = new URL(img.src, window.location.origin);
+                        const size = urlObj.searchParams.get('size');
+                        urlObj.searchParams.set('t', Date.now());
+                        if (size) {
+                            urlObj.searchParams.set('size', size);
+                        }
+                        img.src = urlObj.pathname + urlObj.search;
+                    } catch (e) {
+                        // Fallback simple
+                        const baseSrc = img.src.split('?')[0];
+                        img.src = baseSrc + '?t=' + Date.now();
+                    }
+                }
+            });
+            
+            // Actualizar estadísticas a través de selectores
+            fetch(window.location.href)
+                .then(r => r.text())
+                .then(html => {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, 'text/html');
+                    const newMbidStats = doc.getElementById('stats-mbid');
+                    const newPortadaStats = doc.getElementById('stats-portada');
+                    if (newMbidStats) document.getElementById('stats-mbid').textContent = newMbidStats.textContent;
+                    if (newPortadaStats) document.getElementById('stats-portada').textContent = newPortadaStats.textContent;
+                });
+
+            cerrarModal();
+        } else {
+            error.textContent = d.error || d.message || 'Error al guardar';
+            error.style.display = 'inline-block';
+        }
+    })
+    .catch((err) => { 
+        console.error(err);
+        spinner.style.display = 'none'; 
+        this.disabled = false; 
+        error.textContent = 'Error de red'; 
+        error.style.display = 'inline-block'; 
+    });
+});
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        const overlay = document.getElementById('album-modal-overlay');
+        if (overlay && overlay.classList.contains('active')) {
+            cerrarModal();
+        }
+    }
+});
+</script>
+{% endblock %}
