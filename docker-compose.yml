@@ -63,6 +63,7 @@ services:
       - '5173:5173'
     environment:
       - VITE_API_URL=http://localhost:8604
+      - VITE_API_PROXY_TARGET=http://web:8604
     command: sh -c "npm install && npm run dev -- --host"
     restart: unless-stopped
 

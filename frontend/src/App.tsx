@@ -30,6 +30,8 @@ function AppContent() {
             <Route path="/folders" element={<FoldersPage />} />
             <Route path="/colecciones" element={<ColeccionesPage />} />
             <Route path="/admin" element={<AdminPage />} />
+            <Route path="/artists" element={<ArtistsPage />} />
+            <Route path="/albums" element={<AlbumsPage />} />
             <Route path="/artist/:id" element={<ArtistDetailPage />} />
             <Route path="/album/:id" element={<AlbumDetailPage />} />
             <Route path="/coleccion/:id" element={<ColeccionDetailPage />} />

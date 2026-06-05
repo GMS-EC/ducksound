@@ -3,11 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { Play } from "lucide-react";
 import client from "../api/client";
 import type { Artista, AlbumData } from "../types";
-import { usePlayer } from "../contexts/PlayerContext";
 
 export default function ExplorePage() {
   const navigate = useNavigate();
-  const { play } = usePlayer();
   const [artists, setArtists] = useState<Artista[]>([]);
   const [albums, setAlbums] = useState<AlbumData[]>([]);
   const [loading, setLoading] = useState(true);

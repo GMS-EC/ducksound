@@ -28,7 +28,7 @@ export default function PlayerBar() {
       <div className="player-left">
         <div className="player-cover">
           {currentSong ? (
-            <span className="player-cover-icon">♫</span>
+            <img src={`/album-art/${currentSong.id}?size=small`} alt={currentSong.titulo} />
           ) : (
             <span className="player-cover-icon">♫</span>
           )}

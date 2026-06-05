@@ -44,6 +44,8 @@ export interface Cancion {
   ruta_audio: string;
   ruta_lrc: string | null;
   ruta_imagen: string | null;
+  numero_pista: number | null;
+  numero_disco: number | null;
   genero: string | null;
   sample_rate: number | null;
   bit_depth: number | null;
@@ -108,9 +110,13 @@ export interface UserStats {
 
 export interface AlbumData {
   album_id: number;
+  id?: number;
   titulo: string;
+  anio?: number | null;
+  artista_id?: number;
   cover_url: string | null;
   track_count: number;
+  total_duration?: number;
 }
 
 export interface ArtistData {

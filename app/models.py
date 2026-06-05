@@ -353,6 +353,8 @@ class Cancion(db.Model):
             'ruta_audio': self.ruta_archivo_audio,
             'ruta_lrc': self.ruta_archivo_lrc,
             'ruta_imagen': self.ruta_imagen_album,
+            'numero_pista': self.numero_pista,
+            'numero_disco': self.numero_disco,
             'genero': self.genero,
             'sample_rate': self.sample_rate,
             'bit_depth': self.bit_depth,

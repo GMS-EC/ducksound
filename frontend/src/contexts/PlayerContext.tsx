@@ -44,20 +44,63 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const prevVolumeRef = useRef(0.7);
+  const queueRef = useRef<Cancion[]>([]);
+  const currentIndexRef = useRef(-1);
+  const shuffleRef = useRef(false);
+  const repeatRef = useRef<'none' | 'one' | 'all'>('none');
+
+  useEffect(() => { queueRef.current = queue; }, [queue]);
+  useEffect(() => { currentIndexRef.current = currentIndex; }, [currentIndex]);
+  useEffect(() => { shuffleRef.current = shuffle; }, [shuffle]);
+  useEffect(() => { repeatRef.current = repeat; }, [repeat]);
+
+  const playSongFromQueue = useCallback((songs: Cancion[], index: number) => {
+    const audio = audioRef.current;
+    if (!audio || index < 0 || index >= songs.length) return;
+
+    const song = songs[index];
+    queueRef.current = songs;
+    currentIndexRef.current = index;
+    setQueue(songs);
+    setCurrentIndex(index);
+    setCurrentTime(0);
+    setDuration(0);
+
+    audio.src = `/audio/${song.id}`;
+    audio.load();
+    audio.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
+  }, []);
+
+  const getNextIndexFrom = useCallback((songs: Cancion[], current: number, dir: 1 | -1): number => {
+    const len = songs.length;
+    if (len === 0) return -1;
+    if (shuffleRef.current) return Math.floor(Math.random() * len);
+    let target = current + dir;
+    if (target < 0) return repeatRef.current === 'all' ? len - 1 : 0;
+    if (target >= len) return repeatRef.current === 'all' ? 0 : len - 1;
+    return target;
+  }, []);
 
   useEffect(() => {
     const audio = new Audio();
     audio.preload = 'metadata';
+    audio.volume = prevVolumeRef.current;
     audioRef.current = audio;
 
     const onTimeUpdate = () => setCurrentTime(audio.currentTime);
     const onDurationChange = () => setDuration(audio.duration || 0);
     const onEnded = () => {
-      if (repeat === 'one') {
+      if (repeatRef.current === 'one') {
         audio.currentTime = 0;
-        audio.play();
+        audio.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
       } else {
-        next();
+        const songs = queueRef.current;
+        const idx = getNextIndexFrom(songs, currentIndexRef.current, 1);
+        if (idx !== currentIndexRef.current || repeatRef.current === 'all') {
+          playSongFromQueue(songs, idx);
+        } else {
+          setPlaying(false);
+        }
       }
     };
 
@@ -72,33 +115,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       audio.pause();
       audio.src = '';
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [getNextIndexFrom, playSongFromQueue]);
 
 // removed || 'http://localhost:8604';
 
-  const loadSong = useCallback((index: number) => {
-    const audio = audioRef.current;
-    if (!audio || index < 0 || index >= queue.length) return;
-    setCurrentIndex(index);
-    const song = queue[index];
-    const audioUrl = `/audio/${song.id}`;
-    audio.src = audioUrl;
-    audio.load();
-    audio.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
-    setCurrentTime(0);
-  }, [queue]);
-
   const play = useCallback((songs?: Cancion[], index?: number) => {
     if (songs) {
-      setQueue(typeof index === 'number' ? songs : songs);
       const i = typeof index === 'number' ? index : 0;
-      // Use setTimeout to let state update
-      setTimeout(() => loadSong(i), 0);
+      playSongFromQueue(songs, i);
     } else if (queue.length > 0 && currentIndex >= 0) {
       audioRef.current?.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
     }
-  }, [queue, currentIndex, loadSong]);
+  }, [queue.length, currentIndex, playSongFromQueue]);
 
   const pause = useCallback(() => {
     audioRef.current?.pause();
@@ -114,20 +142,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     else resume();
   }, [playing, pause, resume]);
 
-  const getNextIndex = useCallback((current: number, dir: 1 | -1): number => {
-    const len = queue.length;
-    if (len === 0) return -1;
-    if (shuffle) return Math.floor(Math.random() * len);
-    let next = current + dir;
-    if (next < 0) next = repeat === 'all' ? len - 1 : 0;
-    if (next >= len) next = repeat === 'all' ? 0 : len - 1;
-    return next;
-  }, [queue.length, shuffle, repeat]);
-
   const next = useCallback(() => {
-    const idx = getNextIndex(currentIndex, 1);
-    if (idx >= 0 && idx < queue.length) loadSong(idx);
-  }, [currentIndex, getNextIndex, queue.length, loadSong]);
+    const songs = queueRef.current;
+    const idx = getNextIndexFrom(songs, currentIndexRef.current, 1);
+    if (idx >= 0 && idx < songs.length) playSongFromQueue(songs, idx);
+  }, [getNextIndexFrom, playSongFromQueue]);
 
   const prev = useCallback(() => {
     const audio = audioRef.current;
@@ -136,9 +155,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       audio.currentTime = 0;
       return;
     }
-    const idx = getNextIndex(currentIndex, -1);
-    if (idx >= 0 && idx < queue.length) loadSong(idx);
-  }, [currentIndex, getNextIndex, queue.length, loadSong]);
+    const songs = queueRef.current;
+    const idx = getNextIndexFrom(songs, currentIndexRef.current, -1);
+    if (idx >= 0 && idx < songs.length) playSongFromQueue(songs, idx);
+  }, [getNextIndexFrom, playSongFromQueue]);
 
   const seek = useCallback((time: number) => {
     const audio = audioRef.current;
@@ -181,7 +201,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const addToQueue = useCallback((songs: Cancion[]) => {
-    setQueue((prev) => [...prev, ...songs]);
+    setQueue((prev) => {
+      const nextQueue = [...prev, ...songs];
+      queueRef.current = nextQueue;
+      return nextQueue;
+    });
   }, []);
 
   const currentSong = currentIndex >= 0 && currentIndex < queue.length ? queue[currentIndex] : null;

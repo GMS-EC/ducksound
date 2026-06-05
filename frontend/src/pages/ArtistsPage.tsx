@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Play } from "lucide-react";
 import client from "../api/client";
 
 export default function ArtistsPage() {

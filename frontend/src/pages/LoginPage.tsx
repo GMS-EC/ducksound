@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Lock, User } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 
 export default function LoginPage() {
@@ -24,38 +25,43 @@ export default function LoginPage() {
   return (
     <div className="login-container">
       <form onSubmit={handleSubmit} className="login-card">
-        <div style={{ textAlign: "center", marginBottom: 8 }}>
-          <svg width="48" height="48" viewBox="0 0 28 28" fill="none" style={{ margin: "0 auto 12px" }}>
-            <rect width="28" height="28" rx="6" fill="#d95840"/>
-            <text x="14" y="20" textAnchor="middle" fill="white" fontSize="16" fontWeight="bold">D</text>
-          </svg>
+        <div className="login-brand">
+          <img src="/logo.svg" alt="DuckSound" className="login-logo" />
           <h1 className="login-title">DuckSound</h1>
-          <p className="login-subtitle">Inicia sesión para continuar</p>
+          <p className="login-subtitle">Inicia sesión para escuchar tu biblioteca</p>
         </div>
 
         {error && <div className="alert-error">{error}</div>}
 
         <div className="form-group">
           <label className="form-label">Usuario</label>
-          <input
-            type="text"
-            className="form-input"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            required
-            autoFocus
-          />
+          <div className="input-shell">
+            <User size={16} />
+            <input
+              type="text"
+              className="form-input"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              required
+              autoFocus
+              autoComplete="username"
+            />
+          </div>
         </div>
 
         <div className="form-group">
           <label className="form-label">Contraseña</label>
-          <input
-            type="password"
-            className="form-input"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
+          <div className="input-shell">
+            <Lock size={16} />
+            <input
+              type="password"
+              className="form-input"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              autoComplete="current-password"
+            />
+          </div>
         </div>
 
         <button type="submit" className="btn btn-primary btn-block" disabled={loading}>

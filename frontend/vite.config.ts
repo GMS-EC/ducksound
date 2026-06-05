@@ -1,9 +1,9 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-const apiTarget = "http://web:8604";
+const apiTarget = process.env.VITE_API_PROXY_TARGET || process.env.VITE_API_URL || "http://localhost:8604";
 
-function spaBypass(req: any, res: any, options: any) {
+function spaBypass(req: any) {
   if (req.headers.accept?.includes("text/html")) {
     return "/index.html";
   }

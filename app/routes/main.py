@@ -32,6 +32,22 @@ from app.services.recommender import generate_daily_mixes_for_user
 main_bp = Blueprint('main', __name__)
 
 
+def _album_card_payload(album, track_count=0, total_duration=None, cover_url=None):
+    """Datos planos que consume React para tarjetas de album."""
+    payload = {
+        'album_id': album.id,
+        'id': album.id,
+        'titulo': album.titulo,
+        'anio': album.anio,
+        'artista_id': album.artista_id,
+        'cover_url': cover_url if cover_url is not None else _album_cover_url(album),
+        'track_count': int(track_count or 0),
+    }
+    if total_duration is not None:
+        payload['total_duration'] = int(total_duration or 0)
+    return payload
+
+
 # ==============================================================================
 # SECCIÓN 1: VISTA DE INICIO Y REDIRECCIONES DE ACCESO
 # ==============================================================================
@@ -116,10 +132,10 @@ def dashboard():
         'is_admin': is_admin,
         'daily_mixes': [m.to_dict() for m in daily_mixes],
         'spotlight_mix': spotlight_mix.to_dict() if spotlight_mix else None,
-        'albumes_recientes': [a.to_dict() for a in albumes_recientes],
+        'albumes_recientes': [_album_card_payload(a, track_count=len(a.canciones)) for a in albumes_recientes],
         'artistas_recientes': [art.to_dict() for art in artistas_recientes],
         'dashboard_stats': dashboard_stats,
-        'top_canciones': [c[0].to_dict() for c in top_canciones],
+        'top_canciones': [{'cancion': c.to_dict(), 'plays': int(plays)} for c, plays in top_canciones],
         'canciones_recientes': [c.to_dict() for c in canciones_recientes]
     }
 
@@ -307,11 +323,7 @@ def explore():
     
     albums_data = []
     for al, track_count in album_stats:
-        albums_data.append({
-            'album': al,
-            'cover_url': _album_cover_url(al),
-            'track_count': track_count
-        })
+        albums_data.append(_album_card_payload(al, track_count=track_count))
     return {'artists': [a.to_dict() for a in artists], 'albums_data': albums_data}
 
 
@@ -375,11 +387,7 @@ def artist_detail(artist_id):
     
     albums_data = []
     for al, track_count in album_stats:
-        albums_data.append({
-            'album': al,
-            'cover_url': _album_cover_url(al),
-            'track_count': track_count
-        })
+        albums_data.append(_album_card_payload(al, track_count=track_count))
     album_count = len(albums_data)
     song_count = len(songs)
     return {
@@ -405,12 +413,7 @@ def albums_list():
     
     albums_data = []
     for al, track_count, total_dur in album_stats:
-        albums_data.append({
-            'album': al,
-            'cover_url': _album_cover_url(al),
-            'track_count': track_count,
-            'total_duration': total_dur
-        })
+        albums_data.append(_album_card_payload(al, track_count=track_count, total_duration=total_dur))
     return {'albums_data': albums_data}
 
 
@@ -447,7 +450,10 @@ def album_detail(album_id):
     discos = []
     for disc_num, canciones_disco in discos_ordenados:
         canciones_ordenadas = sorted(canciones_disco, key=get_track_num)
-        discos.append((disc_num, canciones_ordenadas))
+        discos.append({
+            'disc_num': disc_num,
+            'songs': [c.to_dict() for c in canciones_ordenadas]
+        })
     
     cover_url = _album_cover_url(album)
     total_dur = _album_total_duration(album)

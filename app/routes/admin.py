@@ -20,7 +20,7 @@ import time as _time
 import requests as _requests
 from datetime import datetime
 
-from flask import Blueprint, request, session, jsonify, current_app
+from flask import Blueprint, request, session, jsonify, current_app, render_template, url_for
 from config import Config
 from app.models import db, Usuario, Artista, Album, Cancion, Coleccion, Favorito
 
@@ -482,7 +482,7 @@ def admin_panel():
             else:
                 v['status'] = 'older'
     
-    return render_template('admin.html', changelog_versions=versions)
+    return jsonify({'changelog_versions': versions})
 
 
 @admin_bp.route('/admin/check-update', methods=['GET'])
@@ -879,6 +879,7 @@ def admin_crear_usuario():
 # SECCIÓN 6: GESTIÓN DE LETRAS (BUSCAR, OBTENER Y GUARDAR)
 # ==============================================================================
 
+@admin_bp.route('/admin/lyrics/search', methods=['GET'])
 @admin_bp.route('/api/admin/lyrics/search', methods=['GET'])
 def admin_lyrics_search():
     """
