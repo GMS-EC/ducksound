@@ -7,8 +7,9 @@ import os
 import sys
 import secrets
 from datetime import datetime, timedelta
-from flask import Flask, session, redirect, url_for, request, jsonify, render_template, current_app
+from flask import Flask, session, redirect, url_for, request, jsonify, current_app
 from flask_compress import Compress
+from flask_cors import CORS
 from config import Config
 from app.models import db, Usuario, SesionActiva
 
@@ -37,6 +38,9 @@ def create_app(config_class=Config):
     # 1. Inicialización de extensiones
     db.init_app(app)
     compress.init_app(app)
+    
+    # CORS: permitir que el frontend (React en :5173) acceda a la API
+    CORS(app, supports_credentials=True, origins=["http://localhost:5173", "http://127.0.0.1:5173"])
 
     # 2. Creación automática de esquemas de base de datos
     with app.app_context():
@@ -100,15 +104,15 @@ def create_app(config_class=Config):
     # 3. Interceptores de Seguridad y Encabezados HTTP globales
     @app.errorhandler(403)
     def forbidden_error(e):
-        return render_template('errors/403.html'), 403
+        return jsonify({'error': 'Forbidden', 'message': 'Acceso denegado'}), 403
 
     @app.errorhandler(404)
     def not_found_error(e):
-        return render_template('errors/404.html'), 404
+        return jsonify({'error': 'Not Found', 'message': 'El recurso solicitado no existe'}), 404
 
     @app.errorhandler(500)
     def internal_server_error(e):
-        return render_template('errors/500.html'), 500
+        return jsonify({'error': 'Internal Server Error', 'message': 'Ocurrió un error inesperado en el servidor'}), 500
 
     @app.route('/favicon.ico')
     def favicon():
@@ -204,7 +208,7 @@ def create_app(config_class=Config):
         """
         if request.method not in ["GET", "HEAD", "OPTIONS", "TRACE"]:
             # Eximir APIs y administración
-            if request.path.startswith('/api/') or request.path.startswith('/admin/'):
+            if request.path.startswith('/api/') or request.path.startswith('/admin/') or request.path == '/login':
                 return
             
             token = session.get('_csrf_token')

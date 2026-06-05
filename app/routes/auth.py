@@ -6,7 +6,7 @@ Registra sesiones activas con información del dispositivo para gestión remota.
 """
 import secrets
 from datetime import datetime
-from flask import Blueprint, render_template, request, redirect, url_for, session, current_app
+from flask import Blueprint, request, session, current_app, jsonify
 from app.models import db, Usuario, SesionActiva
 
 # Definición del Blueprint de Autenticación
@@ -66,74 +66,74 @@ def _parse_user_agent(ua_string):
     return navegador, sistema, dispositivo
 
 
-@auth_bp.route('/login', methods=['GET', 'POST'])
+@auth_bp.route('/login', methods=['POST'])
 def login():
     """
-    Controlador para el inicio de sesión de usuarios.
-    Soporta peticiones GET (renderiza el formulario) y POST (valida credenciales).
-    Al autenticar exitosamente, registra la sesión activa con info del dispositivo.
+    Controlador para el inicio de sesión de usuarios (JSON API).
+    Valida credenciales y devuelve información del usuario.
     """
-    if request.method == 'POST':
-        nombre_usuario = request.form.get('nombre_usuario')
-        password = request.form.get('password')
-        
-        # Buscar usuario por nombre en la base de datos
-        usuario = Usuario.query.filter_by(nombre_usuario=nombre_usuario).first()
-        
-        # Verificar contraseña usando el método seguro hasheado del modelo
-        if usuario and usuario.check_password(password):
-            # Generar un token único para esta sesión
-            session_token = secrets.token_hex(32)
-            
-            # Parsear información del dispositivo desde el User-Agent
-            ua_string = request.headers.get('User-Agent', '')
-            navegador, sistema, dispositivo = _parse_user_agent(ua_string)
-            
-            # Obtener IP del cliente (compatible con proxies reversos)
-            ip_address = request.headers.get('X-Forwarded-For', request.remote_addr)
-            if ip_address and ',' in ip_address:
-                ip_address = ip_address.split(',')[0].strip()
-            
-            # Registrar la sesión activa en la base de datos
-            nueva_sesion = SesionActiva(
-                usuario_id=usuario.id,
-                session_token=session_token,
-                navegador=navegador,
-                sistema=sistema,
-                dispositivo=dispositivo,
-                ip_address=ip_address
-            )
-            db.session.add(nueva_sesion)
-            db.session.commit()
-            
-            # Cachear la sesión en Redis para validación rápida en before_request
-            from app.services.queue import get_connection
-            try:
-                r = get_connection()
-                r.setex(f"ducksound:session:{session_token}", 3600, usuario.id)
-            except Exception as e:
-                current_app.logger.warning(f"[Session Cache] Error guardando en Redis: {e}")
-            
-            # Configurar la sesión de Flask
-            session['user_id'] = usuario.id
-            session['nombre_usuario'] = usuario.nombre_usuario
-            session['session_token'] = session_token
-            return redirect(url_for('main.dashboard'))
-        else:
-            return render_template('login.html', error='Credenciales inválidas')
+    data = request.get_json(silent=True) or {}
+    nombre_usuario = data.get('nombre_usuario')
+    password = data.get('password')
+
+    if not nombre_usuario or not password:
+        return jsonify({'error': 'nombre_usuario y password son requeridos'}), 400
     
-    # Redirigir al dashboard si ya tiene una sesión activa
-    if 'user_id' in session:
-        return redirect(url_for('main.dashboard'))
+    # Buscar usuario por nombre en la base de datos
+    usuario = Usuario.query.filter_by(nombre_usuario=nombre_usuario).first()
+    
+    # Verificar contraseña usando el método seguro hasheado del modelo
+    if usuario and usuario.check_password(password):
+        # Generar un token único para esta sesión
+        session_token = secrets.token_hex(32)
         
-    return render_template('login.html')
+        # Parsear información del dispositivo desde el User-Agent
+        ua_string = request.headers.get('User-Agent', '')
+        navegador, sistema, dispositivo = _parse_user_agent(ua_string)
+        
+        # Obtener IP del cliente (compatible con proxies reversos)
+        ip_address = request.headers.get('X-Forwarded-For', request.remote_addr)
+        if ip_address and ',' in ip_address:
+            ip_address = ip_address.split(',')[0].strip()
+        
+        # Registrar la sesión activa en la base de datos
+        nueva_sesion = SesionActiva(
+            usuario_id=usuario.id,
+            session_token=session_token,
+            navegador=navegador,
+            sistema=sistema,
+            dispositivo=dispositivo,
+            ip_address=ip_address
+        )
+        db.session.add(nueva_sesion)
+        db.session.commit()
+        
+        # Cachear la sesión en Redis para validación rápida en before_request
+        from app.services.queue import get_connection
+        try:
+            r = get_connection()
+            r.setex(f"ducksound:session:{session_token}", 3600, usuario.id)
+        except Exception as e:
+            current_app.logger.warning(f"[Session Cache] Error guardando en Redis: {e}")
+        
+        # Configurar la sesión de Flask
+        session['user_id'] = usuario.id
+        session['nombre_usuario'] = usuario.nombre_usuario
+        session['session_token'] = session_token
+        
+        return jsonify({
+            'success': True,
+            'user': usuario.to_dict(),
+            'session_token': session_token
+        }), 200
+    else:
+        return jsonify({'error': 'Credenciales inválidas'}), 401
 
 
-@auth_bp.route('/logout')
+@auth_bp.route('/logout', methods=['POST'])
 def logout():
     """
-    Cierra la sesión del usuario actual eliminando el registro de sesión activa
-    y limpiando el almacenamiento de sesión de Flask.
+    Cierra la sesión del usuario actual (JSON API).
     """
     # Eliminar el registro de sesión activa de la base de datos
     token = session.get('session_token')
@@ -149,7 +149,7 @@ def logout():
                 r = get_connection()
                 r.delete(f"ducksound:session:{token}")
             except Exception as e:
-                print(f"Error eliminando sesión de Redis: {e}")
+                current_app.logger.error(f"Error eliminando sesión de Redis: {e}")
     
     session.clear()
-    return redirect(url_for('auth.login'))
+    return jsonify({'success': True}), 200

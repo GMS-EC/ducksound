@@ -4,13 +4,12 @@ Controlador de Rutas de Audio y Multimedia - DuckSound
 ======================================================
 Este módulo encapsula todas las funciones y endpoints relacionados con el motor de
 reproducción de sonido y metadatos multimedia de la plataforma:
-1. Iframe contenedor persistente para blindar el AudioContext.
-2. Streaming de audio compatible con cabeceras de rango HTTP 206 (Conditional Byte-Range Streaming)
+1. Streaming de audio compatible con cabeceras de rango HTTP 206 (Conditional Byte-Range Streaming)
    para permitir rebobinar, adelantar y cargar búferes parciales en reproductores HTML5.
-3. Servidor de carátulas (Album Art) con cascada de 6 niveles (incluyendo extracción directa
+2. Servidor de carátulas (Album Art) con cascada de 6 niveles (incluyendo extracción directa
    "on the fly" de metadatos incrustados APIC/Vorbis y fallback elegante en gráficos vectoriales SVG).
-4. Servidor de letras (Karaoke LRC) sincronizadas.
-5. Inyección del script Service Worker de la PWA desde la raíz del dominio.
+3. Servidor de letras (Karaoke LRC) sincronizadas.
+4. Inyección del script Service Worker de la PWA desde la raíz del dominio.
 """
 
 import os
@@ -19,7 +18,7 @@ import re
 from pathlib import Path
 from PIL import Image
 
-from flask import Blueprint, render_template, send_file, send_from_directory, make_response, Response, current_app
+from flask import Blueprint, send_file, send_from_directory, make_response, Response, current_app
 from config import Config
 from app.models import db, Cancion
 
@@ -28,20 +27,6 @@ from app.services.lyrics import obtener_o_descargar_letra
 
 # Definición del Blueprint de Audio
 audio_bp = Blueprint('audio', __name__)
-
-
-# ==============================================================================
-# SECCIÓN 1: VISTA DEL CONTENEDOR PERSISTENTE (PLAYER FRAME)
-# ==============================================================================
-
-@audio_bp.route('/player_frame')
-def player_frame():
-    """
-    Sirve el marco iframe dedicado del reproductor para aislar y blindar el AudioContext.
-    Evita cortes de sonido durante la navegación SPA del usuario.
-    """
-    return render_template('player_frame.html')
-
 
 # ==============================================================================
 # SECCIÓN 2: TRANSMISIÓN DE AUDIO CON CABECERAS DE RANGO (HTTP 206)

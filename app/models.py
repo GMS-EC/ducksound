@@ -46,6 +46,18 @@ class Usuario(db.Model):
         """Retorna el apodo público si existe; de lo contrario, el nombre de usuario base."""
         return self.nombre_publico or self.nombre_usuario
 
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'nombre_usuario': self.nombre_usuario,
+            'nombre_publico': self.nombre_publico,
+            'role': self.role,
+            'idioma_preferido': self.idioma_preferido,
+            'audio_quality': self.audio_quality,
+            'crossfade_enabled': self.crossfade_enabled,
+            'activity_tracking': self.activity_tracking,
+        }
+
     def __repr__(self):
         return f'<Usuario {self.nombre_usuario}>'
 
@@ -101,6 +113,17 @@ class Artista(db.Model):
     albums = db.relationship('Album', back_populates='artista', cascade='all, delete-orphan')
     canciones = db.relationship('Cancion', back_populates='artista_obj', cascade='all, delete-orphan')
 
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'nombre': self.nombre,
+            'nombre_normalizado': self.nombre_normalizado,
+            'musicbrainz_id': self.musicbrainz_id,
+            'foto_url': self.foto_url,
+            'biografia': self.biografia,
+            'fecha_creacion': self.fecha_creacion.isoformat() if self.fecha_creacion else None,
+        }
+
     def __repr__(self):
         return f'<Artista {self.nombre}>'
 
@@ -121,6 +144,16 @@ class Album(db.Model):
     # Relaciones
     artista = db.relationship('Artista', back_populates='albums')
     canciones = db.relationship('Cancion', back_populates='album_obj', cascade='all, delete-orphan')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'titulo': self.titulo,
+            'anio': self.anio,
+            'portada_url': self.portada_url,
+            'artista_id': self.artista_id,
+            'musicbrainz_id': self.musicbrainz_id,
+        }
 
     def __repr__(self):
         return f'<Album {self.titulo} ({self.anio})>'
@@ -192,6 +225,16 @@ class Coleccion(db.Model):
     usuario = db.relationship('Usuario', backref=db.backref('colecciones', lazy='dynamic'))
     canciones = db.relationship('Cancion', secondary=coleccion_canciones, backref='colecciones')
 
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'nombre': self.nombre,
+            'descripcion': self.descripcion,
+            'portada_url': self.portada_url,
+            'usuario_id': self.usuario_id,
+            'fecha_creacion': self.fecha_creacion.isoformat() if self.fecha_creacion else None,
+        }
+
     def __repr__(self):
         return f'<Coleccion {self.nombre}>'
 
@@ -237,6 +280,16 @@ class DailyMix(db.Model):
     usuario = db.relationship('Usuario', backref=db.backref('daily_mixes', lazy='dynamic'))
     canciones = db.relationship('Cancion', secondary=daily_mix_canciones, lazy='select')
 
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'usuario_id': self.usuario_id,
+            'nombre': self.nombre,
+            'fecha': self.fecha.isoformat() if self.fecha else None,
+            'fecha_creacion': self.fecha_creacion.isoformat() if self.fecha_creacion else None,
+            'canciones': [c.to_dict() for c in self.canciones],
+        }
 
     def __repr__(self):
         return f'<DailyMix {self.nombre} {self.fecha}>'

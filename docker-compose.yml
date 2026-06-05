@@ -53,6 +53,19 @@ services:
       - '8604:8604'
     restart: unless-stopped
 
+  frontend:
+    image: node:20-alpine
+    container_name: ducksound_frontend
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+    ports:
+      - '5173:5173'
+    environment:
+      - VITE_API_URL=http://localhost:8604
+    command: sh -c "npm install && npm run dev -- --host"
+    restart: unless-stopped
+
   worker:
     build: .
     container_name: ducksound_worker
@@ -65,7 +78,6 @@ services:
       - ${MUSIC_PATH}:/music:ro
       - ducksound_data:/data
     environment:
-      - ADMIN_SECRET_TOKEN=${ADMIN_SECRET_TOKEN}
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_NAME=ducksound
@@ -76,6 +88,7 @@ services:
       - SECRET_KEY=${SECRET_KEY:-}
     command: ["worker"]
     restart: unless-stopped
+
 
 volumes:
   ducksound_data:

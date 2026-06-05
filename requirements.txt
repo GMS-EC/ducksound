@@ -18,6 +18,9 @@ psycopg2-binary>=2.9.0
 # Compresión gzip
 Flask-Compress>=1.17
 
+# CORS para SPA en desarrollo
+Flask-CORS>=5.0.0
+
 # Servidores WSGI
 gunicorn>=21.2.0
 waitress>=2.1.0

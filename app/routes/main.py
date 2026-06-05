@@ -21,7 +21,7 @@ from pathlib import Path
 from sqlalchemy import func as sqlfunc
 from sqlalchemy.orm import joinedload
 
-from flask import Blueprint, render_template, request, redirect, url_for, session, abort, current_app
+from flask import Blueprint, request, redirect, url_for, session, abort, current_app
 from config import Config
 from app.models import db, Usuario, Artista, Album, Cancion, Favorito, Coleccion, DailyMix, HistorialEscucha
 
@@ -111,18 +111,17 @@ def dashboard():
         'mixes': len(daily_mixes)
     }
 
-    return render_template('dashboard.html', 
-                           canciones=canciones, 
-                           usuario=session.get('nombre_usuario'), 
-                           is_admin=is_admin, 
-                           es_favoritos=False,
-                           daily_mixes=daily_mixes,
-                           spotlight_mix=spotlight_mix,
-                           albumes_recientes=albumes_recientes,
-                           artistas_recientes=artistas_recientes,
-                           dashboard_stats=dashboard_stats,
-                           top_canciones=top_canciones,
-                           canciones_recientes=canciones_recientes)
+    return {
+        'usuario': session.get('nombre_usuario'),
+        'is_admin': is_admin,
+        'daily_mixes': [m.to_dict() for m in daily_mixes],
+        'spotlight_mix': spotlight_mix.to_dict() if spotlight_mix else None,
+        'albumes_recientes': [a.to_dict() for a in albumes_recientes],
+        'artistas_recientes': [art.to_dict() for art in artistas_recientes],
+        'dashboard_stats': dashboard_stats,
+        'top_canciones': [c[0].to_dict() for c in top_canciones],
+        'canciones_recientes': [c.to_dict() for c in canciones_recientes]
+    }
 
 
 @main_bp.route('/favoritos')
@@ -143,9 +142,11 @@ def favoritos():
         if c:
             canciones.append(c)
             
-    return render_template('dashboard.html', canciones=canciones,
-                           usuario=session.get('nombre_usuario'),
-                           is_admin=is_admin, es_favoritos=True)
+    return {
+        'usuario': session.get('nombre_usuario'),
+        'is_admin': is_admin,
+        'favoritos': [c.to_dict() for c in canciones]
+    }
 
 
 # ==============================================================================
@@ -196,7 +197,7 @@ def folders():
         return items
 
     tree = build_tree(audio_dir)
-    return render_template('folders.html', tree=tree, is_admin=is_admin)
+    return {'is_admin': is_admin, 'tree': tree}
 
 
 # ==============================================================================
@@ -214,7 +215,7 @@ def colecciones_list():
     
     colecciones = Coleccion.query.filter_by(usuario_id=session['user_id'])\
         .order_by(Coleccion.fecha_creacion.desc()).all()
-    return render_template('colecciones.html', colecciones=colecciones, is_admin=is_admin)
+    return {'is_admin': is_admin, 'colecciones': [c.to_dict() for c in colecciones]}
 
 
 @main_bp.route('/coleccion/<int:coleccion_id>')
@@ -231,7 +232,11 @@ def coleccion_detail(coleccion_id):
         
     usuario_obj = db.session.get(Usuario, session['user_id'])
     is_admin = usuario_obj.is_admin() if usuario_obj else False
-    return render_template('coleccion_detail.html', coleccion=coleccion, is_admin=is_admin)
+    return {
+        'is_admin': is_admin,
+        'coleccion': coleccion.to_dict(),
+        'songs': [c.to_dict() for c in coleccion.canciones]
+    }
 
 
 # ==============================================================================
@@ -261,7 +266,7 @@ def daily_mix_detail(mix_id):
     
     usuario_obj = db.session.get(Usuario, session['user_id'])
     is_admin = usuario_obj.is_admin() if usuario_obj else False
-    return render_template('daily_mix_detail.html', mix=mix, is_admin=is_admin)
+    return {'is_admin': is_admin, 'mix': mix.to_dict()}
 
 
 # ==============================================================================
@@ -307,7 +312,7 @@ def explore():
             'cover_url': _album_cover_url(al),
             'track_count': track_count
         })
-    return render_template('explore.html', artists=artists, albums_data=albums_data)
+    return {'artists': [a.to_dict() for a in artists], 'albums_data': albums_data}
 
 
 @main_bp.route('/artists')
@@ -347,7 +352,7 @@ def artists_list():
             'song_count': sc,
             'cover_url': cover_url
         })
-    return render_template('artists.html', artists_data=artists_data)
+    return {'artists_data': artists_data}
 
 
 @main_bp.route('/artist/<int:artist_id>')
@@ -377,7 +382,13 @@ def artist_detail(artist_id):
         })
     album_count = len(albums_data)
     song_count = len(songs)
-    return render_template('artist.html', artist=artist, albums_data=albums_data, songs=songs, album_count=album_count, song_count=song_count)
+    return {
+        'artist': artist.to_dict(),
+        'albums_data': albums_data,
+        'songs': [s.to_dict() for s in songs],
+        'album_count': album_count,
+        'song_count': song_count
+    }
 
 
 @main_bp.route('/albums')
@@ -400,7 +411,7 @@ def albums_list():
             'track_count': track_count,
             'total_duration': total_dur
         })
-    return render_template('albums.html', albums_data=albums_data)
+    return {'albums_data': albums_data}
 
 
 @main_bp.route('/album/<int:album_id>')
@@ -441,7 +452,7 @@ def album_detail(album_id):
     cover_url = _album_cover_url(album)
     total_dur = _album_total_duration(album)
     track_count = len(songs)
-    return render_template('album.html', album=album, discos=discos, cover_url=cover_url, total_duration=total_dur, track_count=track_count)
+    return {'album': album.to_dict(), 'discos': discos, 'cover_url': cover_url, 'total_duration': total_dur, 'track_count': track_count}
 
 
 # ==============================================================================
@@ -509,7 +520,12 @@ def profile():
         HistorialEscucha.reproducido_en >= datetime.utcnow() - timedelta(hours=24)
     ).count()
 
-    return render_template('profile.html', usuario=usuario, is_admin=is_admin,
-                           top_songs=top_songs, top_artists=top_artists,
-                           total_plays=total_plays, total_hours=total_hours,
-                           last_24h=last_24h)
+    return {
+        'usuario': usuario.to_dict(),
+        'is_admin': is_admin,
+        'top_songs': [{'cancion': c[0].to_dict(), 'plays': c[1]} for c in top_songs],
+        'top_artists': [{'nombre': a[0], 'id': a[1], 'plays': a[2]} for a in top_artists],
+        'total_plays': total_plays,
+        'total_hours': total_hours,
+        'last_24h': last_24h
+    }

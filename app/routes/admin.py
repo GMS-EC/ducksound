@@ -20,7 +20,7 @@ import time as _time
 import requests as _requests
 from datetime import datetime
 
-from flask import Blueprint, render_template, request, redirect, url_for, session, jsonify, current_app
+from flask import Blueprint, request, session, jsonify, current_app
 from config import Config
 from app.models import db, Usuario, Artista, Album, Cancion, Coleccion, Favorito
 
@@ -559,11 +559,10 @@ def admin_enrich_artists():
 @admin_bp.route('/admin/artistas')
 def admin_artistas():
     """
-    Panel CRUD y visor para editar e ingresar identidades MusicBrainz (MBID)
-    y Deezer ID a los artistas en DuckSound.
+    API para la gestión de artistas.
     """
     if not _is_admin_request():
-        return redirect(url_for('auth.login'))
+        return jsonify({'error': 'Unauthorized'}), 401
         
     query = request.args.get('q', '').strip()
     if query:
@@ -573,7 +572,12 @@ def admin_artistas():
         
     total = Artista.query.count()
     con_mbid = Artista.query.filter(Artista.musicbrainz_id.isnot(None)).count()
-    return render_template('admin_artistas.html', artistas=artistas, total=total, con_mbid=con_mbid, query=query)
+    return jsonify({
+        'artistas': [a.to_dict() for a in artistas],
+        'total': total,
+        'con_mbid': con_mbid,
+        'query': query
+    })
 
 
 @admin_bp.route('/admin/artistas/preview-metadata', methods=['POST'])
@@ -810,12 +814,13 @@ def admin_estadisticas():
     # Canciones agregadas recientemente
     canciones_recientes = Cancion.query.order_by(Cancion.fecha_agregada.desc()).limit(8).all()
     
-    return render_template('admin_stats.html', 
-                           resumen=resumen, 
-                           canciones_recientes=canciones_recientes,
-                           top_songs=top_songs,
-                           top_artist=top_artist,
-                           top_genre=top_genre)
+    return jsonify({
+        'resumen': resumen, 
+        'canciones_recientes': [c.to_dict() for c in canciones_recientes],
+        'top_songs': [{'cancion': c.to_dict(), 'plays': p} for c, p in top_songs],
+        'top_artist': {'artista': ta[0].to_dict(), 'plays': ta[1]} if ta else None,
+        'top_genre': {'genero': tg[0], 'plays': tg[1]} if tg else None
+    })
 
 
 # ==============================================================================
@@ -831,7 +836,7 @@ def admin_usuarios_list():
         return jsonify({'error': 'Unauthorized'}), 401
 
     usuarios = Usuario.query.all()
-    return render_template('admin_usuarios.html', usuarios=usuarios)
+    return jsonify({'usuarios': [u.to_dict() for u in usuarios]})
 
 
 @admin_bp.route('/admin/usuarios/crear', methods=['POST'])
@@ -1002,11 +1007,10 @@ def admin_save_lyrics(cancion_id):
 @admin_bp.route('/admin/albumes')
 def admin_albumes():
     """
-    Panel CRUD y visor para editar álbumes, asignarles MusicBrainz ID,
-    año de lanzamiento y portadas oficiales desde Deezer.
+    API para la gestión de álbumes.
     """
     if not _is_admin_request():
-        return redirect(url_for('auth.login'))
+        return jsonify({'error': 'Unauthorized'}), 401
         
     query = request.args.get('q', '').strip()
     if query:
@@ -1020,7 +1024,13 @@ def admin_albumes():
     con_mbid = Album.query.filter(Album.musicbrainz_id.isnot(None)).count()
     con_portada = Album.query.filter(Album.portada_url.isnot(None)).count()
     
-    return render_template('admin_albumes.html', albumes=albumes, total=total, con_mbid=con_mbid, con_portada=con_portada, query=query)
+    return jsonify({
+        'albumes': [a.to_dict() for a in albumes],
+        'total': total,
+        'con_mbid': con_mbid,
+        'con_portada': con_portada,
+        'query': query
+    })
 
 
 @admin_bp.route('/admin/albumes/preview-metadata', methods=['POST'])
