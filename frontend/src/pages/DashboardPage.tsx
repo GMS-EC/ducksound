@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Play, Shuffle } from "lucide-react";
 import client from "../api/client";
 import { usePlayer } from "../contexts/PlayerContext";
@@ -17,7 +18,8 @@ interface DashboardData {
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
-  const { play } = usePlayer();
+  const { currentSong, playing, play } = usePlayer();
+  const navigate = useNavigate();
 
   useEffect(() => {
     client.get("/dashboard")
@@ -25,6 +27,18 @@ export default function DashboardPage() {
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
+
+  const handlePlayAlbum = async (e: React.MouseEvent, albumId: number) => {
+    e.stopPropagation();
+    try {
+      const res = await client.get(`/api/album/${albumId}/canciones`);
+      if (res.data && res.data.length > 0) {
+        play(res.data, 0);
+      }
+    } catch (err) {
+      console.error("Error playing album:", err);
+    }
+  };
 
   if (loading) {
     return (
@@ -53,7 +67,18 @@ export default function DashboardPage() {
         <>
           <div className="spotlight">
             <div className="spotlight-cover">
-              <span style={{ fontSize: 48, color: "#666" }}>♪</span>
+              <img
+                src={`/daily-mix-cover/${spotlight_mix.id}`}
+                alt={spotlight_mix.nombre}
+                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).style.display = 'none';
+                  if (e.currentTarget.nextElementSibling) {
+                    (e.currentTarget.nextElementSibling as HTMLElement).style.display = 'inline';
+                  }
+                }}
+              />
+              <span style={{ fontSize: 48, color: "#666", display: 'none' }}>♪</span>
             </div>
             <div>
               <div className="spotlight-kicker">
@@ -85,15 +110,15 @@ export default function DashboardPage() {
           </div>
 
           <div className="stat-strip">
-            <div className="stat-item">
+            <div className="stat-item" onClick={() => navigate("/explore")}>
               <strong>{dashboard_stats.canciones}</strong>
               <span>Canciones</span>
             </div>
-            <div className="stat-item">
+            <div className="stat-item" onClick={() => navigate("/explore")}>
               <strong>{dashboard_stats.albumes}</strong>
               <span>Álbumes</span>
             </div>
-            <div className="stat-item">
+            <div className="stat-item" onClick={() => navigate("/explore")}>
               <strong>{dashboard_stats.artistas}</strong>
               <span>Artistas</span>
             </div>
@@ -110,10 +135,21 @@ export default function DashboardPage() {
           <div className="scroll-grid">
             {data.daily_mixes.map((mix) => (
               <div key={mix.id} className="card" onClick={() => play(mix.canciones, 0)}>
-                <div className="card-cover" style={{ background: "linear-gradient(135deg, #d95840, #1a1a1f)" }}>
-                  <span style={{ fontSize: 28, opacity: 0.6 }}>♪</span>
+                <div className="card-cover">
+                  <img
+                    src={`/daily-mix-cover/${mix.id}`}
+                    alt={mix.nombre}
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).style.display = 'none';
+                      if (e.currentTarget.nextElementSibling) {
+                        (e.currentTarget.nextElementSibling as HTMLElement).style.display = 'inline';
+                      }
+                    }}
+                  />
+                  <span style={{ fontSize: 28, opacity: 0.6, display: 'none' }}>♪</span>
                   <div className="card-overlay">
-                    <button className="card-play-btn">
+                    <button className="card-play-btn" onClick={(e) => { e.stopPropagation(); play(mix.canciones, 0); }}>
                       <Play size={18} fill="currentColor" />
                     </button>
                   </div>
@@ -136,7 +172,7 @@ export default function DashboardPage() {
           </div>
           <div className="scroll-grid">
             {albumes_recientes.map((al) => (
-              <div key={al.id} className="card">
+              <div key={al.id} className="card" onClick={() => navigate("/album/" + al.id)}>
                 <div className="card-cover">
                   {al.portada_url ? (
                     <img src={al.portada_url} alt={al.titulo} />
@@ -144,7 +180,7 @@ export default function DashboardPage() {
                     <span style={{ fontSize: 24, color: "#666" }}>♪</span>
                   )}
                   <div className="card-overlay">
-                    <button className="card-play-btn">
+                    <button className="card-play-btn" onClick={(e) => handlePlayAlbum(e, al.id)}>
                       <Play size={18} fill="currentColor" />
                     </button>
                   </div>
@@ -167,7 +203,7 @@ export default function DashboardPage() {
           </div>
           <div className="scroll-grid">
             {artistas_recientes.map((a) => (
-              <div key={a.id} className="artist-card">
+              <div key={a.id} className="artist-card" onClick={() => navigate("/artist/" + a.id)}>
                 <div className="artist-cover">
                   {a.foto_url ? (
                     <img src={a.foto_url} alt={a.nombre} />
@@ -188,28 +224,40 @@ export default function DashboardPage() {
           <div className="shelf-header" style={{ padding: 0, marginBottom: 16 }}>
             <h2 className="shelf-title">Más escuchadas</h2>
           </div>
-          {top_canciones.map((item, i) => (
-            <div
-              key={item.cancion.id}
-              className="track-item"
-              onClick={() => play(top_canciones.map((t) => t.cancion), i)}
-            >
-              <span className="track-num">{i + 1}</span>
-              <div className="track-cover-sm">
-                <span style={{ fontSize: 14, color: "#666" }}>♪</span>
+          {top_canciones.map((item, i) => {
+            const isCurrent = currentSong?.id === item.cancion.id;
+            return (
+              <div
+                key={item.cancion.id}
+                className={`track-item ${isCurrent ? `playing ${playing ? "" : "paused"}` : ""}`}
+                onClick={() => play(top_canciones.map((t) => t.cancion), i)}
+              >
+                {isCurrent ? (
+                  <div className={`playing-eq ${playing ? "" : "paused"}`}>
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </div>
+                ) : (
+                  <span className="track-num">{i + 1}</span>
+                )}
+                <div className="track-cover-sm">
+                  <span style={{ fontSize: 14, color: "#666" }}>♪</span>
+                </div>
+                <div className="track-info">
+                  <div className="track-title">{item.cancion.titulo}</div>
+                  <div className="track-artist">{item.cancion.artista}</div>
+                </div>
+                <div style={{ fontSize: 12, color: "#9ca3af" }}>{item.plays} plays</div>
+                <div className="track-duration">
+                  {item.cancion.duracion
+                    ? Math.floor(item.cancion.duracion / 60) + ":" + String(item.cancion.duracion % 60).padStart(2, "0")
+                    : "—"}
+                </div>
               </div>
-              <div className="track-info">
-                <div className="track-title">{item.cancion.titulo}</div>
-                <div className="track-artist">{item.cancion.artista}</div>
-              </div>
-              <div style={{ fontSize: 12, color: "#9ca3af" }}>{item.plays} plays</div>
-              <div className="track-duration">
-                {item.cancion.duracion
-                  ? Math.floor(item.cancion.duracion / 60) + ":" + String(item.cancion.duracion % 60).padStart(2, "0")
-                  : "—"}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

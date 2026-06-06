@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Heart, Play } from "lucide-react";
+import { Heart } from "lucide-react";
 import client from "../api/client";
 import { usePlayer } from "../contexts/PlayerContext";
 import type { Cancion } from "../types";
@@ -7,7 +7,7 @@ import type { Cancion } from "../types";
 export default function FavoritesPage() {
   const [songs, setSongs] = useState<Cancion[]>([]);
   const [loading, setLoading] = useState(true);
-  const { play } = usePlayer();
+  const { currentSong, playing, play } = usePlayer();
 
   const fetchFavorites = () => {
     client.get("/favoritos")
@@ -44,25 +44,41 @@ export default function FavoritesPage() {
         </div>
       ) : (
         <div className="tracklist-standalone" style={{ paddingTop: 24 }}>
-          {songs.map((c, i) => (
-            <div key={c.id} className="track-item-grid" onClick={() => play(songs, i)}>
-              <span className="track-num-sm">{i + 1}</span>
-              <div className="track-info">
-                <div className="track-title">{c.titulo}</div>
-                <div className="track-artist">{c.artista}</div>
-              </div>
-              <div className="track-duration">
-                {c.duracion ? Math.floor(c.duracion / 60) + ":" + String(c.duracion % 60).padStart(2, "0") : "—"}
-              </div>
-              <button
-                onClick={(e) => { e.stopPropagation(); toggleLike(c.id); }}
-                style={{ background: "none", border: "none", color: "#d95840", cursor: "pointer", padding: 4, justifySelf: "end" }}
-                title="Quitar de favoritos"
+          {songs.map((c, i) => {
+            const isCurrent = currentSong?.id === c.id;
+            return (
+              <div
+                key={c.id}
+                className={`track-item-grid ${isCurrent ? `playing ${playing ? "" : "paused"}` : ""}`}
+                onClick={() => play(songs, i)}
               >
-                <Heart size={16} fill="currentColor" />
-              </button>
-            </div>
-          ))}
+                {isCurrent ? (
+                  <div className={`playing-eq ${playing ? "" : "paused"}`}>
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </div>
+                ) : (
+                  <span className="track-num-sm">{i + 1}</span>
+                )}
+                <div className="track-info">
+                  <div className="track-title">{c.titulo}</div>
+                  <div className="track-artist">{c.artista}</div>
+                </div>
+                <div className="track-duration">
+                  {c.duracion ? Math.floor(c.duracion / 60) + ":" + String(c.duracion % 60).padStart(2, "0") : "—"}
+                </div>
+                <button
+                  onClick={(e) => { e.stopPropagation(); toggleLike(c.id); }}
+                  style={{ background: "none", border: "none", color: "#d95840", cursor: "pointer", padding: 4, justifySelf: "end" }}
+                  title="Quitar de favoritos"
+                >
+                  <Heart size={16} fill="currentColor" />
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

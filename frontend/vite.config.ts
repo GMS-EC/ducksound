@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 
 const apiTarget = "http://web:8604";
 
-function spaBypass(req: any, res: any, options: any) {
+function spaBypass(req: any, _res: any, _options: any) {
   if (req.headers.accept?.includes("text/html")) {
     return "/index.html";
   }

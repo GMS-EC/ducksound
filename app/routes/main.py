@@ -308,7 +308,7 @@ def explore():
     albums_data = []
     for al, track_count in album_stats:
         albums_data.append({
-            'album': al,
+            'album': al.to_dict(),
             'cover_url': _album_cover_url(al),
             'track_count': track_count
         })
@@ -347,7 +347,7 @@ def artists_list():
         cover_url = _album_cover_url(fa) if fa else None
         
         artists_data.append({
-            'artist': a,
+            'artist': a.to_dict(),
             'album_count': ac,
             'song_count': sc,
             'cover_url': cover_url
@@ -376,7 +376,7 @@ def artist_detail(artist_id):
     albums_data = []
     for al, track_count in album_stats:
         albums_data.append({
-            'album': al,
+            'album': al.to_dict(),
             'cover_url': _album_cover_url(al),
             'track_count': track_count
         })
@@ -406,7 +406,7 @@ def albums_list():
     albums_data = []
     for al, track_count, total_dur in album_stats:
         albums_data.append({
-            'album': al,
+            'album': al.to_dict(),
             'cover_url': _album_cover_url(al),
             'track_count': track_count,
             'total_duration': total_dur
@@ -447,7 +447,10 @@ def album_detail(album_id):
     discos = []
     for disc_num, canciones_disco in discos_ordenados:
         canciones_ordenadas = sorted(canciones_disco, key=get_track_num)
-        discos.append((disc_num, canciones_ordenadas))
+        discos.append({
+            'disc_num': disc_num,
+            'songs': [c.to_dict() for c in canciones_ordenadas]
+        })
     
     cover_url = _album_cover_url(album)
     total_dur = _album_total_duration(album)

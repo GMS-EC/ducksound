@@ -10,7 +10,7 @@ interface Disco { disc_num: number; songs: Cancion[]; }
 export default function AlbumDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { play } = usePlayer();
+  const { currentSong, playing, play } = usePlayer();
   const [album, setAlbum] = useState<Album | null>(null);
   const [discos, setDiscos] = useState<Disco[]>([]);
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
@@ -86,19 +86,35 @@ export default function AlbumDetailPage() {
                 </h2>
               </div>
             )}
-            {disco.songs.map((c, i) => (
-              <div key={c.id} className="track-item-grid" onClick={() => play(allSongs, allSongs.indexOf(c))}>
-                <span className="track-num-sm">{c.numero_pista || i + 1}</span>
-                <div className="track-info">
-                  <div className="track-title">{c.titulo}</div>
-                  <div className="track-artist">{c.artista}</div>
+            {disco.songs.map((c, i) => {
+              const isCurrent = currentSong?.id === c.id;
+              return (
+                <div
+                  key={c.id}
+                  className={`track-item-grid ${isCurrent ? `playing ${playing ? "" : "paused"}` : ""}`}
+                  onClick={() => play(allSongs, allSongs.indexOf(c))}
+                >
+                  {isCurrent ? (
+                    <div className={`playing-eq ${playing ? "" : "paused"}`}>
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                    </div>
+                  ) : (
+                    <span className="track-num-sm">{c.numero_pista || i + 1}</span>
+                  )}
+                  <div className="track-info">
+                    <div className="track-title">{c.titulo}</div>
+                    <div className="track-artist">{c.artista}</div>
+                  </div>
+                  <div className="track-duration">
+                    {c.duracion ? Math.floor(c.duracion / 60) + ":" + String(c.duracion % 60).padStart(2, "0") : "—"}
+                  </div>
+                  <div></div>
                 </div>
-                <div className="track-duration">
-                  {c.duracion ? Math.floor(c.duracion / 60) + ":" + String(c.duracion % 60).padStart(2, "0") : "—"}
-                </div>
-                <div></div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ))}
       </div>

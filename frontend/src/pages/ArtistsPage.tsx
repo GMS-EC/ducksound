@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Play } from "lucide-react";
 import client from "../api/client";
 
 export default function ArtistsPage() {
@@ -35,7 +34,7 @@ export default function ArtistsPage() {
               )}
             </div>
             <div className="artist-card-big-name">{item.artist.nombre}</div>
-            <div className="artist-card-big-meta">{item.album_count} \u00e1lbumes \u2022 {item.song_count} canciones</div>
+            <div className="artist-card-big-meta">{item.album_count} álbumes • {item.song_count} canciones</div>
           </div>
         ))}
       </div>

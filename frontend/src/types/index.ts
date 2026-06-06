@@ -54,6 +54,8 @@ export interface Cancion {
   rms_level: number | null;
   total_samples: number | null;
   bit_rate: number | null;
+  numero_pista?: number | null;
+  numero_disco?: number | null;
 }
 
 export interface DailyMix {
@@ -107,10 +109,10 @@ export interface UserStats {
 }
 
 export interface AlbumData {
-  album_id: number;
-  titulo: string;
+  album: Album;
   cover_url: string | null;
   track_count: number;
+  total_duration?: number;
 }
 
 export interface ArtistData {

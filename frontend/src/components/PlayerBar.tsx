@@ -28,7 +28,18 @@ export default function PlayerBar() {
       <div className="player-left">
         <div className="player-cover">
           {currentSong ? (
-            <span className="player-cover-icon">♫</span>
+            <>
+              <img
+                src={`/album-art/${currentSong.id}?size=small`}
+                alt={currentSong.titulo}
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).style.display = 'none';
+                  const nextEl = e.currentTarget.nextElementSibling as HTMLElement;
+                  if (nextEl) nextEl.style.display = 'flex';
+                }}
+              />
+              <span className="player-cover-icon" style={{ display: 'none' }}>♫</span>
+            </>
           ) : (
             <span className="player-cover-icon">♫</span>
           )}
