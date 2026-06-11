@@ -48,9 +48,6 @@ def dashboard():
     Renderiza la biblioteca completa ordenada por título junto a los mixes del día,
     álbumes nuevos, artistas agregados y un listado de descubrimientos recientes.
     """
-    if 'user_id' not in session:
-        return redirect(url_for('auth.login'))
-    
     # Evitamos cargar la biblioteca completa (Cancion.query.all()) en el dashboard
     # ya que no se renderiza en la vista principal y degrada masivamente el rendimiento.
     canciones = []
@@ -120,9 +117,6 @@ def dashboard():
 @main_bp.route('/favoritos')
 def favoritos():
     """Lista las canciones que el usuario ha marcado con 'Me gusta'."""
-    if 'user_id' not in session:
-        return redirect(url_for('auth.login'))
-        
     usuario_obj = db.session.get(Usuario, session['user_id'])
     is_admin = usuario_obj.is_admin() if usuario_obj else False
     
@@ -153,9 +147,6 @@ def folders():
     en árbol para permitir explorar las canciones por directorios. Muestra en tiempo real
     cuántas pistas de cada subcarpeta ya han sido indexadas en DuckSound.
     """
-    if 'user_id' not in session:
-        return redirect(url_for('auth.login'))
-        
     usuario_obj = db.session.get(Usuario, session['user_id'])
     is_admin = usuario_obj.is_admin() if usuario_obj else False
 
@@ -200,9 +191,6 @@ def folders():
 @main_bp.route('/colecciones')
 def colecciones_list():
     """Muestra todas las listas de reproducción creadas por el usuario autenticado."""
-    if 'user_id' not in session:
-        return redirect(url_for('auth.login'))
-        
     usuario_obj = db.session.get(Usuario, session['user_id'])
     is_admin = usuario_obj.is_admin() if usuario_obj else False
     
@@ -214,9 +202,6 @@ def colecciones_list():
 @main_bp.route('/coleccion/<int:coleccion_id>')
 def coleccion_detail(coleccion_id):
     """Muestra el catálogo y la cola de canciones de una playlist/colección."""
-    if 'user_id' not in session:
-        return redirect(url_for('auth.login'))
-        
     coleccion = Coleccion.query.get_or_404(coleccion_id)
     
     # Restricción de propiedad: no permitir a usuarios ver playlists ajenas
@@ -240,17 +225,12 @@ def coleccion_detail(coleccion_id):
 @main_bp.route('/daily-mixes')
 def daily_mixes_redirect():
     """Compatibilidad: la lista de mixes vive en el dashboard principal."""
-    if 'user_id' not in session:
-        return redirect(url_for('auth.login'))
     return redirect(url_for('main.dashboard'))
 
 
 @main_bp.route('/daily-mix/<int:mix_id>')
 def daily_mix_detail(mix_id):
     """Muestra el tracklist y la interfaz de reproducción de una mezcla diaria."""
-    if 'user_id' not in session:
-        return redirect(url_for('auth.login'))
-        
     mix = DailyMix.query.get_or_404(mix_id)
     if mix.usuario_id != session['user_id']:
         abort(403)
@@ -288,9 +268,6 @@ def _album_total_duration(album):
 @main_bp.route('/explore')
 def explore():
     """Ruta del Dashboard de Exploración. Muestra el mosaico de artistas y álbumes."""
-    if 'user_id' not in session:
-        return redirect(url_for('auth.login'))
-        
     artists = Artista.query.order_by(Artista.nombre).all()
     
     # Conteo agrupado y eficiente en una sola transacción SQL para evitar N+1
@@ -311,9 +288,6 @@ def explore():
 @main_bp.route('/artists')
 def artists_list():
     """Lista completa de artistas de la plataforma con agregaciones cargadas previamente."""
-    if 'user_id' not in session:
-        return redirect(url_for('auth.login'))
-
     # Agrupaciones masivas en base de datos para latencia ultra-baja
     album_counts = db.session.query(Album.artista_id, sqlfunc.count(Album.id)).group_by(Album.artista_id).all()
     album_dict = {a_id: count for a_id, count in album_counts}
@@ -351,9 +325,6 @@ def artists_list():
 @main_bp.route('/artist/<int:artist_id>')
 def artist_detail(artist_id):
     """Muestra el catálogo detallado de un artista (biografía, álbumes e index de canciones)."""
-    if 'user_id' not in session:
-        return redirect(url_for('auth.login'))
-        
     artist = Artista.query.get_or_404(artist_id)
     songs = Cancion.query.filter_by(artista_id=artist.id).order_by(
         Cancion.album_id,
@@ -387,9 +358,6 @@ def artist_detail(artist_id):
 @main_bp.route('/albums')
 def albums_list():
     """Listado general de Álbumes en DuckSound con sus respectivas agregaciones de tiempo y conteo."""
-    if 'user_id' not in session:
-        return redirect(url_for('auth.login'))
-        
     album_stats = db.session.query(
         Album,
         sqlfunc.count(Cancion.id).label('track_count'),
@@ -410,9 +378,6 @@ def albums_list():
 @main_bp.route('/album/<int:album_id>')
 def album_detail(album_id):
     """Muestra la lista de reproducción estructurada de un álbum, ordenando canciones por disco y pista."""
-    if 'user_id' not in session:
-        return redirect(url_for('auth.login'))
-        
     album = Album.query.get_or_404(album_id)
     songs = Cancion.query.filter_by(album_id=album.id).order_by(
         Cancion.numero_disco.asc(),
@@ -471,12 +436,10 @@ def profile():
     - Horas acumuladas totales escuchando canciones.
     - Conteo de canciones reproducidas en las últimas 24 horas.
     """
-    if 'user_id' not in session:
-        return redirect(url_for('auth.login'))
-        
     usuario = db.session.get(Usuario, session['user_id'])
     if not usuario:
-        return redirect(url_for('auth.login'))
+        session.clear()
+        return jsonify({'error': 'Usuario no encontrado'}), 401
         
     is_admin = usuario.is_admin()
     user_id = session['user_id']
