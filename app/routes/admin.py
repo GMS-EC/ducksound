@@ -20,7 +20,7 @@ import time as _time
 import requests as _requests
 from datetime import datetime
 
-from flask import Blueprint, request, session, jsonify, current_app
+from flask import Blueprint, request, session, jsonify, current_app, url_for
 from config import Config
 from app.models import db, Usuario, Artista, Album, Cancion, Coleccion, Favorito
 
@@ -80,17 +80,15 @@ def _is_admin_request():
 def escanear_canciones():
     """
     Despierta síncronamente el escaneo de la biblioteca en disco de música.
-    Muestra directamente el resultado en el navegador una vez concluido el proceso.
     """
     if not _is_admin_request():
         return jsonify({'error': 'Unauthorized'}), 401
 
     try:
         resumen = escanear_carpeta_audio()
+        return jsonify({'success': True, 'resumen': resumen})
     except Exception as e:
-        return render_template('scan_result.html', error=str(e), resumen=None)
-
-    return render_template('scan_result.html', error=None, resumen=resumen)
+        return jsonify({'error': str(e)}), 500
 
 
 @admin_bp.route('/admin/clean_metadata', methods=['POST'])
@@ -482,7 +480,7 @@ def admin_panel():
             else:
                 v['status'] = 'older'
     
-    return render_template('admin.html', changelog_versions=versions)
+    return jsonify({'changelog_versions': versions})
 
 
 @admin_bp.route('/admin/check-update', methods=['GET'])
@@ -818,8 +816,8 @@ def admin_estadisticas():
         'resumen': resumen, 
         'canciones_recientes': [c.to_dict() for c in canciones_recientes],
         'top_songs': [{'cancion': c.to_dict(), 'plays': p} for c, p in top_songs],
-        'top_artist': {'artista': ta[0].to_dict(), 'plays': ta[1]} if ta else None,
-        'top_genre': {'genero': tg[0], 'plays': tg[1]} if tg else None
+        'top_artist': {'artista': top_artist[0].to_dict(), 'plays': top_artist[1]} if top_artist else None,
+        'top_genre': {'genero': top_genre[0], 'plays': top_genre[1]} if top_genre else None
     })
 
 

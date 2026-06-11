@@ -21,7 +21,7 @@ from pathlib import Path
 from sqlalchemy import func as sqlfunc
 from sqlalchemy.orm import joinedload
 
-from flask import Blueprint, request, redirect, url_for, session, abort, current_app
+from flask import Blueprint, request, redirect, url_for, session, abort, current_app, jsonify
 from config import Config
 from app.models import db, Usuario, Artista, Album, Cancion, Favorito, Coleccion, DailyMix, HistorialEscucha
 
@@ -35,13 +35,6 @@ main_bp = Blueprint('main', __name__)
 # ==============================================================================
 # SECCIÓN 1: VISTA DE INICIO Y REDIRECCIONES DE ACCESO
 # ==============================================================================
-
-@main_bp.route('/')
-def index():
-    """Redirige al dashboard si el usuario está autenticado, o al login en caso contrario."""
-    if 'user_id' in session:
-        return redirect(url_for('main.dashboard'))
-    return redirect(url_for('auth.login'))
 
 
 # ==============================================================================

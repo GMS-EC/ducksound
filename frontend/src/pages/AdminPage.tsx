@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
 import {
-  BarChart3, Scan, Users, FileText, RefreshCw, Activity,
+  BarChart3, Scan, Users, FileText, RefreshCw, Activity, User, Disc, Music, Check,
 } from "lucide-react";
 import client from "../api/client";
 
-type Tab = "stats" | "scan" | "users" | "lyrics" | "system";
+type Tab = "stats" | "scan" | "users" | "lyrics" | "artists" | "albums" | "system";
 
 interface ScanTask {
   task_id: string;
@@ -22,6 +22,8 @@ export default function AdminPage() {
   const tabs: { id: Tab; label: string; icon: any }[] = [
     { id: "stats", label: "Estadísticas", icon: BarChart3 },
     { id: "scan", label: "Escaneo", icon: Scan },
+    { id: "artists", label: "Artistas", icon: User },
+    { id: "albums", label: "Álbumes", icon: Disc },
     { id: "users", label: "Usuarios", icon: Users },
     { id: "lyrics", label: "Letras", icon: FileText },
     { id: "system", label: "Sistema", icon: RefreshCw },
@@ -44,6 +46,8 @@ export default function AdminPage() {
       </div>
       {tab === "stats" && <StatsTab />}
       {tab === "scan" && <ScanTab />}
+      {tab === "artists" && <ArtistsTab />}
+      {tab === "albums" && <AlbumsTab />}
       {tab === "users" && <UsersTab />}
       {tab === "lyrics" && <LyricsTab />}
       {tab === "system" && <SystemTab />}
@@ -443,6 +447,593 @@ function SystemTab() {
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+function ArtistsTab() {
+  const [artists, setArtists] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+  const [total, setTotal] = useState(0);
+  const [conMbid, setConMbid] = useState(0);
+  const [selectedArtist, setSelectedArtist] = useState<any | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editNombre, setEditNombre] = useState("");
+  const [editMbid, setEditMbid] = useState("");
+  const [editDeezerId, setEditDeezerId] = useState("");
+  const [previewData, setPreviewData] = useState<any | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const fetchArtists = (searchQuery = "") => {
+    setLoading(true);
+    client.get("/admin/artistas", { params: { q: searchQuery } })
+      .then((res) => {
+        setArtists(res.data.artistas || []);
+        setTotal(res.data.total || 0);
+        setConMbid(res.data.con_mbid || 0);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchArtists();
+  }, []);
+
+  const handleSearch = () => {
+    fetchArtists(query);
+  };
+
+  const handleEdit = (artist: any) => {
+    setSelectedArtist(artist);
+    setEditNombre(artist.nombre || "");
+    setEditMbid(artist.musicbrainz_id || "");
+    setEditDeezerId("");
+    setPreviewData(null);
+    setError("");
+    setModalOpen(true);
+  };
+
+  const handlePreview = async () => {
+    if (!editMbid.trim() && !editDeezerId.trim()) {
+      setError("Introduce un MBID o Deezer ID para previsualizar");
+      return;
+    }
+    setPreviewLoading(true);
+    setError("");
+    setPreviewData(null);
+    try {
+      const res = await client.post("/admin/artistas/preview-metadata", {
+        mbid: editMbid.trim(),
+        deezer_id: editDeezerId.trim()
+      });
+      if (res.data.success && res.data.metadata) {
+        setPreviewData(res.data.metadata);
+      } else {
+        setError(res.data.message || "No se encontró el artista");
+      }
+    } catch (e: any) {
+      setError(e.response?.data?.error || "Error de red al previsualizar");
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!selectedArtist) return;
+    setSaving(true);
+    setError("");
+    try {
+      const res = await client.post(`/admin/artistas/${selectedArtist.id}/update-mbid`, {
+        mbid: editMbid.trim(),
+        deezer_id: editDeezerId.trim(),
+        nombre: editNombre.trim()
+      });
+      if (res.data.success) {
+        setModalOpen(false);
+        fetchArtists(query);
+      } else {
+        setError(res.data.error || "Error al guardar");
+      }
+    } catch (e: any) {
+      setError(e.response?.data?.error || "Error de red al guardar");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: 24 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
+        <div style={{ fontSize: 13, color: "#9ca3af" }}>
+          {conMbid} de {total} artistas tienen MusicBrainz ID
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+            placeholder="Buscar artista..."
+            className="admin-form-input"
+            style={{ width: 220 }}
+          />
+          <button className="admin-btn admin-btn-primary" onClick={handleSearch}>
+            Buscar
+          </button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div style={{ color: "#9ca3af" }}>Cargando artistas...</div>
+      ) : artists.length === 0 ? (
+        <div style={{ color: "#9ca3af" }}>No se encontraron artistas</div>
+      ) : (
+        <div className="admin-table-container">
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th style={{ width: 60 }}>ID</th>
+                <th style={{ minWidth: 160 }}>Artista</th>
+                <th style={{ width: 220 }}>MusicBrainz ID (MBID)</th>
+                <th style={{ width: 100 }}>Metadatos</th>
+                <th style={{ width: 80, textAlign: "center" }}>Álbumes</th>
+                <th style={{ width: 90, textAlign: "center" }}>Canciones</th>
+                <th style={{ width: 70, textAlign: "right" }}>Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              {artists.map((a) => (
+                <tr key={a.id}>
+                  <td style={{ fontFamily: "monospace", color: "#6b7280" }}>#{a.id}</td>
+                  <td>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <div className="admin-avatar-mini">
+                        {a.foto_url ? (
+                          <img src={a.foto_url} alt={a.nombre} />
+                        ) : (
+                          <User size={16} />
+                        )}
+                      </div>
+                      <span style={{ fontWeight: 600, color: "#ffffff" }}>{a.nombre}</span>
+                    </div>
+                  </td>
+                  <td>
+                    {a.musicbrainz_id ? (
+                      <span className="admin-mbid-badge admin-mbid-active" title={a.musicbrainz_id}>
+                        <Music size={11} />
+                        <code>{a.musicbrainz_id.substring(0, 18)}...</code>
+                      </span>
+                    ) : (
+                      <span className="admin-mbid-badge admin-mbid-none">
+                        Sin MBID
+                      </span>
+                    )}
+                  </td>
+                  <td>
+                    <div className="admin-info-indicators">
+                      <span className={a.biografia ? "admin-info-indicator-active" : ""} title={a.biografia ? "Tiene biografía" : "Sin biografía"}>📝</span>
+                      <span className={a.foto_url ? "admin-info-indicator-active" : ""} title={a.foto_url ? "Tiene foto" : "Sin foto"}>🖼️</span>
+                    </div>
+                  </td>
+                  <td style={{ textAlign: "center", color: "#9ca3af", fontWeight: 500 }}>{a.albums_count ?? (a.albums ? a.albums.length : 0)}</td>
+                  <td style={{ textAlign: "center", color: "#9ca3af", fontWeight: 500 }}>{a.canciones_count ?? (a.canciones ? a.canciones.length : 0)}</td>
+                  <td style={{ textAlign: "right" }}>
+                    <button className="admin-btn-icon" onClick={() => handleEdit(a)} title="Editar artista">
+                      ✏️
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {modalOpen && (
+        <div className="admin-modal-overlay" onClick={() => setModalOpen(false)}>
+          <div className="admin-modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520 }}>
+            <div className="admin-modal-header">
+              <h3>Editar Artista</h3>
+              <button className="admin-btn-icon" style={{ border: "none", background: "none" }} onClick={() => setModalOpen(false)}>✕</button>
+            </div>
+            <div className="admin-modal-body">
+              <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+                <div style={{ width: 80, height: 80, borderRadius: "50%", background: "#2a2a33", display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid rgba(255,255,255,0.06)", overflow: "hidden", flexShrink: 0 }}>
+                  {selectedArtist?.foto_url ? (
+                    <img src={selectedArtist.foto_url} alt="Preview" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  ) : (
+                    <User size={32} style={{ color: "#9ca3af" }} />
+                  )}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label">Nombre del Artista</label>
+                    <input
+                      type="text"
+                      value={editNombre}
+                      onChange={(e) => setEditNombre(e.target.value)}
+                      className="admin-form-input"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">MusicBrainz ID (MBID)</label>
+                <input
+                  type="text"
+                  value={editMbid}
+                  onChange={(e) => setEditMbid(e.target.value)}
+                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                  className="admin-form-input"
+                  style={{ fontFamily: "monospace" }}
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Deezer ID</label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input
+                    type="text"
+                    value={editDeezerId}
+                    onChange={(e) => setEditDeezerId(e.target.value)}
+                    placeholder="Ej: 123456"
+                    className="admin-form-input"
+                    style={{ flex: 1 }}
+                  />
+                  <button className="admin-btn admin-btn-secondary" onClick={handlePreview} disabled={previewLoading}>
+                    {previewLoading ? "Buscando..." : "Previsualizar"}
+                  </button>
+                </div>
+              </div>
+
+              {previewData && (
+                <div className="admin-preview-card">
+                  {previewData.foto_url && (
+                    <img src={previewData.foto_url} alt="Preview" className="admin-preview-img" />
+                  )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: "#ffffff" }}>{previewData.nombre}</div>
+                    <div style={{ fontSize: 12, color: "#9ca3af", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", lineHeight: 1.4 }}>
+                      {previewData.biografia || "Sin biografía disponible"}
+                    </div>
+                  </div>
+                  <Check size={20} style={{ color: "#d95840", flexShrink: 0 }} />
+                </div>
+              )}
+
+              {error && (
+                <div style={{ color: "#d95840", fontSize: 13, fontWeight: 500 }}>
+                  ⚠️ {error}
+                </div>
+              )}
+            </div>
+            <div className="admin-modal-footer">
+              <button className="admin-btn admin-btn-secondary" onClick={() => setModalOpen(false)}>
+                Cancelar
+              </button>
+              <button className="admin-btn admin-btn-primary" onClick={handleSave} disabled={saving}>
+                {saving ? "Guardando..." : "Guardar Cambios"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AlbumsTab() {
+  const [albums, setAlbums] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+  const [total, setTotal] = useState(0);
+  const [conMbid, setConMbid] = useState(0);
+  const [conPortada, setConPortada] = useState(0);
+  const [selectedAlbum, setSelectedAlbum] = useState<any | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editTitulo, setEditTitulo] = useState("");
+  const [editAnio, setEditAnio] = useState("");
+  const [editMbid, setEditMbid] = useState("");
+  const [editDeezerId, setEditDeezerId] = useState("");
+  const [previewData, setPreviewData] = useState<any | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const fetchAlbums = (searchQuery = "") => {
+    setLoading(true);
+    client.get("/admin/albumes", { params: { q: searchQuery } })
+      .then((res) => {
+        setAlbums(res.data.albumes || []);
+        setTotal(res.data.total || 0);
+        setConMbid(res.data.con_mbid || 0);
+        setConPortada(res.data.con_portada || 0);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchAlbums();
+  }, []);
+
+  const handleSearch = () => {
+    fetchAlbums(query);
+  };
+
+  const handleEdit = (album: any) => {
+    setSelectedAlbum(album);
+    setEditTitulo(album.titulo || "");
+    setEditAnio(album.anio ? String(album.anio) : "");
+    setEditMbid(album.musicbrainz_id || "");
+    setEditDeezerId("");
+    setPreviewData(null);
+    setError("");
+    setModalOpen(true);
+  };
+
+  const handlePreview = async () => {
+    if (!editMbid.trim() && !editDeezerId.trim()) {
+      setError("Introduce un MBID o Deezer ID para previsualizar");
+      return;
+    }
+    setPreviewLoading(true);
+    setError("");
+    setPreviewData(null);
+    try {
+      const res = await client.post("/admin/albumes/preview-metadata", {
+        mbid: editMbid.trim(),
+        deezer_id: editDeezerId.trim()
+      });
+      if (res.data.success && res.data.metadata) {
+        setPreviewData(res.data.metadata);
+      } else {
+        setError(res.data.message || "No se encontró el álbum");
+      }
+    } catch (e: any) {
+      setError(e.response?.data?.error || "Error de red al previsualizar");
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!selectedAlbum) return;
+    setSaving(true);
+    setError("");
+    try {
+      const res = await client.post(`/admin/albumes/${selectedAlbum.id}/update-metadata`, {
+        mbid: editMbid.trim(),
+        deezer_id: editDeezerId.trim(),
+        titulo: editTitulo.trim(),
+        anio: editAnio.trim()
+      });
+      if (res.data.success) {
+        setModalOpen(false);
+        fetchAlbums(query);
+      } else {
+        setError(res.data.error || "Error al guardar");
+      }
+    } catch (e: any) {
+      setError(e.response?.data?.error || "Error de red al guardar");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: 24 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
+        <div style={{ fontSize: 13, color: "#9ca3af" }}>
+          {conMbid} de {total} con MBID | {conPortada} de {total} con Portada Oficial
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+            placeholder="Buscar álbum..."
+            className="admin-form-input"
+            style={{ width: 220 }}
+          />
+          <button className="admin-btn admin-btn-primary" onClick={handleSearch}>
+            Buscar
+          </button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div style={{ color: "#9ca3af" }}>Cargando álbumes...</div>
+      ) : albums.length === 0 ? (
+        <div style={{ color: "#9ca3af" }}>No se encontraron álbumes</div>
+      ) : (
+        <div className="admin-table-container">
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th style={{ width: 60 }}>ID</th>
+                <th style={{ width: 70, textAlign: "center" }}>Portada</th>
+                <th style={{ minWidth: 160 }}>Álbum</th>
+                <th style={{ minWidth: 140 }}>Artista</th>
+                <th style={{ width: 80, textAlign: "center" }}>Año</th>
+                <th style={{ width: 220 }}>MusicBrainz ID (MBID)</th>
+                <th style={{ width: 70, textAlign: "right" }}>Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              {albums.map((al) => {
+                // Determine cover art
+                let coverUrl = al.portada_url;
+                if (!coverUrl && al.canciones && al.canciones.length > 0) {
+                  coverUrl = `/album-art/${al.canciones[0].id}?size=small`;
+                }
+                return (
+                  <tr key={al.id}>
+                    <td style={{ fontFamily: "monospace", color: "#6b7280" }}>#{al.id}</td>
+                    <td style={{ textAlign: "center" }}>
+                      <div className="admin-art-mini">
+                        {coverUrl ? (
+                          <img src={coverUrl} alt={al.titulo} />
+                        ) : (
+                          <Disc size={16} />
+                        )}
+                      </div>
+                    </td>
+                    <td>
+                      <span style={{ fontWeight: 600, color: "#ffffff" }}>{al.titulo}</span>
+                    </td>
+                    <td>
+                      <span style={{ color: "#eaeaea" }}>{al.artista?.nombre || "Desconocido"}</span>
+                    </td>
+                    <td style={{ textAlign: "center", color: "#9ca3af", fontWeight: 500 }}>
+                      {al.anio || "-"}
+                    </td>
+                    <td>
+                      {al.musicbrainz_id ? (
+                        <span className="admin-mbid-badge admin-mbid-active" title={al.musicbrainz_id}>
+                          <Music size={11} />
+                          <code>{al.musicbrainz_id.substring(0, 18)}...</code>
+                        </span>
+                      ) : (
+                        <span className="admin-mbid-badge admin-mbid-none">
+                          Sin MBID
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ textAlign: "right" }}>
+                      <button className="admin-btn-icon" onClick={() => handleEdit(al)} title="Editar álbum">
+                        ✏️
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {modalOpen && (
+        <div className="admin-modal-overlay" onClick={() => setModalOpen(false)}>
+          <div className="admin-modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520 }}>
+            <div className="admin-modal-header">
+              <h3>Editar Álbum</h3>
+              <button className="admin-btn-icon" style={{ border: "none", background: "none" }} onClick={() => setModalOpen(false)}>✕</button>
+            </div>
+            <div className="admin-modal-body">
+              <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+                <div style={{ width: 80, height: 80, borderRadius: 8, background: "#2a2a33", display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid rgba(255,255,255,0.06)", overflow: "hidden", flexShrink: 0 }}>
+                  {selectedAlbum?.portada_url ? (
+                    <img src={selectedAlbum.portada_url} alt="Cover" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  ) : selectedAlbum?.canciones && selectedAlbum.canciones.length > 0 ? (
+                    <img src={`/album-art/${selectedAlbum.canciones[0].id}?size=medium`} alt="Cover" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  ) : (
+                    <Disc size={32} style={{ color: "#9ca3af" }} />
+                  )}
+                </div>
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 12 }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label">Título del Álbum</label>
+                    <input
+                      type="text"
+                      value={editTitulo}
+                      onChange={(e) => setEditTitulo(e.target.value)}
+                      className="admin-form-input"
+                    />
+                  </div>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label">Artista</label>
+                    <input
+                      type="text"
+                      value={selectedAlbum?.artista?.nombre || "Desconocido"}
+                      readOnly
+                      className="admin-form-input"
+                      style={{ background: "rgba(255,255,255,0.02)", color: "#9ca3af", borderColor: "rgba(255,255,255,0.03)", cursor: "not-allowed" }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="form-group" style={{ width: 120 }}>
+                <label className="form-label">Año de Lanzamiento</label>
+                <input
+                  type="number"
+                  value={editAnio}
+                  onChange={(e) => setEditAnio(e.target.value)}
+                  placeholder="Ej: 2026"
+                  className="admin-form-input"
+                  min="1800"
+                  max="2100"
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">MusicBrainz ID (MBID)</label>
+                <input
+                  type="text"
+                  value={editMbid}
+                  onChange={(e) => setEditMbid(e.target.value)}
+                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                  className="admin-form-input"
+                  style={{ fontFamily: "monospace" }}
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Deezer Album ID</label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input
+                    type="text"
+                    value={editDeezerId}
+                    onChange={(e) => setEditDeezerId(e.target.value)}
+                    placeholder="Ej: 302127"
+                    className="admin-form-input"
+                    style={{ flex: 1 }}
+                  />
+                  <button className="admin-btn admin-btn-secondary" onClick={handlePreview} disabled={previewLoading}>
+                    {previewLoading ? "Buscando..." : "Previsualizar"}
+                  </button>
+                </div>
+              </div>
+
+              {previewData && (
+                <div className="admin-preview-card">
+                  {previewData.portada_url && (
+                    <img src={previewData.portada_url} alt="Cover Preview" className="admin-preview-img-rect" />
+                  )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: "#ffffff" }}>{previewData.titulo}</div>
+                    <div style={{ fontSize: 12, color: "#9ca3af" }}>
+                      {previewData.artista_nombre || "Artista Desconocido"} {previewData.anio ? `• ${previewData.anio}` : ""}
+                    </div>
+                  </div>
+                  <Check size={20} style={{ color: "#d95840", flexShrink: 0 }} />
+                </div>
+              )}
+
+              {error && (
+                <div style={{ color: "#d95840", fontSize: 13, fontWeight: 500 }}>
+                  ⚠️ {error}
+                </div>
+              )}
+            </div>
+            <div className="admin-modal-footer">
+              <button className="admin-btn admin-btn-secondary" onClick={() => setModalOpen(false)}>
+                Cancelar
+              </button>
+              <button className="admin-btn admin-btn-primary" onClick={handleSave} disabled={saving}>
+                {saving ? "Guardando..." : "Guardar Cambios"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
