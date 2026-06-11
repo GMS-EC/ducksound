@@ -777,6 +777,7 @@ def admin_estadisticas():
         return jsonify({'error': 'Unauthorized'}), 401
 
     from app.models import HistorialEscucha
+    import shutil
     
     resumen = {
         'usuarios': Usuario.query.count(),
@@ -811,14 +812,89 @@ def admin_estadisticas():
 
     # Canciones agregadas recientemente
     canciones_recientes = Cancion.query.order_by(Cancion.fecha_agregada.desc()).limit(8).all()
-    
+
+    # Actividad de escucha reciente (últimas 15 reproducciones)
+    recientes = HistorialEscucha.query.order_by(HistorialEscucha.reproducido_en.desc()).limit(15).all()
+    actividad_reciente = []
+    for r in recientes:
+        actividad_reciente.append({
+            'id': r.id,
+            'nombre_usuario': r.usuario.nombre_usuario if r.usuario else 'Desconocido',
+            'cancion_titulo': r.cancion.titulo if r.cancion else 'Desconocido',
+            'artista_nombre': r.cancion.artista_obj.nombre if r.cancion and r.cancion.artista_obj else 'Desconocido',
+            'reproducido_en': r.reproducido_en.isoformat() if r.reproducido_en else None,
+            'skip': r.skip
+        })
+
+    # Información de disco del volumen de datos
+    data_dir = '/data' if os.path.exists('/data') else '.'
+    disk_total, disk_used, disk_free = shutil.disk_usage(data_dir)
+    disk_usage = {
+        'total': disk_total,
+        'used': disk_used,
+        'free': disk_free,
+        'percent': round((disk_used / disk_total) * 100, 1) if disk_total > 0 else 0
+    }
+
+    # Información de tamaños de caché
+    transcode_size = 0
+    original_size = 0
+    try:
+        if Config.TRANSCODE_CACHE_FOLDER.exists():
+            transcode_size = sum(f.stat().st_size for f in Config.TRANSCODE_CACHE_FOLDER.glob('**/*') if f.is_file())
+        if Config.ORIGINAL_CACHE_FOLDER.exists():
+            original_size = sum(f.stat().st_size for f in Config.ORIGINAL_CACHE_FOLDER.glob('**/*') if f.is_file())
+    except Exception as e:
+        current_app.logger.warning(f"Error al calcular tamaños de caché: {e}")
+
     return jsonify({
         'resumen': resumen, 
         'canciones_recientes': [c.to_dict() for c in canciones_recientes],
         'top_songs': [{'cancion': c.to_dict(), 'plays': p} for c, p in top_songs],
         'top_artist': {'artista': top_artist[0].to_dict(), 'plays': top_artist[1]} if top_artist else None,
-        'top_genre': {'genero': top_genre[0], 'plays': top_genre[1]} if top_genre else None
+        'top_genre': {'genero': top_genre[0], 'plays': top_genre[1]} if top_genre else None,
+        'actividad_reciente': actividad_reciente,
+        'disk_usage': disk_usage,
+        'cache': {
+            'transcode_size': transcode_size,
+            'original_size': original_size,
+            'total_size': transcode_size + original_size
+        }
     })
+
+
+@admin_bp.route('/admin/cache/clear', methods=['POST'])
+def admin_clear_cache():
+    """
+    Vacía las carpetas de caché local de audio transcodificado y original.
+    """
+    if not _is_admin_request():
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    try:
+        transcode_folder = Config.TRANSCODE_CACHE_FOLDER
+        original_folder = Config.ORIGINAL_CACHE_FOLDER
+        
+        transcode_count = 0
+        if transcode_folder.exists():
+            for f in transcode_folder.iterdir():
+                if f.is_file():
+                    f.unlink()
+                    transcode_count += 1
+                    
+        original_count = 0
+        if original_folder.exists():
+            for f in original_folder.iterdir():
+                if f.is_file():
+                    f.unlink()
+                    original_count += 1
+                    
+        return jsonify({
+            'success': True,
+            'message': f'Caché vaciado. Se eliminaron {transcode_count} archivos de transcodificación y {original_count} archivos originales.'
+        })
+    except Exception as e:
+        return jsonify({'error': f'Error al vaciar caché: {str(e)}'}), 500
 
 
 # ==============================================================================
@@ -828,13 +904,27 @@ def admin_estadisticas():
 @admin_bp.route('/admin/usuarios', methods=['GET'])
 def admin_usuarios_list():
     """
-    Renderiza el Panel de Gestión de Usuarios y lista todas las cuentas registradas.
+    Renderiza el Panel de Gestión de Usuarios y lista todas las cuentas registradas con metadatos enriquecidos.
     """
     if not _is_admin_request():
         return jsonify({'error': 'Unauthorized'}), 401
 
     usuarios = Usuario.query.all()
-    return jsonify({'usuarios': [u.to_dict() for u in usuarios]})
+    res = []
+    for u in usuarios:
+        d = u.to_dict()
+        d['fecha_creacion'] = u.fecha_creacion.isoformat() if u.fecha_creacion else None
+        d['sesiones_activas'] = u.sesiones.count()
+        
+        # Buscar última actividad
+        last_active = None
+        for s in u.sesiones:
+            if not last_active or (s.ultima_actividad and s.ultima_actividad > last_active):
+                last_active = s.ultima_actividad
+        d['ultima_actividad'] = last_active.isoformat() if last_active else None
+        res.append(d)
+
+    return jsonify({'usuarios': res})
 
 
 @admin_bp.route('/admin/usuarios/crear', methods=['POST'])
@@ -864,13 +954,93 @@ def admin_crear_usuario():
     nuevo_usuario.set_password(password)
     db.session.add(nuevo_usuario)
     db.session.commit()
+    return jsonify({'success': True, 'message': 'Usuario creado correctamente'})
 
-    return jsonify({
-        'id': nuevo_usuario.id,
-        'nombre_usuario': nuevo_usuario.nombre_usuario,
-        'role': nuevo_usuario.role,
-        'message': 'Usuario creado exitosamente'
-    }), 201
+
+@admin_bp.route('/admin/usuarios/<int:user_id>/editar', methods=['POST'])
+def admin_editar_usuario(user_id):
+    """
+    Edita la información de un usuario (nombre, contraseña o rol).
+    """
+    if not _is_admin_request():
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    usuario = db.session.get(Usuario, user_id)
+    if not usuario:
+        return jsonify({'error': 'Usuario no encontrado'}), 404
+
+    data = request.get_json() or {}
+    nombre_usuario = data.get('nombre_usuario', '').strip()
+    password = data.get('password', '').strip()
+    role = data.get('role', 'user')
+
+    if nombre_usuario:
+        existente = Usuario.query.filter_by(nombre_usuario=nombre_usuario).first()
+        if existente and existente.id != user_id:
+            return jsonify({'error': 'El nombre de usuario ya está en uso'}), 400
+        usuario.nombre_usuario = nombre_usuario
+
+    if password:
+        if len(password) < 6:
+            return jsonify({'error': 'La contraseña debe tener al menos 6 caracteres'}), 400
+        usuario.set_password(password)
+
+    # Prevenir que un admin se quite privilegios a sí mismo
+    from flask import session
+    current_user_id = session.get('user_id')
+    if usuario.id == current_user_id and role != 'admin':
+        return jsonify({'error': 'No puedes quitarte el rol de administrador a ti mismo'}), 400
+
+    usuario.role = role
+
+    try:
+        db.session.commit()
+        return jsonify({'success': True, 'message': 'Usuario actualizado correctamente'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Error al actualizar usuario: {str(e)}'}), 500
+
+
+@admin_bp.route('/admin/usuarios/<int:user_id>/eliminar', methods=['POST'])
+def admin_eliminar_usuario(user_id):
+    """
+    Elimina a un usuario y realiza una limpieza en cascada.
+    """
+    if not _is_admin_request():
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    usuario = db.session.get(Usuario, user_id)
+    if not usuario:
+        return jsonify({'error': 'Usuario no encontrado'}), 404
+
+    from flask import session
+    current_user_id = session.get('user_id')
+    if usuario.id == current_user_id:
+        return jsonify({'error': 'No puedes eliminar tu propia cuenta de administrador'}), 400
+
+    try:
+        from app.models import SesionActiva, Favorito, Coleccion, HistorialEscucha, DailyMix, daily_mix_canciones
+        
+        # Eliminar relaciones
+        SesionActiva.query.filter_by(usuario_id=user_id).delete()
+        Favorito.query.filter_by(usuario_id=user_id).delete()
+        Coleccion.query.filter_by(usuario_id=user_id).delete()
+        HistorialEscucha.query.filter_by(usuario_id=user_id).delete()
+        
+        # Eliminar Daily Mixes y sus asociaciones
+        mixes = DailyMix.query.filter_by(usuario_id=user_id).all()
+        for m in mixes:
+            db.session.execute(
+                daily_mix_canciones.delete().where(daily_mix_canciones.c.mix_id == m.id)
+            )
+            db.session.delete(m)
+
+        db.session.delete(usuario)
+        db.session.commit()
+        return jsonify({'success': True, 'message': 'Usuario eliminado correctamente'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Error al eliminar usuario: {str(e)}'}), 500
 
 
 # ==============================================================================

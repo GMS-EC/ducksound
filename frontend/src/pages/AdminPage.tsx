@@ -4,8 +4,6 @@ import {
 } from "lucide-react";
 import client from "../api/client";
 
-type Tab = "stats" | "scan" | "users" | "lyrics" | "artists" | "albums" | "system";
-
 interface ScanTask {
   task_id: string;
   status: string;
@@ -16,44 +14,96 @@ interface ScanTask {
   current_file?: string;
   summary?: any;
 }
+type MainTab = "stats" | "musicas" | "users" | "system";
+type MusicSubTab = "scan" | "artists" | "albums" | "lyrics";
 
 export default function AdminPage() {
-  const [tab, setTab] = useState<Tab>("stats");
-  const tabs: { id: Tab; label: string; icon: any }[] = [
+  const [mainTab, setMainTab] = useState<MainTab>("stats");
+  const [musicSubTab, setMusicSubTab] = useState<MusicSubTab>("scan");
+  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+
+  useEffect(() => {
+    client.get("/profile")
+      .then((res) => {
+        if (res.data && res.data.usuario) {
+          setCurrentUserId(res.data.usuario.id);
+        }
+      })
+      .catch(console.error);
+  }, []);
+
+  const mainTabs = [
     { id: "stats", label: "Estadísticas", icon: BarChart3 },
+    { id: "musicas", label: "Músicas", icon: Music },
+    { id: "users", label: "Usuarios", icon: Users },
+    { id: "system", label: "Sistema", icon: RefreshCw },
+  ] as const;
+
+  const musicSubTabs = [
     { id: "scan", label: "Escaneo", icon: Scan },
     { id: "artists", label: "Artistas", icon: User },
     { id: "albums", label: "Álbumes", icon: Disc },
-    { id: "users", label: "Usuarios", icon: Users },
     { id: "lyrics", label: "Letras", icon: FileText },
-    { id: "system", label: "Sistema", icon: RefreshCw },
-  ];
+  ] as const;
 
   return (
-    <div className="page-wrapper">
+    <div className="page-wrapper" style={{ maxWidth: 1000, margin: "0 auto" }}>
       <div className="page-header" style={{ paddingBottom: 0 }}>
         <h1 className="page-title" style={{ marginBottom: 24 }}>Panel de administración</h1>
       </div>
       <div style={{ padding: "0 32px 32px" }}>
-        <div className="admin-tabs">
-          {tabs.map((t) => (
+        <div className="admin-tabs" style={{ display: "flex", gap: 12, marginBottom: 24 }}>
+          {mainTabs.map((t) => (
             <button
               key={t.id}
-              onClick={() => setTab(t.id)}
-              className={"admin-tab" + (tab === t.id ? " active" : "")}
+              onClick={() => setMainTab(t.id)}
+              className={"admin-tab" + (mainTab === t.id ? " active" : "")}
             >
               <t.icon size={16} />
               {t.label}
             </button>
           ))}
         </div>
-        {tab === "stats" && <StatsTab />}
-        {tab === "scan" && <ScanTab />}
-        {tab === "artists" && <ArtistsTab />}
-        {tab === "albums" && <AlbumsTab />}
-        {tab === "users" && <UsersTab />}
-        {tab === "lyrics" && <LyricsTab />}
-        {tab === "system" && <SystemTab />}
+
+        {mainTab === "stats" && <StatsTab />}
+        
+        {mainTab === "musicas" && (
+          <div>
+            <div className="admin-subtabs" style={{ display: "flex", gap: 8, marginBottom: 20, borderBottom: "1px solid rgba(255,255,255,0.06)", paddingBottom: 12 }}>
+              {musicSubTabs.map((st) => (
+                <button
+                  key={st.id}
+                  onClick={() => setMusicSubTab(st.id)}
+                  className={"admin-subtab" + (musicSubTab === st.id ? " active" : "")}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "6px 12px",
+                    borderRadius: "20px",
+                    fontSize: "13px",
+                    fontWeight: 500,
+                    cursor: "pointer",
+                    background: musicSubTab === st.id ? "rgba(217,88,64,0.12)" : "transparent",
+                    color: musicSubTab === st.id ? "#d95840" : "#9ca3af",
+                    border: musicSubTab === st.id ? "1px solid #d95840" : "1px solid rgba(255,255,255,0.06)",
+                    transition: "all 0.2s ease",
+                  }}
+                >
+                  <st.icon size={14} />
+                  {st.label}
+                </button>
+              ))}
+            </div>
+            {musicSubTab === "scan" && <ScanTab />}
+            {musicSubTab === "artists" && <ArtistsTab />}
+            {musicSubTab === "albums" && <AlbumsTab />}
+            {musicSubTab === "lyrics" && <LyricsTab />}
+          </div>
+        )}
+
+        {mainTab === "users" && <UsersTab currentUserId={currentUserId} />}
+        {mainTab === "system" && <SystemTab />}
       </div>
     </div>
   );
@@ -62,42 +112,194 @@ export default function AdminPage() {
 function StatsTab() {
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  useEffect(() => {
+  const [clearingCache, setClearingCache] = useState(false);
+
+  const fetchStats = () => {
     client.get("/admin/estadisticas")
       .then((res) => setStats(res.data))
       .catch(console.error)
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchStats();
   }, []);
-  if (loading) return <div style={{ color: "#9ca3af" }}>Cargando...</div>;
-  if (!stats) return <div style={{ color: "#9ca3af" }}>Error al cargar estadísticas</div>;
+
+  const handleClearCache = async () => {
+    if (!window.confirm("¿Estás seguro de que deseas vaciar las cachés de audio? Esto eliminará todos los archivos locales copiados y transcodificados. Se volverán a generar al vuelo cuando se reproduzcan.")) return;
+    setClearingCache(true);
+    try {
+      const res = await client.post("/admin/cache/clear");
+      alert(res.data.message || "Caché vaciado con éxito");
+      fetchStats();
+    } catch (e: any) {
+      alert(e.response?.data?.error || "Error al vaciar caché");
+    } finally {
+      setClearingCache(false);
+    }
+  };
+
+  const formatBytes = (bytes: number) => {
+    if (bytes === 0) return "0 Bytes";
+    const k = 1024;
+    const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+  };
+
+  if (loading) return <div style={{ color: "#9ca3af", marginTop: 24 }}>Cargando estadísticas...</div>;
+  if (!stats) return <div style={{ color: "#9ca3af", marginTop: 24 }}>Error al cargar estadísticas</div>;
+
   const items = [
-    { label: "Usuarios", value: stats.resumen?.usuarios },
-    { label: "Artistas", value: stats.resumen?.artistas },
-    { label: "Álbumes", value: stats.resumen?.albums },
-    { label: "Canciones", value: stats.resumen?.canciones },
-    { label: "Reproducciones", value: stats.resumen?.total_plays },
-    { label: "Colecciones", value: stats.resumen?.colecciones },
-    { label: "Favoritos", value: stats.resumen?.favoritos },
+    { label: "Usuarios", value: stats.resumen?.usuarios, icon: "👥" },
+    { label: "Artistas", value: stats.resumen?.artistas, icon: "🧑‍🎤" },
+    { label: "Álbumes", value: stats.resumen?.albums, icon: "💿" },
+    { label: "Canciones", value: stats.resumen?.canciones, icon: "🎵" },
+    { label: "Reproducciones", value: stats.resumen?.total_plays, icon: "📈" },
+    { label: "Colecciones", value: stats.resumen?.colecciones, icon: "📂" },
+    { label: "Favoritos", value: stats.resumen?.favoritos, icon: "❤️" },
   ];
+
   return (
-    <div style={{ marginTop: 24 }}>
-      <div className="admin-grid">
+    <div style={{ marginTop: 12 }}>
+      {/* Resumen General */}
+      <div className="admin-grid" style={{ marginBottom: 20 }}>
         {items.map((item) => (
-          <div key={item.label} className="stat-card">
-            <p className="stat-value" style={{ color: "#d95840" }}>{item.value ?? "—"}</p>
-            <p className="stat-label">{item.label}</p>
+          <div key={item.label} className="stat-card" style={{ display: "flex", flexDirection: "column", justifyContent: "center", position: "relative" }}>
+            <span style={{ position: "absolute", top: 12, right: 12, fontSize: 16, opacity: 0.6 }}>{item.icon}</span>
+            <p className="stat-value" style={{ color: "#d95840", margin: "0 0 4px", fontSize: 24 }}>{item.value ?? "—"}</p>
+            <p className="stat-label" style={{ margin: 0, fontSize: 12 }}>{item.label}</p>
           </div>
         ))}
       </div>
+
+      {/* Highlights: Top Artista & Genero */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16, marginBottom: 24 }}>
+        {stats.top_artist && (
+          <div className="admin-card" style={{ padding: 16, display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ fontSize: 24 }}>👑</div>
+            <div>
+              <div style={{ fontSize: 11, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5 }}>Artista más escuchado</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "#ffffff", marginTop: 2 }}>{stats.top_artist.artista?.nombre}</div>
+              <div style={{ fontSize: 12, color: "#d95840", marginTop: 2 }}>{stats.top_artist.plays} reproducciones</div>
+            </div>
+          </div>
+        )}
+        {stats.top_genre && (
+          <div className="admin-card" style={{ padding: 16, display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ fontSize: 24 }}>🔥</div>
+            <div>
+              <div style={{ fontSize: 11, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5 }}>Género más escuchado</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "#ffffff", textTransform: "capitalize", marginTop: 2 }}>{stats.top_genre.genero}</div>
+              <div style={{ fontSize: 12, color: "#d95840", marginTop: 2 }}>{stats.top_genre.plays} pistas reproducidas</div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Almacenamiento y Caché */}
+      {stats.disk_usage && (
+        <section className="profile-section" style={{ marginTop: 24, marginBottom: 24 }}>
+          <div className="admin-section-title">Almacenamiento y Caché</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 20, marginTop: 12 }}>
+            <div className="admin-card" style={{ padding: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 13, color: "#eaeaea" }}>
+                <span>Uso de espacio de almacenamiento (`/data`)</span>
+                <span style={{ fontWeight: 600 }}>{stats.disk_usage.percent}%</span>
+              </div>
+              <div className="scan-progress-bar" style={{ height: 8, marginBottom: 8, background: "rgba(255,255,255,0.06)" }}>
+                <div className="scan-progress-fill" style={{ width: `${stats.disk_usage.percent}%`, background: stats.disk_usage.percent > 90 ? "#ef4444" : "#d95840" }} />
+              </div>
+              <div style={{ fontSize: 12, color: "#9ca3af", display: "flex", justifyContent: "space-between" }}>
+                <span>{formatBytes(stats.disk_usage.used)} usados</span>
+                <span>{formatBytes(stats.disk_usage.total)} totales ({formatBytes(stats.disk_usage.free)} libres)</span>
+              </div>
+            </div>
+            <div className="admin-card" style={{ padding: 20, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+              <div style={{ fontSize: 13, color: "#9ca3af" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                  <span>Caché de Transcodificaciones:</span>
+                  <span style={{ color: "#ffffff", fontWeight: 500 }}>{formatBytes(stats.cache?.transcode_size ?? 0)}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                  <span>Caché de Archivos Originales:</span>
+                  <span style={{ color: "#ffffff", fontWeight: 500 }}>{formatBytes(stats.cache?.original_size ?? 0)}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 600, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 6, marginTop: 6 }}>
+                  <span style={{ color: "#eaeaea" }}>Caché total:</span>
+                  <span style={{ color: "#d95840" }}>{formatBytes(stats.cache?.total_size ?? 0)}</span>
+                </div>
+              </div>
+              <button 
+                className="admin-btn admin-btn-warning" 
+                style={{ alignSelf: "flex-end", marginTop: 12, padding: "6px 12px", fontSize: 12 }}
+                onClick={handleClearCache}
+                disabled={clearingCache}
+              >
+                {clearingCache ? "Vaciando..." : "Vaciar caché"}
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Actividad de escucha reciente */}
+      {stats.actividad_reciente && stats.actividad_reciente.length > 0 && (
+        <section className="profile-section" style={{ marginTop: 24, marginBottom: 24 }}>
+          <div className="admin-section-title">Actividad de escucha reciente</div>
+          <div className="admin-table-container" style={{ marginTop: 12, maxHeight: 300, overflowY: "auto", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8 }}>
+            <table className="admin-table" style={{ fontSize: 12, borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <th style={{ padding: "12px 16px" }}>Usuario</th>
+                  <th>Canción</th>
+                  <th>Artista</th>
+                  <th>Fecha y hora</th>
+                  <th style={{ textAlign: "right", padding: "12px 16px" }}>Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stats.actividad_reciente.map((act: any) => (
+                  <tr key={act.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                    <td style={{ fontWeight: 600, color: "#ffffff", padding: "12px 16px" }}>{act.nombre_usuario}</td>
+                    <td style={{ color: "#eaeaea" }}>{act.cancion_titulo}</td>
+                    <td style={{ color: "#9ca3af" }}>{act.artista_nombre}</td>
+                    <td style={{ color: "#6b7280" }}>{new Date(act.reproducido_en).toLocaleString()}</td>
+                    <td style={{ textAlign: "right", padding: "12px 16px" }}>
+                      <span 
+                        style={{
+                          padding: "2px 8px",
+                          borderRadius: "4px",
+                          fontSize: "10px",
+                          fontWeight: 700,
+                          background: act.skip ? "rgba(239,68,68,0.12)" : "rgba(74,222,128,0.12)",
+                          color: act.skip ? "#ef4444" : "#4ade80",
+                        }}
+                      >
+                        {act.skip ? "SALTADA" : "COMPLETA"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {/* Top Canciones */}
       {stats.top_songs && stats.top_songs.length > 0 && (
-        <section className="profile-section" style={{ marginTop: 20 }}>
-          <div className="admin-section-title">Top canciones</div>
-          <div>
+        <section className="profile-section" style={{ marginTop: 24 }}>
+          <div className="admin-section-title">Top canciones reproducidas</div>
+          <div className="admin-card" style={{ marginTop: 12, padding: 16 }}>
             {stats.top_songs.map((item: any, i: number) => (
-              <div key={i} className="track-item-grid" style={{ gridTemplateColumns: "20px 1fr 60px" }}>
-                <span className="track-num-sm">{i + 1}</span>
-                <span style={{ color: "#eaeaea", fontSize: 13 }}>{item.cancion?.titulo || "?"}</span>
-                <span style={{ color: "#9ca3af", fontSize: 12, textAlign: "right" }}>{item.plays} plays</span>
+              <div key={i} className="track-item-grid" style={{ gridTemplateColumns: "30px 1fr 100px", padding: "8px 0", borderBottom: i < stats.top_songs.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none" }}>
+                <span className="track-num-sm" style={{ fontWeight: 700, color: i < 3 ? "#d95840" : "#6b7280" }}>{i + 1}</span>
+                <div>
+                  <div style={{ color: "#ffffff", fontSize: 13, fontWeight: 500 }}>{item.cancion?.titulo || "?"}</div>
+                  <div style={{ color: "#9ca3af", fontSize: 11, marginTop: 2 }}>{item.cancion?.artista?.nombre || "Artista Desconocido"}</div>
+                </div>
+                <span style={{ color: "#d95840", fontSize: 12, fontWeight: 600, textAlign: "right", alignSelf: "center" }}>{item.plays} plays</span>
               </div>
             ))}
           </div>
@@ -244,19 +446,31 @@ function ScanTab() {
   );
 }
 
-function UsersTab() {
+interface UsersTabProps {
+  currentUserId: number | null;
+}
+
+function UsersTab({ currentUserId }: UsersTabProps) {
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [newUser, setNewUser] = useState({ nombre_usuario: "", password: "", role: "user" });
+  
+  // Edit User states
+  const [editingUser, setEditingUser] = useState<any | null>(null);
+  const [editPassword, setEditPassword] = useState("");
 
   const fetchUsers = () => {
+    setLoading(true);
     client.get("/admin/usuarios")
       .then((res) => setUsers(res.data.usuarios || []))
       .catch(console.error)
       .finally(() => setLoading(false));
   };
-  useEffect(() => { fetchUsers(); }, []);
+  
+  useEffect(() => { 
+    fetchUsers(); 
+  }, []);
 
   const createUser = async () => {
     try {
@@ -264,45 +478,209 @@ function UsersTab() {
       setShowCreate(false);
       setNewUser({ nombre_usuario: "", password: "", role: "user" });
       fetchUsers();
-    } catch (e: any) { alert(e.response?.data?.error || "Error al crear usuario"); }
+    } catch (e: any) { 
+      alert(e.response?.data?.error || "Error al crear usuario"); 
+    }
   };
 
-  if (loading) return <div style={{ color: "#9ca3af", marginTop: 24 }}>Cargando...</div>;
+  const handleEditUser = (user: any) => {
+    setEditingUser({ ...user });
+    setEditPassword("");
+  };
+
+  const saveEditedUser = async () => {
+    if (!editingUser) return;
+    try {
+      await client.post(`/admin/usuarios/${editingUser.id}/editar`, {
+        nombre_usuario: editingUser.nombre_usuario,
+        password: editPassword,
+        role: editingUser.role
+      });
+      setEditingUser(null);
+      fetchUsers();
+    } catch (e: any) {
+      alert(e.response?.data?.error || "Error al editar usuario");
+    }
+  };
+
+  const deleteUser = async (user: any) => {
+    if (user.id === currentUserId) {
+      alert("No puedes eliminar tu propia cuenta de administrador.");
+      return;
+    }
+    if (!window.confirm(`¿Estás seguro de que deseas eliminar permanentemente al usuario "${user.nombre_usuario}"? Esta acción limpiará todo su historial, favoritos y sesiones.`)) {
+      return;
+    }
+    try {
+      await client.post(`/admin/usuarios/${user.id}/eliminar`);
+      fetchUsers();
+    } catch (e: any) {
+      alert(e.response?.data?.error || "Error al eliminar usuario");
+    }
+  };
+
+  if (loading) return <div style={{ color: "#9ca3af", marginTop: 24 }}>Cargando usuarios...</div>;
 
   return (
-    <div style={{ marginTop: 24 }}>
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
+    <div style={{ marginTop: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <h2 style={{ fontSize: 16, fontWeight: 600, color: "#ffffff", margin: 0 }}>Cuentas de DuckSound</h2>
         <button className="admin-btn admin-btn-primary" onClick={() => setShowCreate(!showCreate)}>
           {showCreate ? "Cancelar" : "Nuevo usuario"}
         </button>
       </div>
+
       {showCreate && (
-        <div className="profile-section" style={{ marginBottom: 20 }}>
-          <input type="text" placeholder="Usuario" className="admin-form-input" style={{ marginBottom: 12 }}
-            value={newUser.nombre_usuario} onChange={(e) => setNewUser({ ...newUser, nombre_usuario: e.target.value })} />
-          <input type="password" placeholder="Contraseña (6+ caracteres)" className="admin-form-input" style={{ marginBottom: 12 }}
-            value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} />
-          <select className="admin-form-select" style={{ marginBottom: 12, display: "block" }}
-            value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}>
-            <option value="user">Usuario</option>
-            <option value="admin">Administrador</option>
-          </select>
-          <button className="admin-btn admin-btn-primary" onClick={createUser}>Crear</button>
+        <div className="admin-card" style={{ marginBottom: 24, padding: 20, maxWidth: 480 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 600, color: "#ffffff", margin: "0 0 16px" }}>Crear Nueva Cuenta</h3>
+          <div className="form-group" style={{ marginBottom: 12 }}>
+            <label className="form-label">Nombre de usuario</label>
+            <input type="text" placeholder="Usuario" className="admin-form-input"
+              value={newUser.nombre_usuario} onChange={(e) => setNewUser({ ...newUser, nombre_usuario: e.target.value })} />
+          </div>
+          <div className="form-group" style={{ marginBottom: 12 }}>
+            <label className="form-label">Contraseña</label>
+            <input type="password" placeholder="Contraseña (mínimo 6 caracteres)" className="admin-form-input"
+              value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} />
+          </div>
+          <div className="form-group" style={{ marginBottom: 16 }}>
+            <label className="form-label">Rol del usuario</label>
+            <select className="admin-form-select"
+              value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}>
+              <option value="user">Usuario Estándar</option>
+              <option value="admin">Administrador</option>
+            </select>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="admin-btn admin-btn-primary" onClick={createUser}>Crear Usuario</button>
+            <button className="admin-btn admin-btn-secondary" onClick={() => setShowCreate(false)}>Cancelar</button>
+          </div>
         </div>
       )}
-      <div className="admin-card">
-        {users.map((u) => (
-          <div key={u.id} className="admin-user-row">
-            <div>
-              <p style={{ fontSize: 14, color: "#ffffff", margin: 0 }}>{u.nombre_usuario}</p>
-              <p style={{ fontSize: 12, color: "#9ca3af", margin: "2px 0 0" }}>{u.role === "admin" ? "Administrador" : "Usuario"}</p>
+
+      {/* Grid de Tarjetas de Usuario */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
+        {users.map((u) => {
+          const initials = u.nombre_usuario.substring(0, 2).toUpperCase();
+          const isSelf = u.id === currentUserId;
+          return (
+            <div key={u.id} className="admin-card" style={{ padding: 20, display: "flex", flexDirection: "column", justifyContent: "space-between", border: isSelf ? "1px solid #d95840" : "1px solid rgba(255,255,255,0.06)" }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+                  <div style={{ width: 44, height: 44, borderRadius: "50%", background: isSelf ? "rgba(217,88,64,0.15)" : "#2a2a33", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 700, color: isSelf ? "#d95840" : "#eaeaea", border: "1px solid rgba(255,255,255,0.06)" }}>
+                    {initials}
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontWeight: 700, color: "#ffffff", fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={u.nombre_usuario}>
+                        {u.nombre_usuario}
+                      </span>
+                      {isSelf && (
+                        <span style={{ fontSize: 10, background: "rgba(217,88,64,0.2)", color: "#d95840", padding: "1px 4px", borderRadius: 4, fontWeight: 600 }}>TÚ</span>
+                      )}
+                    </div>
+                    <span className={"admin-badge " + (u.role === "admin" ? "admin-badge-admin" : "admin-badge-user")} style={{ marginTop: 4, display: "inline-block" }}>
+                      {u.role === "admin" ? "Administrador" : "Usuario"}
+                    </span>
+                  </div>
+                </div>
+
+                <div style={{ fontSize: 12, color: "#9ca3af", display: "flex", flexDirection: "column", gap: 6, borderTop: "1px solid rgba(255,255,255,0.04)", paddingTop: 12, marginBottom: 16 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span>Registrado:</span>
+                    <span style={{ color: "#ffffff" }}>{u.fecha_creacion ? new Date(u.fecha_creacion).toLocaleDateString() : "—"}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span>Sesiones activas:</span>
+                    <span style={{ color: u.sesiones_activas > 0 ? "#4ade80" : "#9ca3af", fontWeight: 600 }}>
+                      {u.sesiones_activas} {u.sesiones_activas === 1 ? "sesión" : "sesiones"}
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span>Última actividad:</span>
+                    <span style={{ color: "#ffffff", textAlign: "right" }}>
+                      {u.ultima_actividad ? new Date(u.ultima_actividad).toLocaleString() : "Sin actividad"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: 8, borderTop: "1px solid rgba(255,255,255,0.04)", paddingTop: 12 }}>
+                <button className="admin-btn admin-btn-secondary" style={{ flex: 1, padding: "6px 0", fontSize: 12 }} onClick={() => handleEditUser(u)}>
+                  Editar
+                </button>
+                <button 
+                  className="admin-btn admin-btn-danger" 
+                  style={{ flex: 1, padding: "6px 0", fontSize: 12, borderColor: isSelf ? "rgba(255,255,255,0.02)" : "", opacity: isSelf ? 0.3 : 1, cursor: isSelf ? "not-allowed" : "pointer" }}
+                  onClick={() => deleteUser(u)}
+                  disabled={isSelf}
+                >
+                  Eliminar
+                </button>
+              </div>
             </div>
-            <span className={"admin-badge " + (u.role === "admin" ? "admin-badge-admin" : "admin-badge-user")}>
-              {u.role}
-            </span>
-          </div>
-        ))}
+          );
+        })}
       </div>
+
+      {/* Modal de Edición de Usuario */}
+      {editingUser && (
+        <div className="admin-modal-overlay" onClick={() => setEditingUser(null)}>
+          <div className="admin-modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
+            <div className="admin-modal-header">
+              <h3>Editar Cuenta: {editingUser.nombre_usuario}</h3>
+              <button className="admin-btn-icon" style={{ border: "none", background: "none" }} onClick={() => setEditingUser(null)}>✕</button>
+            </div>
+            <div className="admin-modal-body">
+              <div className="form-group" style={{ marginBottom: 12 }}>
+                <label className="form-label">Nombre de usuario</label>
+                <input
+                  type="text"
+                  value={editingUser.nombre_usuario}
+                  onChange={(e) => setEditingUser({ ...editingUser, nombre_usuario: e.target.value })}
+                  className="admin-form-input"
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 12 }}>
+                <label className="form-label">Nueva contraseña</label>
+                <input
+                  type="password"
+                  value={editPassword}
+                  onChange={(e) => setEditPassword(e.target.value)}
+                  placeholder="Dejar en blanco para no cambiar"
+                  className="admin-form-input"
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 12 }}>
+                <label className="form-label">Rol del usuario</label>
+                <select
+                  value={editingUser.role}
+                  onChange={(e) => setEditingUser({ ...editingUser, role: e.target.value })}
+                  className="admin-form-select"
+                  disabled={editingUser.id === currentUserId}
+                  style={{ opacity: editingUser.id === currentUserId ? 0.5 : 1, cursor: editingUser.id === currentUserId ? "not-allowed" : "pointer" }}
+                >
+                  <option value="user">Usuario Estándar</option>
+                  <option value="admin">Administrador</option>
+                </select>
+                {editingUser.id === currentUserId && (
+                  <p style={{ fontSize: 11, color: "#9ca3af", margin: "4px 0 0" }}>No puedes degradar tu propio rol de administrador.</p>
+                )}
+              </div>
+            </div>
+            <div className="admin-modal-footer">
+              <button className="admin-btn admin-btn-secondary" onClick={() => setEditingUser(null)}>
+                Cancelar
+              </button>
+              <button className="admin-btn admin-btn-primary" onClick={saveEditedUser}>
+                Guardar Cambios
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -416,47 +794,169 @@ function SystemTab() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <div style={{ color: "#9ca3af", marginTop: 24 }}>Cargando...</div>;
+  if (loading) return <div style={{ color: "#9ca3af", marginTop: 24 }}>Cargando información del sistema...</div>;
 
   return (
-    <div style={{ marginTop: 24, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 20 }}>
-      <div className="admin-card">
-        <div className="admin-card-header">Versión actual</div>
-        <div className="admin-card-body">
+    <div style={{ marginTop: 24, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 24 }}>
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.4; transform: scale(0.9); }
+        }
+      `}</style>
+      {/* Columna Izquierda: Información de Versión y Donación */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        {/* Tarjeta de Versión */}
+        <div className="admin-card" style={{ padding: 24, position: "relative", overflow: "hidden" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5 }}>Estado del Sistema</span>
+            {updateInfo && (
+              <span style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 12,
+                fontWeight: 600,
+                color: updateInfo.update_available ? "#d95840" : "#4ade80"
+              }}>
+                <span className="pulse-dot" style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  background: updateInfo.update_available ? "#d95840" : "#4ade80",
+                  display: "inline-block",
+                  animation: "pulse 1.8s infinite ease-in-out"
+                }} />
+                {updateInfo.update_available ? "Actualización disponible" : "Sistema al día"}
+              </span>
+            )}
+          </div>
+
           {updateInfo && (
-            <div>
-              <p style={{ fontSize: 24, fontWeight: 700, color: "#ffffff", margin: "0 0 8px" }}>{updateInfo.current}</p>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                <span style={{ fontSize: 36, fontWeight: 800, color: "#ffffff" }}>{updateInfo.current}</span>
+                <span style={{ fontSize: 13, color: "#6b7280" }}>versión activa</span>
+              </div>
+
               {updateInfo.update_available ? (
-                <p style={{ color: "#d95840", fontSize: 13 }}>⚠ Actualización disponible: {updateInfo.latest}</p>
+                <div style={{ marginTop: 12, padding: "12px 14px", background: "rgba(217, 88, 64, 0.06)", border: "1px solid rgba(217, 88, 64, 0.15)", borderRadius: 8 }}>
+                  <p style={{ color: "#d95840", fontSize: 12, margin: 0, fontWeight: 500 }}>
+                    La versión {updateInfo.latest} ya está disponible para su descarga.
+                  </p>
+                  {updateInfo.url && (
+                    <a href={updateInfo.url} target="_blank" rel="noopener noreferrer"
+                      className="admin-btn admin-btn-secondary"
+                      style={{ display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none", marginTop: 8, padding: "4px 10px", fontSize: 11 }}>
+                      Ver Release Notes ↗
+                    </a>
+                  )}
+                </div>
               ) : (
-                <p style={{ color: "#4ade80", fontSize: 13 }}>✔ Última versión</p>
-              )}
-              {updateInfo.url && (
-                <a href={updateInfo.url} target="_blank" rel="noopener noreferrer"
-                  style={{ color: "#d95840", fontSize: 13, textDecoration: "none", display: "inline-block", marginTop: 8 }}>
-                  Ver release
-                </a>
+                <p style={{ color: "#9ca3af", fontSize: 12, margin: "8px 0 0" }}>
+                  ¡Felicidades! Tienes instalada la versión oficial más reciente.
+                </p>
               )}
             </div>
           )}
         </div>
+
+        {/* Tarjeta de Apoyo / Sponsor */}
+        <div className="admin-card" style={{ 
+          padding: 24, 
+          background: "linear-gradient(145deg, #222229 0%, #1a1a20 100%)", 
+          border: "1px solid rgba(255, 255, 255, 0.06)",
+          position: "relative",
+          overflow: "hidden"
+        }}>
+          {/* Brillo decorativo */}
+          <div style={{ 
+            position: "absolute", 
+            top: "-30px", 
+            right: "-30px", 
+            width: 90, 
+            height: 90, 
+            borderRadius: "50%", 
+            background: "rgba(217, 88, 64, 0.12)", 
+            filter: "blur(20px)",
+            pointerEvents: "none"
+          }} />
+
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+            <span style={{ fontSize: 20 }}>💖</span>
+            <h3 style={{ fontSize: 15, fontWeight: 700, color: "#ffffff", margin: 0 }}>Apoyar a DuckSound</h3>
+          </div>
+
+          <p style={{ fontSize: 12, color: "#9ca3af", lineHeight: 1.6, margin: "0 0 18px" }}>
+            DuckSound es un software libre e independiente desarrollado con cariño. Si te gusta la plataforma y te resulta útil, considera hacer un aporte voluntario para apoyar el desarrollo y mantenimiento del proyecto.
+          </p>
+
+          <a 
+            href="https://app.takenos.com/pay/b6515307-a660-446d-8117-3214a4a89a80" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="admin-btn"
+            style={{ 
+              display: "flex", 
+              alignItems: "center", 
+              justifyContent: "center", 
+              gap: 8, 
+              textDecoration: "none", 
+              background: "linear-gradient(135deg, #e66740 0%, #d95840 100%)", 
+              color: "#ffffff", 
+              fontWeight: 600, 
+              padding: "10px 16px", 
+              borderRadius: 8,
+              fontSize: 13,
+              boxShadow: "0 4px 12px rgba(217, 88, 64, 0.2)",
+              transition: "transform 0.2s ease, box-shadow 0.2s ease",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = "translateY(-1.5px)";
+              e.currentTarget.style.boxShadow = "0 6px 16px rgba(217, 88, 64, 0.3)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = "none";
+              e.currentTarget.style.boxShadow = "0 4px 12px rgba(217, 88, 64, 0.2)";
+            }}
+          >
+            <span>Apoyar en Takenos</span>
+            <span>💝</span>
+          </a>
+        </div>
       </div>
-      <div className="admin-card" style={{ maxHeight: 400, overflowY: "auto" }}>
-        <div className="admin-card-header">Changelog</div>
-        <div className="admin-card-body">
-          {versions.map((v) => (
-            <div key={v.number} style={{ borderBottom: "1px solid rgba(255,255,255,0.06)", padding: "8px 0" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                <span style={{ fontSize: 14, fontWeight: 500, color: "#ffffff" }}>{v.number}</span>
-                {v.date && <span style={{ fontSize: 12, color: "#9ca3af" }}>{v.date}</span>}
-                {v.status === "current" && <span className="admin-badge admin-badge-admin">Actual</span>}
-                {v.status === "newer" && <span className="admin-badge" style={{ background: "rgba(217,88,64,0.15)", color: "#d95840" }}>Nuevo</span>}
+
+      {/* Columna Derecha: Changelog Completo */}
+      <div className="admin-card" style={{ display: "flex", flexDirection: "column", height: "fit-content", maxHeight: 520 }}>
+        <div className="admin-card-header" style={{ padding: "16px 20px", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#ffffff" }}>Historial de versiones (Changelog)</div>
+        </div>
+        <div style={{ padding: "0 20px", overflowY: "auto", flex: 1 }} className="admin-changelog-scroll">
+          {versions.map((v, idx) => (
+            <div key={v.number} style={{ 
+              borderBottom: idx < versions.length - 1 ? "1px solid rgba(255,255,255,0.06)" : "none", 
+              padding: "16px 0" 
+            }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: "#ffffff" }}>v{v.number}</span>
+                  {v.status === "current" && (
+                    <span className="admin-badge admin-badge-admin" style={{ fontSize: 10, padding: "1px 6px" }}>Activa</span>
+                  )}
+                  {v.status === "newer" && (
+                    <span className="admin-badge" style={{ background: "rgba(217,88,64,0.12)", color: "#d95840", fontSize: 10, padding: "1px 6px", border: "1px solid rgba(217,88,64,0.2)" }}>Nuevo</span>
+                  )}
+                </div>
+                {v.date && <span style={{ fontSize: 11, color: "#6b7280" }}>{v.date}</span>}
               </div>
+
               {v.sections?.map((s: any, i: number) => (
-                <div key={i} style={{ marginLeft: 8 }}>
-                  <p style={{ fontSize: 12, color: "#9ca3af", margin: "4px 0 2px" }}>{s.title}</p>
-                  <ul style={{ margin: 0, paddingLeft: 20, fontSize: 12, color: "#666" }}>
-                    {s.entries?.map((e: string, j: number) => <li key={j}>{e}</li>)}
+                <div key={i} style={{ marginTop: 8 }}>
+                  <p style={{ fontSize: 11, fontWeight: 600, color: "#eaeaea", margin: "0 0 4px", textTransform: "uppercase", letterSpacing: 0.5 }}>{s.title}</p>
+                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "#9ca3af", lineHeight: 1.5 }}>
+                    {s.entries?.map((e: string, j: number) => (
+                      <li key={j} style={{ marginBottom: 3 }}>{e}</li>
+                    ))}
                   </ul>
                 </div>
               ))}

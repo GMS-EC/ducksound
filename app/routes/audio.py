@@ -15,6 +15,9 @@ reproducción de sonido y metadatos multimedia de la plataforma:
 import os
 import io
 import re
+import threading
+import shutil
+import time
 from pathlib import Path
 from PIL import Image
 
@@ -28,6 +31,116 @@ from app.services.lyrics import obtener_o_descargar_letra
 # Definición del Blueprint de Audio
 audio_bp = Blueprint('audio', __name__)
 
+# Lock para sincronizar copia de archivos originales locales
+_copy_locks = {}
+_copy_lock_mutex = threading.Lock()
+
+def _get_copy_lock(cancion_id):
+    with _copy_lock_mutex:
+        if cancion_id not in _copy_locks:
+            _copy_locks[cancion_id] = threading.Lock()
+        return _copy_locks[cancion_id]
+
+def resolver_ruta_fisica(original_path):
+    """Resuelve la ruta física real de un archivo en disco."""
+    if not original_path:
+        return None
+    if os.path.exists(original_path):
+        return original_path
+        
+    # Conversión Heurística de rutas Windows montadas en volúmenes Docker/Linux
+    try:
+        p = original_path.replace('\\\\', '/').replace(':/', ':/')
+        m = re.match(r'^([A-Za-z]):/(.*)', p)
+        if m:
+            alt = '/music/' + m.group(2)
+            if os.path.exists(alt):
+                return alt
+    except Exception:
+        pass
+
+    # Intentar buscar como ruta relativa
+    rel = os.path.join(os.getcwd(), original_path)
+    if os.path.exists(rel):
+        return rel
+        
+    return None
+
+def copiar_archivo_original(cancion_id, src_path, dest_path):
+    """Copia un archivo de origen a la caché local de forma secuencial y atómica."""
+    lock = _get_copy_lock(cancion_id)
+    with lock:
+        if dest_path.exists() and dest_path.stat().st_size > 0:
+            return True
+            
+        temp_dest = Path(str(dest_path) + ".tmp")
+        try:
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+            if temp_dest.exists():
+                try:
+                    temp_dest.unlink()
+                except:
+                    pass
+            
+            with open(src_path, 'rb') as fsrc:
+                with open(temp_dest, 'wb') as fdst:
+                    while True:
+                        buf = fsrc.read(64*1024)
+                        if not buf:
+                            break
+                        fdst.write(buf)
+                        
+            temp_dest.rename(dest_path)
+            current_app.logger.info(f"[Audio Server] Copiado original de ID {cancion_id} a caché local completado con éxito.")
+            return True
+        except Exception as e:
+            current_app.logger.error(f"[Audio Server] Error copiando original ID {cancion_id} a caché: {e}")
+            if temp_dest.exists():
+                try:
+                    temp_dest.unlink()
+                except:
+                    pass
+            return False
+
+def generar_streaming_dinamico(ruta_final, ruta_temporal, max_wait_sec=10):
+    """Generador que transmite el contenido del archivo a medida que se escribe."""
+    start_time = time.time()
+    while not ruta_final.exists() and (not ruta_temporal.exists() or ruta_temporal.stat().st_size < 16384):
+        if time.time() - start_time > max_wait_sec:
+            break
+        time.sleep(0.1)
+
+    if ruta_final.exists():
+        def simple_gen():
+            with open(ruta_final, 'rb') as f:
+                while True:
+                    chunk = f.read(40960)
+                    if not chunk:
+                        break
+                    yield chunk
+        return simple_gen()
+
+    if ruta_temporal.exists():
+        def dynamic_gen():
+            is_temp = True
+            with open(ruta_temporal, 'rb') as f:
+                while True:
+                    chunk = f.read(40960)
+                    if chunk:
+                        yield chunk
+                    else:
+                        if ruta_temporal.exists() and not ruta_final.exists():
+                            time.sleep(0.1)
+                            continue
+                        else:
+                            chunk = f.read(40960)
+                            if chunk:
+                                yield chunk
+                            break
+        return dynamic_gen()
+
+    return None
+
 # ==============================================================================
 # SECCIÓN 2: TRANSMISIÓN DE AUDIO CON CABECERAS DE RANGO (HTTP 206)
 # ==============================================================================
@@ -35,55 +148,19 @@ audio_bp = Blueprint('audio', __name__)
 @audio_bp.route('/audio/<int:cancion_id>')
 def servir_audio(cancion_id):
     """
-    Transmite el archivo de audio físico correspondiente a una canción.
-    
-    > [!IMPORTANT]
-    > **Streaming Seekable de Alto Rendimiento:**
-    > Utiliza `conditional=True` en `send_file` para indicarle a Flask/Waitress que procese
-    > y responda nativamente con rangos parciales HTTP 206. Esto permite a los reproductores
-    > HTML5 pausar, retroceder y adelantar de forma instantánea sin descargar todo el archivo.
+    Transmite el archivo de audio correspondiente a una canción, utilizando
+    caché local y streaming al vuelo para evitar latencias de FUSE/Rclone.
     """
     cancion = db.session.get(Cancion, cancion_id)
     if not cancion:
         return "Canción no encontrada", 404
         
     original_path = cancion.ruta_archivo_audio
-    tried_paths = [original_path]
-
-    # ─── PREFERENCIA DE CALIDAD DE AUDIO DEL USUARIO Y TRANSCODIFICACIÓN ───
-    from flask import session
-    usuario_id = session.get('user_id')
-    calidad = 'lossless'
-    if usuario_id:
-        from app.models import Usuario
-        usuario = db.session.get(Usuario, usuario_id)
-        if usuario:
-            calidad = usuario.audio_quality or 'lossless'
-
-    ext_original = Path(original_path).suffix.lower()
+    resolved_path = resolver_ruta_fisica(original_path)
     
-    if calidad == 'lossless':
-        current_app.logger.info(f"[Audio Server] Calidad configurada: Hi-Res Lossless. Transmisión original sin pérdidas (bit-perfect) para ID {cancion_id}.")
-    else:
-        # Si la canción es un formato pesado sin compresión nativa (FLAC, WAV, OGG), verificar caché de transcodificación
-        if ext_original in ['.flac', '.wav', '.ogg']:
-            try:
-                from app.services.transcoder import obtener_ruta_cache, run_background_transcode
-                from app.services.queue import enqueue
-                
-                # Usamos la calidad configurada por el usuario ('high', 'standard', 'saver')
-                ruta_cache = obtener_ruta_cache(cancion_id, calidad=calidad)
-                if ruta_cache.exists() and ruta_cache.stat().st_size > 0:
-                    current_app.logger.info(f"[Audio Server] Sirviendo versión transcodificada ({calidad}) desde caché: {ruta_cache}")
-                    return send_file(str(ruta_cache), mimetype='audio/mpeg', conditional=True, max_age=86400)
-                
-                # Si no está en caché, disparar transcodificación asíncrona y servir original inmediatamente
-                # para evitar el delay de ffmpeg bloqueando la petición.
-                current_app.logger.info(f"[Audio Server] Caché ({calidad}) no disponible para ID {cancion_id}. Encolando transcodificación y sirviendo original.")
-                enqueue(run_background_transcode, cancion_id, calidad)
-                
-            except Exception as e:
-                current_app.logger.error(f"[Audio Server] Error gestionando transcodificación asíncrona: {e}")
+    if not resolved_path:
+        current_app.logger.error(f"[Audio Server] Archivo no encontrado para id={cancion_id}. Ruta original: {original_path}")
+        return "Archivo de audio no encontrado", 404
 
     def _mime_for(p):
         """Devuelve el MIME type correcto en base a la extensión del archivo de audio."""
@@ -96,35 +173,93 @@ def servir_audio(cancion_id):
             '.ogg': 'audio/ogg'
         }.get(ext, 'audio/mpeg')
 
-    # 1. Intentar servir por la ruta exacta registrada directamente en disco
-    if os.path.exists(original_path):
-        current_app.logger.debug(f"[Audio Server] Sirviendo ruta física original: {original_path}")
-        return send_file(original_path, mimetype=_mime_for(original_path), conditional=True, max_age=86400)
+    # ─── PREFERENCIA DE CALIDAD DE AUDIO DEL USUARIO Y TRANSCODIFICACIÓN ───
+    from flask import session
+    usuario_id = session.get('user_id')
+    calidad = 'lossless'
+    if usuario_id:
+        from app.models import Usuario
+        usuario = db.session.get(Usuario, usuario_id)
+        if usuario:
+            calidad = usuario.audio_quality or 'lossless'
 
-    # 2. Conversión Heurística de rutas Windows montadas en volúmenes Docker/Linux
-    try:
-        p = original_path.replace('\\\\', '/').replace(':/', ':/')
-        # Detectar patrones del estilo 'G:/Musica/cancion.mp3' para mapearlas a '/music/'
-        m = re.match(r'^([A-Za-z]):/(.*)', p)
-        if m:
-            rest = m.group(2)
-            alt = '/music/' + rest
-            tried_paths.append(alt)
-            if os.path.exists(alt):
-                current_app.logger.debug(f"[Audio Server] Sirviendo ruta mapeada Docker: {alt}")
-                return send_file(alt, mimetype=_mime_for(alt), conditional=True, max_age=86400)
-    except Exception as e:
-        current_app.logger.error(f"[Audio Server] Error al mapear ruta Windows-Docker: {e}")
+    ext_original = Path(resolved_path).suffix.lower()
+    requires_transcode = (calidad != 'lossless') and (ext_original in ['.flac', '.wav', '.ogg'])
 
-    # 3. Intentar como ruta relativa en el directorio de trabajo local de la app
-    rel = os.path.join(os.getcwd(), original_path)
-    tried_paths.append(rel)
-    if os.path.exists(rel):
-        current_app.logger.debug(f"[Audio Server] Sirviendo ruta relativa: {rel}")
-        return send_file(rel, mimetype=_mime_for(rel), conditional=True, max_age=86400)
+    if requires_transcode:
+        # --- CASO 1: TRANSCODIFICACIÓN A MP3 ---
+        from app.services.transcoder import obtener_ruta_cache, transcodificar_cancion
+        
+        ruta_final = obtener_ruta_cache(cancion_id, calidad=calidad)
+        suffix = "320k"
+        if calidad == 'standard':
+            suffix = "192k"
+        elif calidad == 'saver':
+            suffix = "96k"
+        ruta_temporal = Config.TRANSCODE_CACHE_FOLDER / f"{cancion_id}_{suffix}.mp3.tmp"
+        
+        # Si ya existe el caché final completo, servirlo directamente con send_file (soporta rangos)
+        if ruta_final.exists() and ruta_final.stat().st_size > 0:
+            current_app.logger.info(f"[Audio Server] Sirviendo versión transcodificada ({calidad}) desde caché: {ruta_final}")
+            return send_file(str(ruta_final), mimetype='audio/mpeg', conditional=True, max_age=86400)
+            
+        # Si no existe, iniciamos la transcodificación en segundo plano e iniciamos streaming dinámico
+        current_app.logger.info(f"[Audio Server] Transcodificando al vuelo ID {cancion_id} a calidad {calidad}...")
+        
+        app = current_app._get_current_object()
+        def run_in_context():
+            with app.app_context():
+                try:
+                    transcodificar_cancion(cancion_id, calidad)
+                except Exception as e:
+                    app.logger.error(f"[Audio Server] Error en hilo de transcodificación: {e}")
+                    
+        t = threading.Thread(target=run_in_context)
+        t.daemon = True
+        t.start()
+        
+        gen = generar_streaming_dinamico(ruta_final, ruta_temporal)
+        if gen:
+            response = Response(gen, mimetype='audio/mpeg')
+            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            return response
+        else:
+            current_app.logger.warning(f"[Audio Server] Falló la inicialización del stream dinámico para ID {cancion_id}. Sirviendo original.")
+            return send_file(resolved_path, mimetype=_mime_for(resolved_path), conditional=True, max_age=86400)
 
-    current_app.logger.error(f"[Audio Server] Archivo no encontrado para id={cancion_id}. Intentos: {tried_paths}")
-    return "Archivo de audio no encontrado", 404
+    else:
+        # --- CASO 2: SERVIR ORIGINAL (CON CACHÉ LOCAL PARA EVITAR LATENCIA RCLONE) ---
+        ruta_final = Config.ORIGINAL_CACHE_FOLDER / f"{cancion_id}{ext_original}"
+        ruta_temporal = Config.ORIGINAL_CACHE_FOLDER / f"{cancion_id}{ext_original}.tmp"
+        
+        # Si ya existe en la caché local, servirlo directamente con send_file
+        if ruta_final.exists() and ruta_final.stat().st_size > 0:
+            current_app.logger.info(f"[Audio Server] Sirviendo archivo original desde caché local: {ruta_final}")
+            return send_file(str(ruta_final), mimetype=_mime_for(resolved_path), conditional=True, max_age=86400)
+            
+        # Si no existe localmente, copiamos de Rclone a la caché local e iniciamos streaming dinámico
+        current_app.logger.info(f"[Audio Server] Copiando al vuelo ID {cancion_id} a caché local original...")
+        
+        app = current_app._get_current_object()
+        def run_copy_in_context():
+            with app.app_context():
+                try:
+                    copiar_archivo_original(cancion_id, resolved_path, ruta_final)
+                except Exception as e:
+                    app.logger.error(f"[Audio Server] Error en hilo de copia: {e}")
+                    
+        t = threading.Thread(target=run_copy_in_context)
+        t.daemon = True
+        t.start()
+        
+        gen = generar_streaming_dinamico(ruta_final, ruta_temporal)
+        if gen:
+            response = Response(gen, mimetype=_mime_for(resolved_path))
+            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            return response
+        else:
+            current_app.logger.warning(f"[Audio Server] Falló la inicialización del copia-stream para ID {cancion_id}. Sirviendo directamente de Rclone.")
+            return send_file(resolved_path, mimetype=_mime_for(resolved_path), conditional=True, max_age=86400)
 
 
 # ==============================================================================
