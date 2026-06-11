@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
+import { User, Lock, Music, AlertCircle } from "lucide-react";
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -15,7 +16,7 @@ export default function LoginPage() {
     try {
       await login(username, password);
     } catch {
-      setError("Credenciales inválidas");
+      setError("Credenciales incorrectas. Inténtalo de nuevo.");
     } finally {
       setLoading(false);
     }
@@ -23,45 +24,70 @@ export default function LoginPage() {
 
   return (
     <div className="login-container">
-      <form onSubmit={handleSubmit} className="login-card">
+      <div className="login-card">
         <div style={{ textAlign: "center", marginBottom: 8 }}>
-          <svg width="48" height="48" viewBox="0 0 28 28" fill="none" style={{ margin: "0 auto 12px" }}>
-            <rect width="28" height="28" rx="6" fill="#d95840"/>
-            <text x="14" y="20" textAnchor="middle" fill="white" fontSize="16" fontWeight="bold">D</text>
-          </svg>
+          <div className="login-logo-wrapper">
+            <img src="/logo.svg" alt="DuckSound Logo" className="login-logo-img" style={{ width: 80, height: 80 }} />
+          </div>
           <h1 className="login-title">DuckSound</h1>
-          <p className="login-subtitle">Inicia sesión para continuar</p>
+          <p className="login-subtitle">Inicia sesión en tu reproductor de música</p>
         </div>
 
-        {error && <div className="alert-error">{error}</div>}
+        <form onSubmit={handleSubmit}>
+          {error && (
+            <div className="login-error-alert">
+              <AlertCircle size={16} style={{ flexShrink: 0 }} />
+              <span>{error}</span>
+            </div>
+          )}
 
-        <div className="form-group">
-          <label className="form-label">Usuario</label>
-          <input
-            type="text"
-            className="form-input"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            required
-            autoFocus
-          />
-        </div>
+          <div className="form-group">
+            <label className="login-label">Usuario</label>
+            <div className="login-field-wrapper">
+              <input
+                type="text"
+                className="login-input"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                required
+                autoFocus
+                placeholder="Ingresa tu usuario"
+              />
+              <div className="login-field-icon">
+                <User size={18} />
+              </div>
+            </div>
+          </div>
 
-        <div className="form-group">
-          <label className="form-label">Contraseña</label>
-          <input
-            type="password"
-            className="form-input"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-        </div>
+          <div className="form-group" style={{ marginBottom: 28 }}>
+            <label className="login-label">Contraseña</label>
+            <div className="login-field-wrapper">
+              <input
+                type="password"
+                className="login-input"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                placeholder="Ingresa tu contraseña"
+              />
+              <div className="login-field-icon">
+                <Lock size={18} />
+              </div>
+            </div>
+          </div>
 
-        <button type="submit" className="btn btn-primary btn-block" disabled={loading}>
-          {loading ? "Ingresando..." : "Ingresar"}
-        </button>
-      </form>
+          <button type="submit" className="login-btn-primary" disabled={loading}>
+            {loading ? (
+              <span>Ingresando...</span>
+            ) : (
+              <>
+                <Music size={18} />
+                <span>Ingresar</span>
+              </>
+            )}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

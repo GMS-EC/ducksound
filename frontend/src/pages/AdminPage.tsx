@@ -30,27 +30,31 @@ export default function AdminPage() {
   ];
 
   return (
-    <div className="page-wrapper" style={{ padding: "24px 32px" }}>
-      <h1 className="page-title" style={{ marginBottom: 24 }}>Panel de administración</h1>
-      <div className="admin-tabs">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={"admin-tab" + (tab === t.id ? " active" : "")}
-          >
-            <t.icon size={16} />
-            {t.label}
-          </button>
-        ))}
+    <div className="page-wrapper">
+      <div className="page-header" style={{ paddingBottom: 0 }}>
+        <h1 className="page-title" style={{ marginBottom: 24 }}>Panel de administración</h1>
       </div>
-      {tab === "stats" && <StatsTab />}
-      {tab === "scan" && <ScanTab />}
-      {tab === "artists" && <ArtistsTab />}
-      {tab === "albums" && <AlbumsTab />}
-      {tab === "users" && <UsersTab />}
-      {tab === "lyrics" && <LyricsTab />}
-      {tab === "system" && <SystemTab />}
+      <div style={{ padding: "0 32px 32px" }}>
+        <div className="admin-tabs">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={"admin-tab" + (tab === t.id ? " active" : "")}
+            >
+              <t.icon size={16} />
+              {t.label}
+            </button>
+          ))}
+        </div>
+        {tab === "stats" && <StatsTab />}
+        {tab === "scan" && <ScanTab />}
+        {tab === "artists" && <ArtistsTab />}
+        {tab === "albums" && <AlbumsTab />}
+        {tab === "users" && <UsersTab />}
+        {tab === "lyrics" && <LyricsTab />}
+        {tab === "system" && <SystemTab />}
+      </div>
     </div>
   );
 }
@@ -140,6 +144,19 @@ function ScanTab() {
       }
     }
   };
+
+  useEffect(() => {
+    client.get("/admin/escanear/active")
+      .then((res) => {
+        if (res.data && res.data.task_id) {
+          setTaskId(res.data.task_id);
+          setPolling(true);
+        }
+      })
+      .catch((err) => {
+        console.error("Error al obtener tarea activa:", err);
+      });
+  }, []);
 
   useEffect(() => {
     if (!polling || !taskId) return;
@@ -326,7 +343,7 @@ function LyricsTab() {
   };
 
   return (
-    <div style={{ marginTop: 24, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+    <div style={{ marginTop: 24, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 }}>
       <div>
         <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
           <input type="text" value={query} onChange={(e) => setQuery(e.target.value)}
@@ -402,7 +419,7 @@ function SystemTab() {
   if (loading) return <div style={{ color: "#9ca3af", marginTop: 24 }}>Cargando...</div>;
 
   return (
-    <div style={{ marginTop: 24, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+    <div style={{ marginTop: 24, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 20 }}>
       <div className="admin-card">
         <div className="admin-card-header">Versión actual</div>
         <div className="admin-card-body">

@@ -33,10 +33,7 @@ export default function Sidebar() {
     <>
       <aside className="sidebar">
         <NavLink to="/dashboard" className="sidebar-logo">
-          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-            <rect width="28" height="28" rx="6" fill="#d95840"/>
-            <text x="14" y="20" textAnchor="middle" fill="white" fontSize="16" fontWeight="bold">D</text>
-          </svg>
+          <img src="/logo.svg" alt="DuckSound Logo" style={{ width: 28, height: 28, marginRight: 8 }} />
           DuckSound
         </NavLink>
 

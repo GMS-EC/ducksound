@@ -769,14 +769,14 @@ def normalizar_biblioteca(progress_callback=None, percent_start=90, percent_end=
             # Reasignar todas las relaciones en la base de datos
             from app.services.metadata import actualizar_tags_disco
             for cancion in list(origen.canciones):
-                cancion.artista_id = destino.id
+                cancion.artista_obj = destino
                 if cancion.ruta_archivo_audio:
                     try:
                         actualizar_tags_disco(cancion.ruta_archivo_audio, artista=destino.nombre)
                     except Exception as e:
                         print(f"⚠️ Error actualizando tag de artista en fusión: {e}")
             for album in list(origen.albums):
-                album.artista_id = destino.id
+                album.artista = destino
                 
             # Conservar metadatos valiosos del origen si el destino carecía de ellos
             if not destino.musicbrainz_id and origen.musicbrainz_id:
@@ -841,7 +841,7 @@ def normalizar_biblioteca(progress_callback=None, percent_start=90, percent_end=
                 # Traspasar canciones al álbum destino/canónico
                 from app.services.metadata import actualizar_tags_disco
                 for cancion in list(album.canciones):
-                    cancion.album_id = album_existente.id
+                    cancion.album_obj = album_existente
                     if cancion.ruta_archivo_audio:
                         try:
                             actualizar_tags_disco(cancion.ruta_archivo_audio, album=album_existente.titulo)

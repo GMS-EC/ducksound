@@ -178,15 +178,15 @@ def admin_clean_metadata():
                     if artista_existente:
                         # Reasignar obras y colecciones al artista canonical principal
                         from app.services.metadata import actualizar_tags_disco
-                        for cancion in artista.canciones:
-                            cancion.artista_id = artista_existente.id
+                        for cancion in list(artista.canciones):
+                            cancion.artista_obj = artista_existente
                             if cancion.ruta_archivo_audio:
                                 try:
                                     actualizar_tags_disco(cancion.ruta_archivo_audio, artista=artista_existente.nombre)
                                 except Exception:
                                     pass
-                        for album in artista.albums:
-                            album.artista_id = artista_existente.id
+                        for album in list(artista.albums):
+                            album.artista = artista_existente
                         db.session.delete(artista)
                         mergeados += 1
                     elif nombre_norm != artista.nombre:
@@ -221,8 +221,8 @@ def admin_clean_metadata():
                     ).first()
                     if album_existente:
                         from app.services.metadata import actualizar_tags_disco
-                        for cancion in album.canciones:
-                            cancion.album_id = album_existente.id
+                        for cancion in list(album.canciones):
+                            cancion.album_obj = album_existente
                             if cancion.ruta_archivo_audio:
                                 try:
                                     actualizar_tags_disco(cancion.ruta_archivo_audio, album=album_existente.titulo)

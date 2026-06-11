@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { usePlayer } from "../contexts/PlayerContext";
 import client from "../api/client";
 import { Globe, Music, Loader2 } from "lucide-react";
+import type { Cancion } from "../types";
 
 type Tab = "upnext" | "lyrics" | "related";
 
@@ -19,6 +20,9 @@ export default function RightPanel() {
   const [lyricType, setLyricType] = useState<"lrc" | "txt" | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  const [similarSongs, setSimilarSongs] = useState<any[]>([]);
+  const [loadingSimilar, setLoadingSimilar] = useState(false);
   
   const [targetLang, setTargetLang] = useState("es");
   const [translating, setTranslating] = useState(false);
@@ -73,6 +77,26 @@ export default function RightPanel() {
       })
       .finally(() => {
         setLoading(false);
+      });
+  }, [currentSong]);
+
+  // Fetch similar songs when currentSong changes
+  useEffect(() => {
+    if (!currentSong) {
+      setSimilarSongs([]);
+      return;
+    }
+
+    setLoadingSimilar(true);
+    client.get(`/api/similares/${currentSong.id}`)
+      .then((res) => {
+        setSimilarSongs(res.data || []);
+      })
+      .catch((err) => {
+        console.error("Error fetching similar songs:", err);
+      })
+      .finally(() => {
+        setLoadingSimilar(false);
       });
   }, [currentSong]);
 
@@ -341,8 +365,124 @@ export default function RightPanel() {
         )}
 
         {tab === "related" && (
-          <div style={{ color: "#9ca3af", textAlign: "center", paddingTop: 40 }}>
-            <p>Canciones similares</p>
+          <div className="related-container" style={{ padding: 12 }}>
+            {!currentSong ? (
+              <div style={{ color: "#9ca3af", textAlign: "center", paddingTop: 40 }}>
+                <p>Reproduce una canción para ver temas similares</p>
+              </div>
+            ) : loadingSimilar ? (
+              <div className="no-lyrics" style={{ paddingTop: 40 }}>
+                <span className="no-lyrics-icon">
+                  <Loader2 className="animate-spin" style={{ margin: "0 auto" }} />
+                </span>
+                Calculando similitud acústica...
+              </div>
+            ) : similarSongs.length === 0 ? (
+              <div style={{ color: "#9ca3af", textAlign: "center", paddingTop: 40 }}>
+                <p>No se encontraron canciones similares</p>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {similarSongs.map((s) => {
+                  const pct = Math.round((s.similarity || 0) * 100);
+                  const songObj: Cancion = {
+                    id: s.id,
+                    titulo: s.titulo,
+                    artista: s.artista,
+                    album: s.album,
+                    duracion: null,
+                    ruta_audio: "",
+                    ruta_lrc: null,
+                    ruta_imagen: null,
+                    genero: null,
+                    sample_rate: null,
+                    bit_depth: null,
+                    channels: null,
+                    nyquist_freq: null,
+                    dynamic_range: null,
+                    peak_level: null,
+                    rms_level: null,
+                    total_samples: null,
+                    bit_rate: null
+                  };
+                  return (
+                    <div
+                      key={s.id}
+                      onClick={() => play([songObj], 0)}
+                      className="group"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 12,
+                        padding: 8,
+                        borderRadius: 6,
+                        cursor: "pointer",
+                        background: "transparent",
+                        transition: "background 0.2s",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = "rgba(255,255,255,0.06)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = "transparent";
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: 40,
+                          height: 40,
+                          borderRadius: 4,
+                          overflow: "hidden",
+                          background: "#2a2a33",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexShrink: 0,
+                        }}
+                      >
+                        <img
+                          src={`/album-art/${s.id}?size=small`}
+                          alt={s.titulo}
+                          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                          onError={(e) => {
+                            (e.currentTarget as HTMLImageElement).style.display = "none";
+                            const sibling = e.currentTarget.nextElementSibling as HTMLElement;
+                            if (sibling) sibling.style.display = "block";
+                          }}
+                        />
+                        <span style={{ display: "none" }}>♪</span>
+                      </div>
+                      <div style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        <div
+                          style={{
+                            fontWeight: 600,
+                            fontSize: 13,
+                            color: "#fff",
+                            transition: "color 0.2s"
+                          }}
+                        >
+                          {s.titulo}
+                        </div>
+                        <div style={{ fontSize: 11, color: "#9ca3af" }}>{s.artista}</div>
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 10,
+                          fontWeight: "bold",
+                          padding: "2px 6px",
+                          borderRadius: 10,
+                          background: pct > 80 ? "rgba(16, 185, 129, 0.15)" : pct > 60 ? "rgba(245, 158, 11, 0.15)" : "rgba(255, 255, 255, 0.1)",
+                          color: pct > 80 ? "#10b981" : pct > 60 ? "#f59e0b" : "#9ca3af",
+                          flexShrink: 0
+                        }}
+                      >
+                        {pct}%
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
       </div>
