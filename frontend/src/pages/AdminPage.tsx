@@ -1,8 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   BarChart3, Scan, Users, FileText, RefreshCw, Activity, User, Disc, Music, Check,
+  Play, Pause, Undo, Trash2,
 } from "lucide-react";
 import client from "../api/client";
+import { usePlayer } from "../contexts/PlayerContext";
+import type { Cancion } from "../types";
 
 interface ScanTask {
   task_id: string;
@@ -400,42 +403,62 @@ function ScanTab() {
       {task && (
         <div className="scan-progress">
           <div className="scan-progress-header">
-            <span style={{ fontSize: 14, color: task.status === "done" ? "#4ade80" : task.status === "error" ? "#d95840" : "#eaeaea" }}>
-              {task.status === "running" || task.status === "enriching" ? "En progreso..." :
-               task.status === "done" ? "Completado" : "Error"}
+            <span className={`scan-status-badge ${
+              task.status === "running" || task.status === "enriching" ? "running" :
+              task.status === "done" ? "done" : "error"
+            }`}>
+              {(task.status === "running" || task.status === "enriching") && <span className="scan-pulse-dot" />}
+              {task.status === "running" ? "Escaneando biblioteca..." :
+               task.status === "enriching" ? "Enriqueciendo metadatos..." :
+               task.status === "done" ? "Escaneo completado" : "Error de escaneo"}
             </span>
-            <span style={{ fontSize: 12, color: "#9ca3af" }}>{task.percent || 0}%</span>
+            <span style={{ fontSize: 13, color: "#ffffff", fontWeight: 700 }}>{task.percent || 0}%</span>
           </div>
+          
           <div className="scan-progress-bar">
-            <div className="scan-progress-fill" style={{ width: (task.percent || 0) + "%" }} />
+            <div 
+              className={`scan-progress-fill ${task.status === "running" || task.status === "enriching" ? "active" : ""}`} 
+              style={{ width: (task.percent || 0) + "%" }} 
+            />
           </div>
-          <p style={{ fontSize: 13, color: "#9ca3af", margin: "4px 0" }}>{task.message || ""}</p>
+          
+          <p style={{ fontSize: 13, color: "#e5e7eb", margin: "8px 0 4px", fontWeight: 500 }}>
+            {task.message || ""}
+          </p>
+          
           {task.current_file && (
-            <p style={{ fontSize: 11, color: "#666", margin: "2px 0 0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {task.current_file}
-            </p>
+            <div className="scan-console" title={task.current_file}>
+              📂 {task.current_file}
+            </div>
           )}
+          
           {task.summary && (
-            <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 8 }}>
+            <div className="scan-summary-grid">
               {Object.entries(task.summary).map(([k, v]) => {
                 if (typeof v === "object" && v !== null) {
                   return (
-                    <div key={k} style={{ marginBottom: 8 }}>
-                      <strong style={{ color: "#eaeaea" }}>{k}:</strong>
-                      <div style={{ marginLeft: 12, marginTop: 2 }}>
+                    <div key={k} style={{ gridColumn: "1 / -1", background: "rgba(255,255,255,0.01)", border: "1px solid rgba(255,255,255,0.04)", borderRadius: 10, padding: 12 }}>
+                      <div className="scan-summary-card-lbl" style={{ marginBottom: 8, fontWeight: 700 }}>{k}</div>
+                      <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
                         {Object.entries(v).map(([sk, sv]) => (
-                          <span key={sk} style={{ marginRight: 12 }}>
-                            {sk}: {String(sv)}
-                          </span>
+                          <div key={sk} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                            <span style={{ fontSize: 10, color: "#9ca3af", textTransform: "uppercase" }}>{sk}</span>
+                            <span style={{ fontSize: 14, fontWeight: 700, color: "#fff" }}>{String(sv)}</span>
+                          </div>
                         ))}
                       </div>
                     </div>
                   );
                 }
+                
+                // Capitalize key for nice display
+                const label = k.charAt(0).toUpperCase() + k.slice(1);
+                
                 return (
-                  <span key={k} style={{ marginRight: 16 }}>
-                    <strong style={{ color: "#eaeaea" }}>{k}:</strong> {String(v)}
-                  </span>
+                  <div key={k} className="scan-summary-card">
+                    <span className="scan-summary-card-val">{String(v)}</span>
+                    <span className="scan-summary-card-lbl">{label}</span>
+                  </div>
                 );
               })}
             </div>
@@ -685,6 +708,84 @@ function UsersTab({ currentUserId }: UsersTabProps) {
   );
 }
 
+interface LyricLine {
+  time: number | null;
+  text: string;
+}
+
+const parseLrc = (lrcText: string): LyricLine[] => {
+  const lines = lrcText.split(/\r?\n/);
+  const result: LyricLine[] = [];
+  const lrcRegex = /^\[(\d{2,}):(\d{2})(?:\.(\d{2,3}))?\](.*)$/;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      result.push({ time: null, text: "" });
+      continue;
+    }
+    const match = trimmed.match(lrcRegex);
+    if (match) {
+      const min = parseInt(match[1], 10);
+      const sec = parseInt(match[2], 10);
+      const msStr = match[3] || "00";
+      const ms = parseFloat("0." + msStr);
+      const time = min * 60 + sec + ms;
+      const text = match[4].trim();
+      result.push({ time, text });
+    } else {
+      result.push({ time: null, text: trimmed });
+    }
+  }
+  return result;
+};
+
+const serializeLrc = (lines: LyricLine[]): string => {
+  return lines
+    .map((line) => {
+      if (line.time !== null) {
+        const timeStr = formatLrcTime(line.time);
+        return `${timeStr} ${line.text}`;
+      } else {
+        return line.text;
+      }
+    })
+    .join("\n");
+};
+
+const formatLrcTime = (seconds: number): string => {
+  if (isNaN(seconds) || seconds < 0) return "[00:00.00]";
+  const min = Math.floor(seconds / 60);
+  const sec = Math.floor(seconds % 60);
+  const ms = Math.floor((seconds % 1) * 100);
+  
+  const minStr = min.toString().padStart(2, "0");
+  const secStr = sec.toString().padStart(2, "0");
+  const msStr = ms.toString().padStart(2, "0");
+  
+  return `[${minStr}:${secStr}.${msStr}]`;
+};
+
+const formatTimeWithoutBrackets = (seconds: number): string => {
+  if (isNaN(seconds) || seconds < 0) return "00:00.00";
+  const min = Math.floor(seconds / 60);
+  const sec = Math.floor(seconds % 60);
+  const ms = Math.floor((seconds % 1) * 100);
+  
+  const minStr = min.toString().padStart(2, "0");
+  const secStr = sec.toString().padStart(2, "0");
+  const msStr = ms.toString().padStart(2, "0");
+  
+  return `${minStr}:${secStr}.${msStr}`;
+};
+
+const formatTimeDisplay = (seconds: number): string => {
+  if (isNaN(seconds) || seconds < 0) return "00:00";
+  const min = Math.floor(seconds / 60);
+  const sec = Math.floor(seconds % 60);
+  return `${min.toString().padStart(2, "0")}:${sec.toString().padStart(2, "0")}`;
+};
+
 function LyricsTab() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<any[]>([]);
@@ -692,6 +793,162 @@ function LyricsTab() {
   const [lyricContent, setLyricContent] = useState("");
   const [lyricMeta, setLyricMeta] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+
+  // Sync Modal States
+  const [syncModalOpen, setSyncModalOpen] = useState(false);
+  const [modalTab, setModalTab] = useState<"edit" | "sync">("edit");
+  const [syncLines, setSyncLines] = useState<LyricLine[]>([]);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [history, setHistory] = useState<LyricLine[][]>([]);
+
+  // Player Context Hook
+  const {
+    playing, currentTime, duration, playbackRate,
+    play, togglePlay, seek, setPlaybackRate, currentSong
+  } = usePlayer();
+
+  const lineRefs = useRef<{[key: number]: HTMLDivElement | null}>({});
+
+  // Auto-scroll active line into view when activeIndex changes
+  useEffect(() => {
+    if (syncModalOpen && modalTab === "sync") {
+      const el = lineRefs.current[activeIndex];
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }
+  }, [activeIndex, syncModalOpen, modalTab]);
+
+  // Keep playback rate 1.0 when modal unmounts
+  useEffect(() => {
+    return () => {
+      setPlaybackRate(1.0);
+    };
+  }, [setPlaybackRate]);
+
+  // Sync refs to avoid stale closures in keydown listener
+  const activeIndexRef = useRef(0);
+  activeIndexRef.current = activeIndex;
+  const syncLinesRef = useRef<LyricLine[]>([]);
+  syncLinesRef.current = syncLines;
+  const currentTimeRef = useRef(0);
+  currentTimeRef.current = currentTime;
+
+  // Stamping and Undo implementations
+  const stampCurrentLine = () => {
+    const index = activeIndexRef.current;
+    const lines = syncLinesRef.current;
+    const time = currentTimeRef.current;
+    if (index >= lines.length) return;
+
+    setHistory((prev) => [...prev, lines]);
+
+    const newLines = [...lines];
+    newLines[index] = { ...newLines[index], time: time };
+    setSyncLines(newLines);
+    setLyricContent(serializeLrc(newLines));
+
+    if (index + 1 < lines.length) {
+      setActiveIndex(index + 1);
+    }
+  };
+
+  const triggerUndo = () => {
+    if (history.length > 0) {
+      const prevLines = history[history.length - 1];
+      setSyncLines(prevLines);
+      setLyricContent(serializeLrc(prevLines));
+      setHistory((prev) => prev.slice(0, prev.length - 1));
+      if (activeIndex > 0) {
+        setActiveIndex(activeIndex - 1);
+      }
+    }
+  };
+
+  const clearAllTimes = () => {
+    if (window.confirm("¿Seguro que quieres eliminar todas las marcas de tiempo?")) {
+      setHistory((prev) => [...prev, syncLines]);
+      const newLines = syncLines.map((l) => ({ ...l, time: null }));
+      setSyncLines(newLines);
+      setLyricContent(serializeLrc(newLines));
+      setActiveIndex(0);
+    }
+  };
+
+  const clearLineTime = (e: React.MouseEvent, index: number) => {
+    e.stopPropagation();
+    setHistory((prev) => [...prev, syncLines]);
+    const newLines = [...syncLines];
+    newLines[index] = { ...newLines[index], time: null };
+    setSyncLines(newLines);
+    setLyricContent(serializeLrc(newLines));
+  };
+
+  const handleLineClick = (index: number, line: LyricLine) => {
+    setActiveIndex(index);
+    if (line.time !== null) {
+      seek(line.time);
+    }
+  };
+
+  const startPlayingThisSong = () => {
+    if (lyricMeta && selectedId !== null) {
+      const mockSong: Cancion = {
+        id: selectedId,
+        titulo: lyricMeta.titulo,
+        artista: lyricMeta.artista,
+        album: null,
+        duracion: null,
+        ruta_audio: `/audio/${selectedId}`,
+        ruta_lrc: null,
+        ruta_imagen: lyricMeta.cover || null,
+        genero: null,
+        sample_rate: null,
+        bit_depth: null,
+        channels: null,
+        nyquist_freq: null,
+        dynamic_range: null,
+        peak_level: null,
+        rms_level: null,
+        total_samples: null,
+        bit_rate: null,
+      };
+      play([mockSong], 0);
+    }
+  };
+
+  // Keyboard shortcut listener
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!syncModalOpen || modalTab !== "sync") return;
+
+      const tag = document.activeElement?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
+        return;
+      }
+
+      if (e.key === " ") {
+        e.preventDefault();
+        stampCurrentLine();
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (activeIndexRef.current > 0) {
+          setActiveIndex(activeIndexRef.current - 1);
+        }
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (activeIndexRef.current + 1 < syncLinesRef.current.length) {
+          setActiveIndex(activeIndexRef.current + 1);
+        }
+      } else if (e.key === "Backspace") {
+        e.preventDefault();
+        triggerUndo();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [syncModalOpen, modalTab]);
 
   const search = async () => {
     if (!query.trim()) return;
@@ -709,6 +966,9 @@ function LyricsTab() {
       const res = await client.get("/admin/lyrics/" + id);
       setLyricMeta(res.data);
       setLyricContent(res.data.letra || "");
+      setSyncLines([]);
+      setActiveIndex(0);
+      setHistory([]);
     } catch (e) { console.error(e); }
   };
 
@@ -718,6 +978,27 @@ function LyricsTab() {
       await client.post("/admin/lyrics/" + selectedId + "/save", { letra: lyricContent });
       alert("Letra guardada");
     } catch (e: any) { alert(e.response?.data?.error || "Error al guardar"); }
+  };
+
+  const saveLyricsFromModal = async () => {
+    if (selectedId === null) return;
+    try {
+      await client.post("/admin/lyrics/" + selectedId + "/save", { letra: lyricContent });
+    } catch (e: any) { alert(e.response?.data?.error || "Error al guardar"); }
+  };
+
+  const checkIfLineIsPlaying = (line: LyricLine, idx: number) => {
+    if (line.time === null) return false;
+    if (currentTime < line.time) return false;
+    
+    let nextTime = Infinity;
+    for (let i = idx + 1; i < syncLines.length; i++) {
+      if (syncLines[i].time !== null) {
+        nextTime = syncLines[i].time!;
+        break;
+      }
+    }
+    return currentTime >= line.time && currentTime < nextTime;
   };
 
   return (
@@ -758,7 +1039,15 @@ function LyricsTab() {
                 <div style={{ fontWeight: 500 }}>{lyricMeta.titulo}</div>
                 <div style={{ fontSize: 12, color: "#9ca3af", fontWeight: 400 }}>{lyricMeta.artista}</div>
               </div>
-              <button className="admin-btn admin-btn-primary" onClick={saveLyrics}>Guardar</button>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="admin-btn admin-btn-secondary" onClick={() => {
+                  setSyncLines(parseLrc(lyricContent));
+                  setSyncModalOpen(true);
+                }}>
+                  Sincronizar Letra
+                </button>
+                <button className="admin-btn admin-btn-primary" onClick={saveLyrics}>Guardar</button>
+              </div>
             </div>
             <div className="admin-card-body">
               <textarea className="admin-textarea" value={lyricContent}
@@ -772,6 +1061,298 @@ function LyricsTab() {
           </div>
         )}
       </div>
+
+      {syncModalOpen && (
+        <div className="admin-modal-overlay" onClick={() => setSyncModalOpen(false)}>
+          <div className="admin-modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 960, width: "100%", height: "85vh", display: "flex", flexDirection: "column" }}>
+            <div className="admin-modal-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                {lyricMeta?.cover ? (
+                  <img src={lyricMeta.cover} alt="Cover" style={{ width: 40, height: 40, borderRadius: 6, objectFit: "cover" }} />
+                ) : (
+                  <div style={{ width: 40, height: 40, borderRadius: 6, background: "rgba(255,255,255,0.05)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <Music size={20} color="#9ca3af" />
+                  </div>
+                )}
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Sincronizador de Letra</h3>
+                  <div style={{ fontSize: 12, color: "#9ca3af" }}>{lyricMeta?.titulo} — {lyricMeta?.artista}</div>
+                </div>
+              </div>
+              <button className="admin-btn-icon" style={{ border: "none", background: "none", color: "#9ca3af", cursor: "pointer", fontSize: 18 }} onClick={() => setSyncModalOpen(false)}>✕</button>
+            </div>
+            
+            <div className="admin-modal-body" style={{ flex: 1, display: "flex", flexDirection: "column", padding: 0, overflow: "hidden" }}>
+              <div style={{ display: "flex", borderBottom: "1px solid rgba(255, 255, 255, 0.08)", background: "rgba(0, 0, 0, 0.1)" }}>
+                <button 
+                  onClick={() => setModalTab("edit")} 
+                  style={{
+                    flex: 1, padding: "12px 16px", background: "none", border: "none", 
+                    color: modalTab === "edit" ? "#d95840" : "#9ca3af",
+                    borderBottom: modalTab === "edit" ? "2px solid #d95840" : "2px solid transparent",
+                    fontWeight: 500, cursor: "pointer", transition: "all 0.2s"
+                  }}
+                >
+                  Editar Texto Plano
+                </button>
+                <button 
+                  onClick={() => {
+                    setModalTab("sync");
+                    setSyncLines(parseLrc(lyricContent));
+                  }} 
+                  style={{
+                    flex: 1, padding: "12px 16px", background: "none", border: "none", 
+                    color: modalTab === "sync" ? "#d95840" : "#9ca3af",
+                    borderBottom: modalTab === "sync" ? "2px solid #d95840" : "2px solid transparent",
+                    fontWeight: 500, cursor: "pointer", transition: "all 0.2s"
+                  }}
+                >
+                  Sincronizar Tiempos
+                </button>
+              </div>
+
+              <div style={{ flex: 1, overflow: "hidden", display: "flex" }}>
+                {modalTab === "edit" ? (
+                  <div style={{ flex: 1, padding: 20, display: "flex", flexDirection: "column", height: "100%" }}>
+                    <p style={{ margin: "0 0 10px 0", fontSize: 12, color: "#9ca3af" }}>
+                      Pega la letra aquí. Un renglón por línea. Luego ve a la pestaña "Sincronizar Tiempos".
+                    </p>
+                    <textarea 
+                      className="admin-textarea" 
+                      value={lyricContent}
+                      onChange={(e) => setLyricContent(e.target.value)} 
+                      style={{ flex: 1, resize: "none", fontFamily: "monospace", fontSize: 13, background: "rgba(0,0,0,0.15)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: 12, color: "#fff" }} 
+                    />
+                  </div>
+                ) : (
+                  <div style={{ flex: 1, display: "flex", overflow: "hidden", height: "100%" }}>
+                    
+                    <div style={{ flex: 3, borderRight: "1px solid rgba(255, 255, 255, 0.08)", overflowY: "auto", padding: "16px 0", background: "rgba(0,0,0,0.1)" }}>
+                      {syncLines.length === 0 ? (
+                        <div style={{ textAlign: "center", padding: 40, color: "#9ca3af", fontSize: 13 }}>
+                          No hay texto que sincronizar. Ve a la pestaña "Editar Texto Plano" e ingresa la letra.
+                        </div>
+                      ) : (
+                        syncLines.map((line, idx) => {
+                          const isActive = idx === activeIndex;
+                          const isCurrentPlaying = checkIfLineIsPlaying(line, idx);
+                          
+                          return (
+                            <div 
+                              key={idx}
+                              ref={(el) => { lineRefs.current[idx] = el; }}
+                              onClick={() => handleLineClick(idx, line)}
+                              style={{
+                                display: "flex", alignItems: "center", gap: 12, padding: "10px 20px",
+                                cursor: "pointer", transition: "all 0.15s",
+                                background: isActive 
+                                  ? "rgba(217, 88, 64, 0.15)" 
+                                  : isCurrentPlaying 
+                                    ? "rgba(255, 255, 255, 0.03)" 
+                                    : "transparent",
+                                borderLeft: isActive 
+                                  ? "4px solid #d95840" 
+                                  : isCurrentPlaying
+                                    ? "4px solid rgba(255, 255, 255, 0.4)"
+                                    : "4px solid transparent",
+                              }}
+                              className="sync-line-row"
+                            >
+                              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                <span style={{
+                                  fontSize: 11, fontFamily: "monospace", padding: "3px 6px", borderRadius: 4,
+                                  background: line.time !== null ? "rgba(217, 88, 64, 0.2)" : "rgba(255,255,255,0.05)",
+                                  color: line.time !== null ? "#e06c55" : "#6b7280",
+                                  border: line.time !== null ? "1px solid rgba(217, 88, 64, 0.3)" : "1px solid rgba(255,255,255,0.05)"
+                                }}>
+                                  {line.time !== null ? formatTimeWithoutBrackets(line.time) : "--:--.--"}
+                                </span>
+                                {line.time !== null && (
+                                  <button 
+                                    onClick={(e) => clearLineTime(e, idx)}
+                                    title="Quitar tiempo"
+                                    style={{
+                                      background: "none", border: "none", color: "#ef4444", fontSize: 13,
+                                      cursor: "pointer", padding: "0 2px", opacity: 0.7
+                                    }}
+                                    className="clear-time-btn"
+                                  >
+                                    ✕
+                                  </button>
+                                )}
+                              </div>
+                              <span style={{ 
+                                fontSize: 13, 
+                                color: isActive ? "#ffffff" : isCurrentPlaying ? "#ffffff" : "#d1d5db", 
+                                fontWeight: isActive ? "600" : isCurrentPlaying ? "500" : "normal" 
+                              }}>
+                                {line.text || <span style={{ fontStyle: "italic", color: "#4b5563" }}>(Línea vacía)</span>}
+                              </span>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                    
+                    <div style={{ flex: 2, display: "flex", flexDirection: "column", padding: 20, background: "rgba(0,0,0,0.2)", justifyContent: "space-between" }}>
+                      
+                      <div style={{ textAlign: "center", marginTop: 10 }}>
+                        <div style={{ fontSize: 11, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
+                          Línea Activa ({activeIndex + 1} / {syncLines.length})
+                        </div>
+                        <div style={{ 
+                          fontSize: 14, fontWeight: 600, color: "#fff", background: "rgba(255,255,255,0.03)", 
+                          padding: 12, borderRadius: 8, border: "1px solid rgba(255,255,255,0.05)", minHeight: 44,
+                          display: "flex", alignItems: "center", justifyContent: "center"
+                        }}>
+                          {syncLines[activeIndex]?.text || <span style={{ color: "#4b5563" }}>- Fin de letra -</span>}
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", margin: "20px 0" }}>
+                        <button
+                          onClick={stampCurrentLine}
+                          disabled={activeIndex >= syncLines.length}
+                          style={{
+                            width: 140, height: 140, borderRadius: "50%", border: "none",
+                            background: activeIndex >= syncLines.length ? "#374151" : "linear-gradient(135deg, #d95840, #f07e69)",
+                            color: "#fff", fontSize: 15, fontWeight: "bold", cursor: activeIndex >= syncLines.length ? "not-allowed" : "pointer",
+                            boxShadow: activeIndex >= syncLines.length ? "none" : "0 8px 24px rgba(217, 88, 64, 0.4)",
+                            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                            gap: 6, transition: "transform 0.1s, box-shadow 0.2s"
+                          }}
+                          className="stamp-button"
+                          onMouseDown={(e) => {
+                            e.currentTarget.style.transform = "scale(0.95)";
+                          }}
+                          onMouseUp={(e) => {
+                            e.currentTarget.style.transform = "scale(1)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.transform = "scale(1)";
+                          }}
+                        >
+                          <Activity size={28} />
+                          <span>ESTAMPAR</span>
+                          <span style={{ fontSize: 10, fontWeight: "normal", opacity: 0.8 }}>(Barra Espac.)</span>
+                        </button>
+                      </div>
+
+                      <div style={{ background: "rgba(0,0,0,0.15)", borderRadius: 10, padding: 16, border: "1px solid rgba(255,255,255,0.05)" }}>
+                        
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                          <span style={{ fontSize: 11, fontFamily: "monospace", color: "#9ca3af" }}>{formatTimeDisplay(currentTime)}</span>
+                          <input 
+                            type="range" 
+                            min={0} 
+                            max={duration || 100} 
+                            value={currentTime} 
+                            onChange={(e) => seek(parseFloat(e.target.value))}
+                            style={{ flex: 1, accentColor: "#d95840", height: 4, borderRadius: 2, cursor: "pointer" }}
+                          />
+                          <span style={{ fontSize: 11, fontFamily: "monospace", color: "#9ca3af" }}>{formatTimeDisplay(duration)}</span>
+                        </div>
+
+                        <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 16, marginBottom: 12 }}>
+                          <button 
+                            className="admin-btn admin-btn-secondary" 
+                            style={{ padding: "6px 10px" }} 
+                            title="Retroceder 5s"
+                            onClick={() => seek(Math.max(0, currentTime - 5))}
+                          >
+                            -5s
+                          </button>
+                          
+                          <button 
+                            onClick={() => {
+                              const isCurrent = currentSong && Number(currentSong.id) === Number(selectedId);
+                              if (!isCurrent) {
+                                startPlayingThisSong();
+                              } else {
+                                togglePlay();
+                              }
+                            }}
+                            style={{
+                              width: 44, height: 44, borderRadius: "50%", border: "none",
+                              background: "#d95840", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
+                              cursor: "pointer", boxShadow: "0 4px 12px rgba(217, 88, 64, 0.3)"
+                            }}
+                          >
+                            {(currentSong && Number(currentSong.id) === Number(selectedId) && playing) ? <Pause size={20} /> : <Play size={20} style={{ marginLeft: 2 }} />}
+                          </button>
+                          
+                          <button 
+                            className="admin-btn admin-btn-secondary" 
+                            style={{ padding: "6px 10px" }} 
+                            title="Adelantar 5s"
+                            onClick={() => seek(Math.min(duration, currentTime + 5))}
+                          >
+                            +5s
+                          </button>
+                        </div>
+
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12 }}>
+                          <span style={{ color: "#9ca3af" }}>Velocidad:</span>
+                          <select 
+                            value={playbackRate} 
+                            onChange={(e) => setPlaybackRate(parseFloat(e.target.value))}
+                            style={{ background: "#222229", border: "1px solid rgba(255,255,255,0.1)", color: "#fff", borderRadius: 4, padding: "2px 6px", fontSize: 12, cursor: "pointer" }}
+                          >
+                            <option value="0.5">0.50x (Muy Lento)</option>
+                            <option value="0.75">0.75x (Lento)</option>
+                            <option value="1.0">1.00x (Normal)</option>
+                            <option value="1.25">1.25x (Rápido)</option>
+                            <option value="1.5">1.50x (Muy Rápido)</option>
+                          </select>
+                        </div>
+
+                      </div>
+
+                      <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+                        <button 
+                          className="admin-btn admin-btn-secondary" 
+                          style={{ flex: 1, fontSize: 12, padding: "8px 12px" }}
+                          onClick={triggerUndo}
+                          disabled={history.length === 0}
+                        >
+                          <Undo size={14} style={{ marginRight: 6 }} /> Deshacer
+                        </button>
+                        <button 
+                          className="admin-btn admin-btn-secondary" 
+                          style={{ flex: 1, fontSize: 12, padding: "8px 12px", color: "#f87171" }}
+                          onClick={clearAllTimes}
+                          disabled={syncLines.length === 0}
+                        >
+                          <Trash2 size={14} style={{ marginRight: 6 }} /> Limpiar
+                        </button>
+                      </div>
+
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="admin-modal-footer">
+              <button 
+                className="admin-btn admin-btn-secondary" 
+                onClick={() => setSyncModalOpen(false)}
+              >
+                Cancelar
+              </button>
+              <button 
+                className="admin-btn admin-btn-primary" 
+                onClick={async () => {
+                  await saveLyricsFromModal();
+                  setSyncModalOpen(false);
+                }}
+              >
+                Guardar y Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

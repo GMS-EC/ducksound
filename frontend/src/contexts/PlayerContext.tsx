@@ -15,6 +15,7 @@ interface PlayerContextType {
   repeat: 'none' | 'one' | 'all';
   currentTime: number;
   duration: number;
+  playbackRate: number;
   play: (songs?: Cancion[], index?: number) => void;
   pause: () => void;
   resume: () => void;
@@ -23,6 +24,7 @@ interface PlayerContextType {
   prev: () => void;
   seek: (time: number) => void;
   setVolume: (v: number) => void;
+  setPlaybackRate: (rate: number) => void;
   toggleMute: () => void;
   toggleShuffle: () => void;
   toggleRepeat: () => void;
@@ -90,6 +92,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
   });
   const [duration, setDuration] = useState(0);
+  const [playbackRate, setPlaybackRateState] = useState<number>(1.0);
+  const playbackRateRef = useRef(1.0);
+
+  useEffect(() => {
+    playbackRateRef.current = playbackRate;
+  }, [playbackRate]);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const prevVolumeRef = useRef(volume);
@@ -245,6 +253,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const onDurationChange = () => setDuration(audio.duration || 0);
     const onLoadedMetadata = () => {
       setDuration(audio.duration || 0);
+      audio.playbackRate = playbackRateRef.current;
       if (initialTimeRef.current > 0) {
         audio.currentTime = initialTimeRef.current;
         setCurrentTime(initialTimeRef.current);
@@ -294,6 +303,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         audio.load();
       }
 
+      audio.playbackRate = playbackRate;
+
       if (playing) {
         audio.play().catch((err) => {
           console.error("Audio playback failed:", err);
@@ -306,7 +317,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       audio.pause();
       audio.src = '';
     }
-  }, [currentSong, playing]);
+  }, [currentSong, playing, playbackRate]);
 
   const play = useCallback((songs?: Cancion[], index?: number) => {
     if (songs && songs.length > 0) {
@@ -351,6 +362,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const setPlaybackRate = useCallback((rate: number) => {
+    setPlaybackRateState(rate);
+    const audio = audioRef.current;
+    if (audio) {
+      audio.playbackRate = rate;
+    }
+  }, []);
+
   const setVolume = useCallback((v: number) => {
     const audio = audioRef.current;
     if (audio) {
@@ -382,17 +401,90 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const toggleRepeat = useCallback(() => {
     setRepeat((r) => r === 'none' ? 'all' : r === 'all' ? 'one' : 'none');
   }, []);
-
   const addToQueue = useCallback((songs: Cancion[]) => {
     setQueue((prev) => [...prev, ...songs]);
   }, []);
 
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if typing in input, textarea, select, or contenteditable
+      const activeEl = document.activeElement;
+      const tag = activeEl?.tagName;
+      if (
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        activeEl?.getAttribute('contenteditable') === 'true'
+      ) {
+        return;
+      }
+
+      switch (e.key) {
+        case ' ':
+          e.preventDefault();
+          togglePlay();
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          if (e.ctrlKey) {
+            playNext();
+          } else if (audioRef.current) {
+            seek(Math.min(audioRef.current.duration || 0, audioRef.current.currentTime + 10));
+          }
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          if (e.ctrlKey) {
+            playPrev();
+          } else if (audioRef.current) {
+            seek(Math.max(0, audioRef.current.currentTime - 10));
+          }
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          if (audioRef.current) {
+            const newVol = Math.min(1.0, audioRef.current.volume + 0.05);
+            setVolume(newVol);
+          }
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          if (audioRef.current) {
+            const newVol = Math.max(0.0, audioRef.current.volume - 0.05);
+            setVolume(newVol);
+          }
+          break;
+        case 'm':
+        case 'M':
+          e.preventDefault();
+          toggleMute();
+          break;
+        case 's':
+        case 'S':
+          e.preventDefault();
+          toggleShuffle();
+          break;
+        case 'r':
+        case 'R':
+          e.preventDefault();
+          toggleRepeat();
+          break;
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [togglePlay, seek, playNext, playPrev, setVolume, toggleMute, toggleShuffle, toggleRepeat]);
+
   return (
     <PlayerContext.Provider value={{
       queue, currentIndex, currentSong, playing, volume, muted,
-      shuffle, repeat, currentTime, duration,
+      shuffle, repeat, currentTime, duration, playbackRate,
       play, pause, resume, togglePlay, next: playNext, prev: playPrev, seek,
-      setVolume, toggleMute, toggleShuffle, toggleRepeat, addToQueue,
+      setVolume, setPlaybackRate, toggleMute, toggleShuffle, toggleRepeat, addToQueue,
     }}>
       {children}
     </PlayerContext.Provider>

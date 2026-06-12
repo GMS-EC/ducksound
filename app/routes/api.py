@@ -551,9 +551,10 @@ def api_coleccion_add_album(coleccion_id, album_id):
         return jsonify({'error': 'Forbidden'}), 403
         
     a = Album.query.get_or_404(album_id)
-    if a not in c.albumes:
-        c.albumes.append(a)
-        db.session.commit()
+    for song in a.canciones:
+      if song not in c.canciones:
+        c.canciones.append(song)
+    db.session.commit()
     return jsonify({'ok': True})
 
 

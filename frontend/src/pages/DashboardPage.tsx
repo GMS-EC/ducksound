@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Play, Shuffle } from "lucide-react";
+import { Play, Shuffle, MoreVertical } from "lucide-react";
 import client from "../api/client";
 import { usePlayer } from "../contexts/PlayerContext";
 import type { Cancion, DailyMix, Album, Artista } from "../types";
+import Equalizer from "../components/Equalizer";
+import { useContextMenu } from "../contexts/ContextMenuContext";
 
 interface DashboardData {
   daily_mixes: DailyMix[];
@@ -19,6 +21,7 @@ export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const { currentSong, playing, play } = usePlayer();
+  const { showMenu } = useContextMenu();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -224,6 +227,14 @@ export default function DashboardPage() {
           <div className="shelf-header" style={{ padding: 0, marginBottom: 16 }}>
             <h2 className="shelf-title">Más escuchadas</h2>
           </div>
+          <div className="tracklist-header-grid-6">
+            <div className="tracklist-header-item text-center">#</div>
+            <div className="tracklist-header-item"></div>
+            <div className="tracklist-header-item">Título</div>
+            <div className="tracklist-header-item">Reproducciones</div>
+            <div className="tracklist-header-item">Duración</div>
+            <div className="tracklist-header-item"></div>
+          </div>
           {top_canciones.map((item, i) => {
             const isCurrent = currentSong?.id === item.cancion.id;
             return (
@@ -231,14 +242,14 @@ export default function DashboardPage() {
                 key={item.cancion.id}
                 className={`track-item ${isCurrent ? `playing ${playing ? "" : "paused"}` : ""}`}
                 onClick={() => play(top_canciones.map((t) => t.cancion), i)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  showMenu(e, item.cancion);
+                }}
               >
                 {isCurrent ? (
-                  <div className={`playing-eq ${playing ? "" : "paused"}`}>
-                    <span></span>
-                    <span></span>
-                    <span></span>
-                    <span></span>
-                  </div>
+                  <Equalizer />
                 ) : (
                   <span className="track-num">{i + 1}</span>
                 )}
@@ -254,6 +265,18 @@ export default function DashboardPage() {
                   {item.cancion.duracion
                     ? Math.floor(item.cancion.duracion / 60) + ":" + String(item.cancion.duracion % 60).padStart(2, "0")
                     : "—"}
+                </div>
+                <div className="track-options">
+                  <button
+                    className="btn-options"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      showMenu(e, item.cancion);
+                    }}
+                    title="Opciones"
+                  >
+                    <MoreVertical size={16} />
+                  </button>
                 </div>
               </div>
             );

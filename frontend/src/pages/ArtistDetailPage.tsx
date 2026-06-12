@@ -1,18 +1,22 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Play, ArrowLeft } from "lucide-react";
+import { Play, ArrowLeft, MoreVertical } from "lucide-react";
 import client from "../api/client";
 import { usePlayer } from "../contexts/PlayerContext";
 import type { Artista, AlbumData, Cancion } from "../types";
+import Equalizer from "../components/Equalizer";
+import { useContextMenu } from "../contexts/ContextMenuContext";
 
 export default function ArtistDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { currentSong, playing, play } = usePlayer();
+  const { showMenu } = useContextMenu();
   const [artist, setArtist] = useState<Artista | null>(null);
   const [albums, setAlbums] = useState<AlbumData[]>([]);
   const [songs, setSongs] = useState<Cancion[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
     if (!id) return;
@@ -82,27 +86,66 @@ export default function ArtistDetailPage() {
       )}
 
       <div className="tracklist-standalone">
-        <div className="section-header" style={{ padding: "0 0 16px" }}>
+        <div className="section-header" style={{ padding: "0 0 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <h2 className="section-title">Canciones</h2>
+          <input
+            type="text"
+            placeholder="Buscar canción..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            style={{
+              background: "#222229",
+              border: "1px solid var(--color-border)",
+              color: "#fff",
+              padding: "6px 12px",
+              borderRadius: "16px",
+              fontSize: "13px",
+              width: "180px",
+              outline: "none"
+            }}
+          />
         </div>
-        {songs.map((c, i) => {
+        <div className="tracklist-header-grid-with-cover">
+          <div className="tracklist-header-item text-center">#</div>
+          <div className="tracklist-header-item"></div>
+          <div className="tracklist-header-item">Título</div>
+          <div className="tracklist-header-item">Duración</div>
+          <div className="tracklist-header-item"></div>
+        </div>
+        {songs.filter(c => 
+          c.titulo.toLowerCase().includes(searchTerm.toLowerCase()) || 
+          (c.album && c.album.toLowerCase().includes(searchTerm.toLowerCase()))
+        ).map((c, i, filtered) => {
           const isCurrent = currentSong?.id === c.id;
           return (
             <div
               key={c.id}
-              className={`track-item-grid ${isCurrent ? `playing ${playing ? "" : "paused"}` : ""}`}
-              onClick={() => play(songs, i)}
+              className={`track-item-with-cover ${isCurrent ? `playing ${playing ? "" : "paused"}` : ""}`}
+              onClick={() => play(filtered, i)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                showMenu(e, c);
+              }}
             >
               {isCurrent ? (
-                <div className={`playing-eq ${playing ? "" : "paused"}`}>
-                  <span></span>
-                  <span></span>
-                  <span></span>
-                  <span></span>
-                </div>
+                <Equalizer />
               ) : (
                 <span className="track-num-sm">{i + 1}</span>
               )}
+              <div className="track-cover-sm" style={{ width: 32, height: 32, borderRadius: 4, overflow: "hidden", background: "#2a2a33", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <img
+                  src={`/album-art/${c.id}?size=small`}
+                  alt={c.titulo}
+                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).style.display = "none";
+                    const sibling = e.currentTarget.nextElementSibling as HTMLElement;
+                    if (sibling) sibling.style.display = "block";
+                  }}
+                />
+                <span style={{ display: "none" }}>♪</span>
+              </div>
               <div className="track-info">
                 <div className="track-title">{c.titulo}</div>
                 <div className="track-artist">{c.album}</div>
@@ -110,7 +153,18 @@ export default function ArtistDetailPage() {
               <div className="track-duration">
                 {c.duracion ? Math.floor(c.duracion / 60) + ":" + String(c.duracion % 60).padStart(2, "0") : "—"}
               </div>
-              <div></div>
+              <div className="track-options">
+                <button
+                  className="btn-options"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    showMenu(e, c);
+                  }}
+                  title="Opciones"
+                >
+                  <MoreVertical size={16} />
+                </button>
+              </div>
             </div>
           );
         })}

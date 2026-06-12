@@ -1047,6 +1047,7 @@ def admin_eliminar_usuario(user_id):
 # SECCIÓN 6: GESTIÓN DE LETRAS (BUSCAR, OBTENER Y GUARDAR)
 # ==============================================================================
 
+@admin_bp.route('/admin/lyrics/search', methods=['GET'])
 @admin_bp.route('/api/admin/lyrics/search', methods=['GET'])
 def admin_lyrics_search():
     """
@@ -1157,7 +1158,11 @@ def admin_save_lyrics(cancion_id):
             except Exception:
                 pass
         cancion.ruta_archivo_lrc = None
-        db.session.commit()
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            return jsonify({'error': 'Failed to delete lyrics from database'}), 500
         from app.services.lyrics import _lyrics_cache
         _lyrics_cache.pop(cancion_id, None)
         return jsonify({'success': True, 'message': 'Letra eliminada'})

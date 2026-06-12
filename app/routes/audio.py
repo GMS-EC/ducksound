@@ -582,7 +582,7 @@ def service_worker():
     y permitir la interceptación de solicitudes en todo el dominio web.
     Desactiva las cabeceras HTTP de caché para forzar al navegador a verificar actualizaciones.
     """
-    response = make_response(send_from_directory('static/js', 'service-worker.js', mimetype='application/javascript'))
+    response = make_response(send_from_directory(current_app.static_folder, 'service-worker.js', mimetype='application/javascript'))
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     response.headers['Pragma'] = 'no-cache'
     response.headers['Expires'] = '0'

@@ -3,8 +3,10 @@ import { usePlayer } from "../contexts/PlayerContext";
 import client from "../api/client";
 import { Globe, Music, Loader2 } from "lucide-react";
 import type { Cancion } from "../types";
+import Equalizer from "./Equalizer";
+import VisualizerTab from "./VisualizerTab";
 
-type Tab = "upnext" | "lyrics" | "related";
+type Tab = "upnext" | "lyrics" | "related" | "visualizer";
 
 interface LyricCue {
   start: number | null;
@@ -14,7 +16,7 @@ interface LyricCue {
 
 export default function RightPanel() {
   const [tab, setTab] = useState<Tab>("lyrics");
-  const { currentSong, currentTime, seek, queue, currentIndex, play } = usePlayer();
+  const { currentSong, currentTime, seek, queue, currentIndex, play, playing } = usePlayer();
 
   const [lyrics, setLyrics] = useState<LyricCue[] | null>(null);
   const [lyricType, setLyricType] = useState<"lrc" | "txt" | null>(null);
@@ -207,13 +209,13 @@ export default function RightPanel() {
   return (
     <aside className="right-panel">
       <div className="right-tabs">
-        {(["upnext", "lyrics", "related"] as Tab[]).map((t) => (
+        {(["upnext", "lyrics", "related", "visualizer"] as Tab[]).map((t) => (
           <button
             key={t}
             className={"right-tab" + (tab === t ? " active" : "")}
             onClick={() => setTab(t)}
           >
-            {t === "upnext" ? "A CONTINUACIÓN" : t === "lyrics" ? "LETRA" : "SIMILARES"}
+            {t === "upnext" ? "A CONTINUACIÓN" : t === "lyrics" ? "LETRA" : t === "related" ? "SIMILARES" : "VISUALIZADOR"}
           </button>
         ))}
       </div>
@@ -273,9 +275,13 @@ export default function RightPanel() {
                             fontWeight: 600,
                             fontSize: 13,
                             color: isCurrent ? "var(--color-accent, #d95840)" : "#fff",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
                           }}
                         >
                           {s.titulo}
+                          {isCurrent && <Equalizer />}
                         </div>
                         <div style={{ fontSize: 11, color: "#9ca3af" }}>{s.artista}</div>
                       </div>
@@ -484,6 +490,9 @@ export default function RightPanel() {
               </div>
             )}
           </div>
+        )}
+        {tab === "visualizer" && (
+          <VisualizerTab playing={playing} />
         )}
       </div>
     </aside>
