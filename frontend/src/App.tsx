@@ -9,9 +9,6 @@ import ContextMenu from "./components/ContextMenu";
 import AudioInfoModal from "./components/AudioInfoModal";
 import DashboardPage from "./pages/DashboardPage";
 import ExplorePage from "./pages/ExplorePage";
-import FavoritesPage from "./pages/FavoritesPage";
-import FoldersPage from "./pages/FoldersPage";
-import ColeccionesPage from "./pages/ColeccionesPage";
 import AdminPage from "./pages/AdminPage";
 import ArtistDetailPage from "./pages/ArtistDetailPage";
 import AlbumDetailPage from "./pages/AlbumDetailPage";
@@ -19,6 +16,7 @@ import ArtistsPage from "./pages/ArtistsPage";
 import AlbumsPage from "./pages/AlbumsPage";
 import ColeccionDetailPage from "./pages/ColeccionDetailPage";
 import ProfilePage from "./pages/ProfilePage";
+import LibraryPage from "./pages/LibraryPage";
 
 function AppContent() {
   return (
@@ -31,14 +29,15 @@ function AppContent() {
             <Route path="/explore" element={<ExplorePage />} />
             <Route path="/artists" element={<ArtistsPage />} />
             <Route path="/albums" element={<AlbumsPage />} />
-            <Route path="/favorites" element={<FavoritesPage />} />
-            <Route path="/folders" element={<FoldersPage />} />
-            <Route path="/colecciones" element={<ColeccionesPage />} />
+            {/* Redirects de rutas antiguas a Biblioteca */}
+            <Route path="/favorites" element={<Navigate to="/biblioteca" replace />} />
+            <Route path="/colecciones" element={<Navigate to="/biblioteca?tab=playlists" replace />} />
             <Route path="/admin" element={<AdminPage />} />
             <Route path="/artist/:id" element={<ArtistDetailPage />} />
             <Route path="/album/:id" element={<AlbumDetailPage />} />
             <Route path="/coleccion/:id" element={<ColeccionDetailPage />} />
             <Route path="/profile" element={<ProfilePage />} />
+            <Route path="/biblioteca" element={<LibraryPage />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </main>

@@ -201,6 +201,27 @@ class Favorito(db.Model):
         return f'<Favorito usuario={self.usuario_id} cancion={self.cancion_id}>'
 
 
+class AlbumGuardado(db.Model):
+    """
+    Modelo de Álbumes Guardados en Biblioteca.
+    Vincula a un usuario con los álbumes que ha guardado en su biblioteca personal.
+    """
+    __tablename__ = 'albums_guardados'
+
+    id = db.Column(db.Integer, primary_key=True)
+    usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
+    album_id = db.Column(db.Integer, db.ForeignKey('albums.id'), nullable=False)
+    fecha_agregado = db.Column(db.DateTime, default=datetime.utcnow)
+
+    usuario = db.relationship('Usuario', backref=db.backref('albums_guardados', lazy='dynamic'))
+    album = db.relationship('Album', backref=db.backref('guardados', lazy='dynamic'))
+
+    __table_args__ = (db.UniqueConstraint('usuario_id', 'album_id', name='uq_usuario_album'),)
+
+    def __repr__(self):
+        return f'<AlbumGuardado usuario={self.usuario_id} album={self.album_id}>'
+
+
 # Tabla auxiliar de asociación muchos a muchos entre Colecciones y Canciones
 coleccion_canciones = db.Table(
     'coleccion_canciones',
@@ -348,7 +369,10 @@ class Cancion(db.Model):
             'id': self.id,
             'titulo': self.titulo,
             'artista': artista,
+            'artista_id': self.artista_id,
             'album': album,
+            'album_id': self.album_id,
+            'anio': self.album_obj.anio if self.album_obj else None,
             'duracion': self.duracion,
             'ruta_audio': self.ruta_archivo_audio,
             'ruta_lrc': self.ruta_archivo_lrc,
@@ -365,3 +389,4 @@ class Cancion(db.Model):
             'bit_rate': self.bit_rate
         }
         return data
+

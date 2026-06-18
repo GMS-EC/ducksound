@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Play, Clock, ArrowLeft, MoreVertical, Plus } from "lucide-react";
+import { Play, Clock, ArrowLeft, MoreVertical, Plus, BookMarked } from "lucide-react";
 import client from "../api/client";
 import { usePlayer } from "../contexts/PlayerContext";
 import type { Album, Cancion } from "../types";
@@ -19,6 +19,7 @@ export default function AlbumDetailPage() {
   
   const [showAddDropdown, setShowAddDropdown] = useState(false);
   const [collections, setCollections] = useState<any[]>([]);
+  const [isSaved, setIsSaved] = useState(false);
 
   const fetchCollections = () => {
     client.get("/api/coleccion-lista")
@@ -91,7 +92,22 @@ export default function AlbumDetailPage() {
       })
       .catch(console.error)
       .finally(() => setLoading(false));
+    // Check if album is saved in library
+    client.get(`/api/biblioteca/albums/${id}/check`)
+      .then((res) => setIsSaved(res.data.saved || false))
+      .catch(() => setIsSaved(false));
   }, [id]);
+
+  const toggleSaveLibrary = async () => {
+    if (!id) return;
+    try {
+      const res = await client.post(`/api/biblioteca/albums/${id}/toggle`);
+      setIsSaved(res.data.saved);
+      window.dispatchEvent(new Event("ducksound:library_changed"));
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const fmt = (s: number) => {
     if (!s || !isFinite(s)) return "0:00";
@@ -132,6 +148,23 @@ export default function AlbumDetailPage() {
           <div className="album-header-actions" style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <button className="btn-play-now" onClick={playAll} title="Reproducir">
               <Play size={22} fill="currentColor" />
+            </button>
+            {/* Save to library */}
+            <button
+              onClick={toggleSaveLibrary}
+              title={isSaved ? "Quitar de biblioteca" : "Guardar en biblioteca"}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                height: 44, padding: "0 16px", borderRadius: 22,
+                border: isSaved ? "1px solid var(--color-accent, #d95840)" : "1px solid var(--color-border)",
+                background: isSaved ? "rgba(217,88,64,0.12)" : "#222229",
+                color: isSaved ? "var(--color-accent, #d95840)" : "#9ca3af",
+                cursor: "pointer", fontWeight: 500,
+                transition: "all 0.15s",
+              }}
+            >
+              <BookMarked size={16} fill={isSaved ? "var(--color-accent, #d95840)" : "none"} />
+              <span>{isSaved ? "Guardado" : "Guardar"}</span>
             </button>
             <div style={{ position: "relative" }}>
               <button 

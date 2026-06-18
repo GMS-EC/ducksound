@@ -2,7 +2,7 @@ import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import {
   House, Heart, FolderTree, List, Compass, Users, Disc3,
-  Shield, Search, User,
+  Shield, Search, User, BookMarked,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import SearchDialog from "./SearchDialog";
@@ -10,13 +10,12 @@ import SearchDialog from "./SearchDialog";
 const iconMap: Record<string, any> = {
   house: House, heart: Heart, folder: FolderTree, list: List,
   compass: Compass, users: Users, disc: Disc3, shield: Shield,
+  library: BookMarked,
 };
 
 const links = [
   { to: "/dashboard", label: "Principal", icon: "house" },
-  { to: "/favorites", label: "Favoritos", icon: "heart" },
-  { to: "/folders", label: "Carpetas", icon: "folder" },
-  { to: "/colecciones", label: "Playlists", icon: "list" },
+  { to: "/biblioteca", label: "Biblioteca", icon: "library" },
 ];
 
 const browseLinks = [

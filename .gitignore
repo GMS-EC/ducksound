@@ -59,3 +59,7 @@ album_art/
 # Secretos
 .secret_key
 .env
+
+
+#OpenCode
+.opencode

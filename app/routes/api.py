@@ -22,7 +22,7 @@ from datetime import datetime, timedelta
 from urllib.parse import quote
 
 from flask import Blueprint, jsonify, request, session, url_for, current_app, Response
-from app.models import db, Usuario, Artista, Album, Playlist, Cancion, Favorito, Coleccion, DailyMix, HistorialEscucha, SesionActiva
+from app.models import db, Usuario, Artista, Album, Playlist, Cancion, Favorito, Coleccion, DailyMix, HistorialEscucha, SesionActiva, AlbumGuardado
 from app.services.queue import get_connection as get_redis_connection
 import json
 
@@ -656,7 +656,70 @@ def api_favoritos_canciones():
 
 
 # ==============================================================================
-# SECCIÓN 9: REGISTRO DE AUDICIONES Y ACTIVIDAD (PLAY LOGGER)
+# SECCIÓN 9: BIBLIOTECA DE ÁLBUMES GUARDADOS
+# ==============================================================================
+
+@api_bp.route('/api/biblioteca/albums', methods=['GET'])
+def api_biblioteca_albums():
+    """Retorna la lista de álbumes guardados en la biblioteca del usuario."""
+    usuario_id = session.get('user_id')
+    if not usuario_id:
+        return jsonify([]), 200
+
+    guardados = AlbumGuardado.query.filter_by(usuario_id=usuario_id)\
+        .order_by(AlbumGuardado.fecha_agregado.desc()).all()
+
+    result = []
+    for g in guardados:
+        al = db.session.get(Album, g.album_id)
+        if al:
+            artista_nombre = al.artista.nombre if al.artista else None
+            artista_id = al.artista_id
+            # Usa el ID de la primera canción del álbum para servir la portada
+            primera_cancion = al.canciones[0] if al.canciones else None
+            result.append({
+                'id': al.id,
+                'titulo': al.titulo,
+                'anio': al.anio,
+                'artista': artista_nombre,
+                'artista_id': artista_id,
+                'cancion_id': primera_cancion.id if primera_cancion else None,
+                'fecha_guardado': g.fecha_agregado.isoformat() if g.fecha_agregado else None,
+            })
+    return jsonify(result)
+
+
+@api_bp.route('/api/biblioteca/albums/<int:album_id>/toggle', methods=['POST'])
+def api_biblioteca_album_toggle(album_id):
+    """Guarda o elimina un álbum de la biblioteca del usuario."""
+    usuario_id = session.get('user_id')
+    if not usuario_id:
+        return jsonify({'error': 'No autenticado'}), 401
+
+    guardado = AlbumGuardado.query.filter_by(usuario_id=usuario_id, album_id=album_id).first()
+    if guardado:
+        db.session.delete(guardado)
+        db.session.commit()
+        return jsonify({'saved': False})
+    else:
+        nuevo = AlbumGuardado(usuario_id=usuario_id, album_id=album_id)
+        db.session.add(nuevo)
+        db.session.commit()
+        return jsonify({'saved': True})
+
+
+@api_bp.route('/api/biblioteca/albums/<int:album_id>/check', methods=['GET'])
+def api_biblioteca_album_check(album_id):
+    """Comprueba si un álbum está guardado en la biblioteca del usuario."""
+    usuario_id = session.get('user_id')
+    if not usuario_id:
+        return jsonify({'saved': False})
+    guardado = AlbumGuardado.query.filter_by(usuario_id=usuario_id, album_id=album_id).first()
+    return jsonify({'saved': bool(guardado)})
+
+
+# ==============================================================================
+# SECCIÓN 10: REGISTRO DE AUDICIONES Y ACTIVIDAD (PLAY LOGGER)
 # ==============================================================================
 
 @api_bp.route('/api/play/<int:cancion_id>', methods=['POST'])

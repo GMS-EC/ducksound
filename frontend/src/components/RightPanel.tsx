@@ -1,12 +1,11 @@
 import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { usePlayer } from "../contexts/PlayerContext";
 import client from "../api/client";
-import { Globe, Music, Loader2 } from "lucide-react";
-import type { Cancion } from "../types";
+import { Globe, Music, Loader2, Disc3, Mic2 } from "lucide-react";
 import Equalizer from "./Equalizer";
-import VisualizerTab from "./VisualizerTab";
 
-type Tab = "upnext" | "lyrics" | "related" | "visualizer";
+type Tab = "nowplaying" | "upnext";
 
 interface LyricCue {
   start: number | null;
@@ -15,17 +14,15 @@ interface LyricCue {
 }
 
 export default function RightPanel() {
-  const [tab, setTab] = useState<Tab>("lyrics");
+  const [tab, setTab] = useState<Tab>("nowplaying");
+  const navigate = useNavigate();
   const { currentSong, currentTime, seek, queue, currentIndex, play, playing } = usePlayer();
 
   const [lyrics, setLyrics] = useState<LyricCue[] | null>(null);
   const [lyricType, setLyricType] = useState<"lrc" | "txt" | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  
-  const [similarSongs, setSimilarSongs] = useState<any[]>([]);
-  const [loadingSimilar, setLoadingSimilar] = useState(false);
-  
+  const [loadingLyrics, setLoadingLyrics] = useState(false);
+  const [lyricError, setLyricError] = useState<string | null>(null);
+
   const [targetLang, setTargetLang] = useState("es");
   const [translating, setTranslating] = useState(false);
   const [translated, setTranslated] = useState(false);
@@ -33,17 +30,13 @@ export default function RightPanel() {
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // Fetch user profile language once on mount
+  // Fetch user profile language
   useEffect(() => {
     client.get("/api/profile")
       .then((res) => {
-        if (res.data && res.data.idioma_preferido) {
-          setTargetLang(res.data.idioma_preferido);
-        }
+        if (res.data?.idioma_preferido) setTargetLang(res.data.idioma_preferido);
       })
-      .catch(() => {
-        setTargetLang("es");
-      });
+      .catch(() => setTargetLang("es"));
   }, []);
 
   // Fetch lyrics when currentSong changes
@@ -56,8 +49,8 @@ export default function RightPanel() {
       return;
     }
 
-    setLoading(true);
-    setError(null);
+    setLoadingLyrics(true);
+    setLyricError(null);
     setLyrics(null);
     setLyricType(null);
     setTranslated(false);
@@ -65,58 +58,28 @@ export default function RightPanel() {
 
     client.get(`/api/cancion/${currentSong.id}/lyrics?_t=${Date.now()}`)
       .then((res) => {
-        if (res.data && res.data.letra) {
+        if (res.data?.letra) {
           const cues = parseLRC(res.data.letra);
           setLyrics(cues);
           setLyricType(res.data.tipo || "txt");
         } else {
-          setError("Letra no disponible");
+          setLyricError("Letra no disponible");
         }
       })
-      .catch((err) => {
-        console.error("Error fetching lyrics:", err);
-        setError("Error al cargar la letra");
-      })
-      .finally(() => {
-        setLoading(false);
-      });
+      .catch(() => setLyricError("Error al cargar la letra"))
+      .finally(() => setLoadingLyrics(false));
   }, [currentSong]);
 
-  // Fetch similar songs when currentSong changes
-  useEffect(() => {
-    if (!currentSong) {
-      setSimilarSongs([]);
-      return;
-    }
-
-    setLoadingSimilar(true);
-    client.get(`/api/similares/${currentSong.id}`)
-      .then((res) => {
-        setSimilarSongs(res.data || []);
-      })
-      .catch((err) => {
-        console.error("Error fetching similar songs:", err);
-      })
-      .finally(() => {
-        setLoadingSimilar(false);
-      });
-  }, [currentSong]);
-
-  // Parse LRC Helper
   const parseLRC = (txt: string): LyricCue[] => {
     const lines = txt.split(/\r?\n/);
     const timeTag = /\[(\d+):(\d{2})(?:\.(\d{1,3}))?\]/g;
-    
+
     let hasTimestamps = false;
     for (const raw of lines) {
-      if (raw.match(/\[\d+:\d{2}/)) {
-        hasTimestamps = true;
-        break;
-      }
+      if (raw.match(/\[\d+:\d{2}/)) { hasTimestamps = true; break; }
     }
-    
+
     const cues: LyricCue[] = [];
-    
     if (hasTimestamps) {
       for (const raw of lines) {
         let match;
@@ -125,49 +88,35 @@ export default function RightPanel() {
         while ((match = timeTag.exec(raw)) !== null) {
           const m = parseInt(match[1], 10);
           const s = parseInt(match[2], 10);
-          const ms = match[3] ? parseInt((match[3] + '00').slice(0, 3), 10) : 0;
+          const ms = match[3] ? parseInt((match[3] + "00").slice(0, 3), 10) : 0;
           tags.push(m * 60 + s + ms / 1000);
         }
-        const text = raw.replace(timeTag, '').trim();
-        if (!tags.length) continue;
-        if (!text) continue;
-        if (/contribuciones/i.test(text)) continue;
-        for (const t of tags) {
-          cues.push({ start: t, text: text });
-        }
+        const text = raw.replace(timeTag, "").trim();
+        if (!tags.length || !text || /contribuciones/i.test(text)) continue;
+        for (const t of tags) cues.push({ start: t, text });
       }
       return cues.sort((a, b) => (a.start || 0) - (b.start || 0));
     } else {
-      for (let i = 0; i < lines.length; i++) {
-        const text = lines[i].trim();
-        if (!text) continue;
-        if (/contribuciones/i.test(text)) continue;
-        cues.push({ start: null, text: text });
+      for (const raw of lines) {
+        const text = raw.trim();
+        if (!text || /contribuciones/i.test(text)) continue;
+        cues.push({ start: null, text });
       }
       return cues;
     }
   };
 
-  // Translate handler
   const handleTranslate = async () => {
     if (!lyrics || lyrics.length === 0 || translating) return;
-    
-    if (translated) {
-      setShowTranslation(!showTranslation);
-      return;
-    }
+    if (translated) { setShowTranslation(!showTranslation); return; }
 
     setTranslating(true);
     try {
       const text = lyrics.map((c) => c.text || "").join("\n---\n");
       const res = await client.post("/api/translate", { text, target: targetLang });
-      if (res.data && res.data.translated) {
+      if (res.data?.translated) {
         const lines = res.data.translated.split("\n---\n");
-        const updatedLyrics = lyrics.map((c, i) => ({
-          ...c,
-          translation: lines[i] || ""
-        }));
-        setLyrics(updatedLyrics);
+        setLyrics(lyrics.map((c, i) => ({ ...c, translation: lines[i] || "" })));
         setTranslated(true);
         setShowTranslation(true);
       }
@@ -178,48 +127,236 @@ export default function RightPanel() {
     }
   };
 
-  // Active line detection
+  // Active lyric line detection
   let activeIndex = -1;
   if (lyrics && lyricType === "lrc") {
     for (let i = 0; i < lyrics.length; i++) {
-      if (currentTime >= (lyrics[i].start ?? 0)) {
-        activeIndex = i;
-      } else {
-        break;
-      }
+      if (currentTime >= (lyrics[i].start ?? 0)) activeIndex = i;
+      else break;
     }
   }
 
-  // Centered scrolling when active line changes
+  // Auto-scroll to active lyric line
   useEffect(() => {
     if (scrollContainerRef.current) {
       const activeEl = scrollContainerRef.current.querySelector(".lyric-line.active");
-      if (activeEl) {
-        activeEl.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
+      if (activeEl) activeEl.scrollIntoView({ behavior: "smooth", block: "center" });
     }
   }, [activeIndex]);
 
-  const handleLineClick = (start: number | null) => {
-    if (start !== null) {
-      seek(start);
-    }
+  const tabLabels: Record<Tab, string> = {
+    nowplaying: "REPRODUCIENDO",
+    upnext: "A CONTINUACIÓN",
   };
 
   return (
     <aside className="right-panel">
       <div className="right-tabs">
-        {(["upnext", "lyrics", "related", "visualizer"] as Tab[]).map((t) => (
+        {(["nowplaying", "upnext"] as Tab[]).map((t) => (
           <button
             key={t}
             className={"right-tab" + (tab === t ? " active" : "")}
             onClick={() => setTab(t)}
           >
-            {t === "upnext" ? "A CONTINUACIÓN" : t === "lyrics" ? "LETRA" : t === "related" ? "SIMILARES" : "VISUALIZADOR"}
+            {tabLabels[t]}
           </button>
         ))}
       </div>
-      <div className="right-content">
+
+      <div className="right-content" style={{ padding: 0 }}>
+
+        {/* ===== AHORA SUENA ===== */}
+        {tab === "nowplaying" && (
+          <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+            {currentSong ? (
+              <>
+                {/* Compact header: small cover + metadata side by side */}
+                <div style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  padding: "14px 16px",
+                  flexShrink: 0,
+                  borderBottom: "1px solid #25252d",
+                }}>
+                  {/* Small square cover */}
+                  <div style={{
+                    width: 64,
+                    height: 64,
+                    borderRadius: 8,
+                    overflow: "hidden",
+                    background: "#2a2a33",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+                  }}>
+                    <img
+                      src={`/album-art/${currentSong.id}?size=small`}
+                      alt={currentSong.titulo}
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).style.display = "none";
+                        const sibling = e.currentTarget.nextElementSibling as HTMLElement;
+                        if (sibling) sibling.style.display = "flex";
+                      }}
+                    />
+                    <div style={{ display: "none", alignItems: "center", justifyContent: "center", width: "100%", height: "100%", fontSize: 24, color: "#555" }}>♫</div>
+                  </div>
+
+                  {/* Metadata column */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    {/* Title + equalizer */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                      <div style={{
+                        fontSize: 14,
+                        fontWeight: 700,
+                        color: "#ffffff",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        flex: 1,
+                      }}>
+                        {currentSong.titulo}
+                      </div>
+                      {playing && <Equalizer />}
+                    </div>
+
+                    {/* Artist — clickable */}
+                    <div
+                      onClick={() => currentSong.artista_id && navigate(`/artist/${currentSong.artista_id}`)}
+                      style={{
+                        fontSize: 12,
+                        color: currentSong.artista_id ? "#d95840" : "#9ca3af",
+                        cursor: currentSong.artista_id ? "pointer" : "default",
+                        fontWeight: 500,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                        marginBottom: 2,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      <Mic2 size={11} style={{ flexShrink: 0 }} />
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {currentSong.artista || "Artista desconocido"}
+                      </span>
+                    </div>
+
+                    {/* Album + year — clickable */}
+                    <div
+                      onClick={() => currentSong.album_id && navigate(`/album/${currentSong.album_id}`)}
+                      style={{
+                        fontSize: 11,
+                        color: currentSong.album_id ? "#6b7280" : "#4b5563",
+                        cursor: currentSong.album_id ? "pointer" : "default",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      <Disc3 size={10} style={{ flexShrink: 0 }} />
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {currentSong.album || "Álbum desconocido"}
+                        {currentSong.anio ? ` · ${currentSong.anio}` : ""}
+                      </span>
+                    </div>
+
+                    {/* Genre pill */}
+                    {currentSong.genero && (
+                      <div style={{
+                        display: "inline-block",
+                        marginTop: 5,
+                        padding: "1px 8px",
+                        borderRadius: 10,
+                        background: "#30303b",
+                        color: "#9ca3af",
+                        fontSize: 10,
+                        fontWeight: 600,
+                        letterSpacing: "0.04em",
+                        textTransform: "uppercase",
+                      }}>
+                        {currentSong.genero}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Lyrics section — takes all remaining space */}
+                <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                  {/* Lyrics toolbar */}
+                  <div style={{ padding: "6px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0, borderBottom: "1px solid #25252d" }}>
+                    <span style={{ fontSize: 10, fontWeight: 600, color: "#9ca3af", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                      Letra
+                    </span>
+                    <button
+                      className="lyrics-translate-btn"
+                      disabled={!lyrics || translating}
+                      onClick={handleTranslate}
+                      style={{ fontSize: 11, padding: "3px 10px" }}
+                    >
+                      {translating ? (
+                        <><Loader2 size={12} className="animate-spin" /><span>Traduciendo...</span></>
+                      ) : showTranslation ? (
+                        <><Globe size={12} /><span>Ver Original</span></>
+                      ) : (
+                        <><Globe size={12} /><span>Traducir</span></>
+                      )}
+                    </button>
+                  </div>
+
+                  <div className="lyrics-content-scroll" ref={scrollContainerRef} style={{ flex: 1, padding: "8px 16px 20px" }}>
+                    {loadingLyrics && (
+                      <div className="no-lyrics">
+                        <span className="no-lyrics-icon"><Loader2 className="animate-spin" style={{ margin: "0 auto" }} /></span>
+                        Buscando letra...
+                      </div>
+                    )}
+                    {lyricError && !loadingLyrics && (
+                      <div className="no-lyrics">
+                        <span className="no-lyrics-icon"><Music /></span>
+                        {lyricError}
+                      </div>
+                    )}
+                    {lyrics && (
+                      <div className="lyrics-lines">
+                        {lyrics.map((c, i) => {
+                          const isActive = i === activeIndex;
+                          return (
+                            <div
+                              key={i}
+                              className={`lyric-line ${isActive ? "active" : ""}`}
+                              onClick={() => c.start !== null && seek(c.start)}
+                            >
+                              <div className="lyric-main-text">{c.text}</div>
+                              {showTranslation && c.translation && (
+                                <div className="lyric-subline">{c.translation}</div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div style={{ textAlign: "center", paddingTop: 80, color: "#9ca3af" }}>
+                <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.2 }}>♫</div>
+                <p style={{ fontSize: 14 }}>Selecciona una canción para empezar</p>
+              </div>
+            )}
+          </div>
+        )}
+
+
+        {/* ===== A CONTINUACIÓN ===== */}
         {tab === "upnext" && (
           <div className="upnext-container" style={{ padding: 12 }}>
             {queue.length === 0 ? (
@@ -227,7 +364,7 @@ export default function RightPanel() {
                 <p>No hay canciones en cola</p>
               </div>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 {queue.map((s, idx) => {
                   const isCurrent = idx === currentIndex;
                   return (
@@ -237,26 +374,21 @@ export default function RightPanel() {
                       style={{
                         display: "flex",
                         gap: 12,
-                        padding: 8,
+                        padding: "8px 10px",
                         borderRadius: 6,
                         cursor: "pointer",
-                        background: isCurrent ? "rgba(255,255,255,0.06)" : "transparent",
-                        borderLeft: isCurrent ? "3px solid var(--color-accent, #d95840)" : "3px solid transparent",
+                        background: isCurrent ? "#2a2a33" : "transparent",
+                        borderLeft: isCurrent ? "3px solid #d95840" : "3px solid transparent",
+                        transition: "background 0.15s",
                       }}
+                      onMouseEnter={(e) => { if (!isCurrent) e.currentTarget.style.background = "#24242d"; }}
+                      onMouseLeave={(e) => { if (!isCurrent) e.currentTarget.style.background = "transparent"; }}
                     >
-                      <div
-                        style={{
-                          width: 40,
-                          height: 40,
-                          borderRadius: 4,
-                          overflow: "hidden",
-                          background: "#2a2a33",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          flexShrink: 0,
-                        }}
-                      >
+                      <div style={{
+                        width: 40, height: 40, borderRadius: 4, overflow: "hidden",
+                        background: "#2a2a33", display: "flex", alignItems: "center",
+                        justifyContent: "center", flexShrink: 0,
+                      }}>
                         <img
                           src={`/album-art/${s.id}?size=small`}
                           alt={s.titulo}
@@ -269,230 +401,31 @@ export default function RightPanel() {
                         />
                         <span style={{ display: "none" }}>♪</span>
                       </div>
-                      <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        <div
-                          style={{
-                            fontWeight: 600,
-                            fontSize: 13,
-                            color: isCurrent ? "var(--color-accent, #d95840)" : "#fff",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 6,
-                          }}
-                        >
+                      <div style={{ overflow: "hidden", flex: 1 }}>
+                        <div style={{
+                          fontWeight: 600, fontSize: 13,
+                          color: isCurrent ? "#d95840" : "#fff",
+                          display: "flex", alignItems: "center", gap: 6,
+                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                        }}>
                           {s.titulo}
                           {isCurrent && <Equalizer />}
                         </div>
-                        <div style={{ fontSize: 11, color: "#9ca3af" }}>{s.artista}</div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {tab === "lyrics" && (
-          <div className="lyrics-container">
-            {currentSong ? (
-              <>
-                <div className="lyrics-toolbar">
-                  <button
-                    className="lyrics-translate-btn"
-                    disabled={!lyrics || translating}
-                    onClick={handleTranslate}
-                  >
-                    {translating ? (
-                      <>
-                        <Loader2 size={14} className="animate-spin" />
-                        <span>Traduciendo...</span>
-                      </>
-                    ) : showTranslation ? (
-                      <>
-                        <Globe size={14} />
-                        <span>Ver Original</span>
-                      </>
-                    ) : (
-                      <>
-                        <Globe size={14} />
-                        <span>Traducir</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-                <div className="lyrics-content-scroll" ref={scrollContainerRef}>
-                  {loading && (
-                    <div className="no-lyrics">
-                      <span className="no-lyrics-icon">
-                        <Loader2 className="animate-spin" style={{ margin: "0 auto" }} />
-                      </span>
-                      Buscando letra...
-                    </div>
-                  )}
-                  {error && (
-                    <div className="no-lyrics">
-                      <span className="no-lyrics-icon">
-                        <Music />
-                      </span>
-                      {error}
-                    </div>
-                  )}
-                  {lyrics && (
-                    <div className="lyrics-lines">
-                      {lyrics.map((c, i) => {
-                        const isActive = i === activeIndex;
-                        return (
-                          <div
-                            key={i}
-                            className={`lyric-line ${isActive ? "active" : ""}`}
-                            data-start={c.start}
-                            data-index={i}
-                            onClick={() => handleLineClick(c.start)}
-                          >
-                            <div className="lyric-main-text">{c.text}</div>
-                            {showTranslation && c.translation && (
-                              <div className="lyric-subline">{c.translation}</div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </>
-            ) : (
-              <div style={{ textAlign: "center", paddingTop: 60, color: "#9ca3af" }}>
-                <div style={{ fontSize: 32, marginBottom: 16, opacity: 0.3 }}>♫</div>
-                <p style={{ fontSize: 14 }}>Selecciona una canción para ver la letra</p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {tab === "related" && (
-          <div className="related-container" style={{ padding: 12 }}>
-            {!currentSong ? (
-              <div style={{ color: "#9ca3af", textAlign: "center", paddingTop: 40 }}>
-                <p>Reproduce una canción para ver temas similares</p>
-              </div>
-            ) : loadingSimilar ? (
-              <div className="no-lyrics" style={{ paddingTop: 40 }}>
-                <span className="no-lyrics-icon">
-                  <Loader2 className="animate-spin" style={{ margin: "0 auto" }} />
-                </span>
-                Calculando similitud acústica...
-              </div>
-            ) : similarSongs.length === 0 ? (
-              <div style={{ color: "#9ca3af", textAlign: "center", paddingTop: 40 }}>
-                <p>No se encontraron canciones similares</p>
-              </div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {similarSongs.map((s) => {
-                  const pct = Math.round((s.similarity || 0) * 100);
-                  const songObj: Cancion = {
-                    id: s.id,
-                    titulo: s.titulo,
-                    artista: s.artista,
-                    album: s.album,
-                    duracion: null,
-                    ruta_audio: "",
-                    ruta_lrc: null,
-                    ruta_imagen: null,
-                    genero: null,
-                    sample_rate: null,
-                    bit_depth: null,
-                    channels: null,
-                    nyquist_freq: null,
-                    dynamic_range: null,
-                    peak_level: null,
-                    rms_level: null,
-                    total_samples: null,
-                    bit_rate: null
-                  };
-                  return (
-                    <div
-                      key={s.id}
-                      onClick={() => play([songObj], 0)}
-                      className="group"
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 12,
-                        padding: 8,
-                        borderRadius: 6,
-                        cursor: "pointer",
-                        background: "transparent",
-                        transition: "background 0.2s",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = "rgba(255,255,255,0.06)";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = "transparent";
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: 40,
-                          height: 40,
-                          borderRadius: 4,
-                          overflow: "hidden",
-                          background: "#2a2a33",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          flexShrink: 0,
-                        }}
-                      >
-                        <img
-                          src={`/album-art/${s.id}?size=small`}
-                          alt={s.titulo}
-                          style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                          onError={(e) => {
-                            (e.currentTarget as HTMLImageElement).style.display = "none";
-                            const sibling = e.currentTarget.nextElementSibling as HTMLElement;
-                            if (sibling) sibling.style.display = "block";
-                          }}
-                        />
-                        <span style={{ display: "none" }}>♪</span>
-                      </div>
-                      <div style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        <div
-                          style={{
-                            fontWeight: 600,
-                            fontSize: 13,
-                            color: "#fff",
-                            transition: "color 0.2s"
-                          }}
-                        >
-                          {s.titulo}
+                        <div style={{ fontSize: 11, color: "#9ca3af", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {s.artista}
                         </div>
-                        <div style={{ fontSize: 11, color: "#9ca3af" }}>{s.artista}</div>
                       </div>
-                      <div
-                        style={{
-                          fontSize: 10,
-                          fontWeight: "bold",
-                          padding: "2px 6px",
-                          borderRadius: 10,
-                          background: pct > 80 ? "rgba(16, 185, 129, 0.15)" : pct > 60 ? "rgba(245, 158, 11, 0.15)" : "rgba(255, 255, 255, 0.1)",
-                          color: pct > 80 ? "#10b981" : pct > 60 ? "#f59e0b" : "#9ca3af",
-                          flexShrink: 0
-                        }}
-                      >
-                        {pct}%
-                      </div>
+                      {idx !== currentIndex && (
+                        <div style={{ fontSize: 11, color: "#6b7280", flexShrink: 0, alignSelf: "center" }}>
+                          {s.duracion ? Math.floor(s.duracion / 60) + ":" + String(s.duracion % 60).padStart(2, "0") : ""}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
               </div>
             )}
           </div>
-        )}
-        {tab === "visualizer" && (
-          <VisualizerTab playing={playing} />
         )}
       </div>
     </aside>

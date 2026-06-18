@@ -39,7 +39,10 @@ export interface Cancion {
   id: number;
   titulo: string;
   artista: string | null;
+  artista_id: number | null;
   album: string | null;
+  album_id: number | null;
+  anio: number | null;
   duracion: number | null;
   ruta_audio: string;
   ruta_lrc: string | null;
