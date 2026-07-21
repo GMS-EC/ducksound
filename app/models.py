@@ -7,6 +7,7 @@ Todos los modelos son compatibles con SQLite (desarrollo local) y PostgreSQL (pr
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
+from sqlalchemy.orm import joinedload
 
 # Instancia central de SQLAlchemy. Se vinculará a la aplicación Flask en la fábrica (create_app).
 db = SQLAlchemy()
@@ -303,13 +304,19 @@ class DailyMix(db.Model):
 
 
     def to_dict(self):
+        from app.models import Cancion
+        canciones = db.session.query(Cancion)\
+            .options(joinedload(Cancion.artista_obj), joinedload(Cancion.album_obj))\
+            .join(daily_mix_canciones, daily_mix_canciones.c.cancion_id == Cancion.id)\
+            .filter(daily_mix_canciones.c.daily_mix_id == self.id)\
+            .all()
         return {
             'id': self.id,
             'usuario_id': self.usuario_id,
             'nombre': self.nombre,
             'fecha': self.fecha.isoformat() if self.fecha else None,
             'fecha_creacion': self.fecha_creacion.isoformat() if self.fecha_creacion else None,
-            'canciones': [c.to_dict() for c in self.canciones],
+            'canciones': [c.to_dict() for c in canciones],
         }
 
     def __repr__(self):

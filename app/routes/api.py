@@ -17,6 +17,7 @@ la aplicación de una sola página (SPA) y los scripts del frontend en el navega
 """
 
 import re
+import secrets
 import requests
 from datetime import datetime, timedelta
 from urllib.parse import quote
@@ -34,6 +35,18 @@ from app.services.metadata import get_mb_progress
 
 # Definición del Blueprint de API
 api_bp = Blueprint('api', __name__)
+
+
+# ==============================================================================
+# SECCIÓN 0: TOKEN CSRF PARA PROTECCIÓN DE FORMULARIOS
+# ==============================================================================
+
+@api_bp.route('/api/csrf-token')
+def csrf_token():
+    """Expone el token CSRF actual para que el frontend lo incluya en peticiones POST."""
+    if '_csrf_token' not in session:
+        session['_csrf_token'] = secrets.token_hex(16)
+    return jsonify({'csrf_token': session['_csrf_token']})
 
 
 # ==============================================================================
@@ -122,6 +135,7 @@ def api_canciones():
     """
     Retorna la lista de canciones indexadas en formato JSON.
     Soporta parámetros de consulta opcionales 'limit' y 'offset' para paginación.
+    Devuelve {'total': N, 'data': [...]} cuando se usa paginación.
     """
     try:
         limit = request.args.get('limit', type=int)
@@ -129,11 +143,19 @@ def api_canciones():
         
         query = Cancion.query.order_by(Cancion.titulo)
         
-        if limit is not None:
+        # Calcular total si hay paginación
+        if limit is not None or offset is not None:
+            total = query.count()
+            
             if offset is not None:
                 query = query.offset(offset)
-            query = query.limit(limit)
+            if limit is not None:
+                query = query.limit(limit)
             
+            canciones = query.all()
+            return jsonify({'total': total, 'data': [c.to_dict() for c in canciones]})
+        
+        # Sin paginación: devuelve lista plana (compatibilidad hacia atrás)
         canciones = query.all()
         return jsonify([c.to_dict() for c in canciones])
     except Exception as e:
@@ -636,23 +658,24 @@ def api_favoritos_canciones():
     if not usuario_id:
         return jsonify([]), 200
 
-    favoritos = Favorito.query.filter_by(usuario_id=usuario_id)\
-        .order_by(Favorito.fecha_agregado.desc()).all()
+    # JOIN para evitar N+1: un solo query con filtro directo
+    canciones = Cancion.query.join(Favorito, Cancion.id == Favorito.cancion_id)\
+        .filter(Favorito.usuario_id == usuario_id)\
+        .order_by(Favorito.fecha_agregado.desc())\
+        .all()
 
-    canciones = []
-    for fav in favoritos:
-        c = db.session.get(Cancion, fav.cancion_id)
-        if c:
-            canciones.append({
-                'id': c.id,
-                'titulo': c.titulo,
-                'artista': c.artista_obj.nombre if c.artista_obj else 'Desconocido',
-                'album': c.album_obj.titulo if c.album_obj else None,
-                'duracion': c.duracion,
-                'cover': url_for('audio.servir_album_art', cancion_id=c.id),
-                'lyrics': url_for('audio.servir_lyrics', cancion_id=c.id)
-            })
-    return jsonify(canciones)
+    result = []
+    for c in canciones:
+        result.append({
+            'id': c.id,
+            'titulo': c.titulo,
+            'artista': c.artista_obj.nombre if c.artista_obj else 'Desconocido',
+            'album': c.album_obj.titulo if c.album_obj else None,
+            'duracion': c.duracion,
+            'cover': url_for('audio.servir_album_art', cancion_id=c.id),
+            'lyrics': url_for('audio.servir_lyrics', cancion_id=c.id)
+        })
+    return jsonify(result)
 
 
 # ==============================================================================
@@ -965,6 +988,16 @@ def api_translate():
     if not text:
         return jsonify({'error': 'No text'}), 400
 
+    cache_key = f"ducksound:translate:{hash(text)}:{target}"
+
+    try:
+        r = get_redis_connection()
+        cached = r.get(cache_key)
+        if cached:
+            return jsonify({'translated': cached, 'source': 'cache'})
+    except Exception:
+        pass
+
     try:
         # LibreTranslate
         resp = requests.post('https://libretranslate.com/translate', json={
@@ -978,6 +1011,11 @@ def api_translate():
             result = resp.json()
             translated = result.get('translatedText', '')
             if translated:
+                try:
+                    r = get_redis_connection()
+                    r.setex(cache_key, 86400, translated)
+                except Exception:
+                    pass
                 return jsonify({'translated': translated, 'source': 'libre'})
 
         # Fallback Google Translate
@@ -989,6 +1027,11 @@ def api_translate():
             parts = resp2.json()
             translated = ''.join(p[0] for p in parts[0] if p[0])
             if translated:
+                try:
+                    r = get_redis_connection()
+                    r.setex(cache_key, 86400, translated)
+                except Exception:
+                    pass
                 return jsonify({'translated': translated, 'source': 'google'})
 
         return jsonify({'error': 'Translation failed'}), 502

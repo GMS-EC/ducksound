@@ -13,6 +13,8 @@ from flask_cors import CORS
 from config import Config
 from app.models import db, Usuario, SesionActiva
 
+__version__ = '1.0.0'
+
 # Habilitar soporte UTF-8 para la salida en consola en entornos de desarrollo Windows
 if sys.platform == 'win32':
     sys.stdout.reconfigure(encoding='utf-8')
@@ -33,6 +35,7 @@ def create_app(config_class=Config):
         Flask: Instancia completamente configurada de la aplicación Flask.
     """
     app = Flask(__name__, static_folder='../frontend/dist', static_url_path='/')
+    app.version = __version__
     app.config.from_object(config_class)
 
     # 1. Inicialización de extensiones
@@ -40,7 +43,9 @@ def create_app(config_class=Config):
     compress.init_app(app)
     
     # CORS: permitir que el frontend (React en :5173) acceda a la API
-    CORS(app, supports_credentials=True, origins=["http://localhost:5173", "http://127.0.0.1:5173"])
+    # CORS con configuración dinámica desde config.py
+    cors_origins = app.config.get('CORS_ORIGINS', ["http://localhost:5173", "http://127.0.0.1:5173"])
+    CORS(app, supports_credentials=True, origins=cors_origins)
 
     # 2. Creación automática de esquemas de base de datos
     with app.app_context():

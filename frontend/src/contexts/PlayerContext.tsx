@@ -78,7 +78,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [repeat, setRepeat] = useState<'none' | 'one' | 'all'>(() => {
     try {
       const saved = localStorage.getItem('ducksound:repeat');
-      return (saved as any) || 'none';
+      if (saved === 'none' || saved === 'one' || saved === 'all') return saved;
+      return 'none';
     } catch {
       return 'none';
     }

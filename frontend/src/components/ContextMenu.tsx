@@ -14,6 +14,9 @@ export default function ContextMenu() {
   const [collections, setCollections] = useState<Coleccion[]>([]);
   const [loadingCollections, setLoadingCollections] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newCollectionName, setNewCollectionName] = useState('');
+  const [creating, setCreating] = useState(false);
 
   // Position adjustments to prevent off-screen rendering
   const [adjustedPos, setAdjustedPos] = useState({ left: 0, top: 0 });
@@ -134,18 +137,23 @@ export default function ContextMenu() {
     }
   };
 
-  const handleCreateAndAddCollection = async () => {
-    const nombre = window.prompt("Ingresa el nombre para la nueva colección:");
-    if (!nombre || !nombre.trim()) return;
+  const handleCreateAndAddCollection = () => {
+    setNewCollectionName('');
+    setShowCreateModal(true);
+  };
 
+  const handleSaveNewCollection = async () => {
+    const name = newCollectionName.trim();
+    if (!name) return;
+
+    setCreating(true);
     try {
       const res = await client.post("/api/colecciones/crear", {
-        nombre: nombre.trim(),
+        nombre: name,
         descripcion: "",
       });
       if (res.data && res.data.id) {
         await client.post(`/api/colecciones/${res.data.id}/add-cancion/${menuSong.id}`);
-        alert(`Colección creada y canción añadida.`);
         // Notify sidebar or page to refresh playlists
         window.dispatchEvent(new Event("ducksound:collections_changed"));
       }
@@ -153,86 +161,153 @@ export default function ContextMenu() {
     } catch (err) {
       console.error("Error creating collection:", err);
       alert("Error al crear la colección.");
+    } finally {
+      setCreating(false);
+      setShowCreateModal(false);
     }
   };
 
-  return createPortal(
-    <div
-      ref={menuRef}
-      className="context-menu-wrapper"
-      style={{
-        left: `${adjustedPos.left}px`,
-        top: `${adjustedPos.top}px`,
-      }}
-    >
-      <button className="context-menu-item" onClick={handlePlay}>
-        <div className="context-menu-item-content">
-          <Play size={14} fill="currentColor" />
-          <span>Reproducir ahora</span>
-        </div>
-      </button>
-
-      <button className="context-menu-item" onClick={handleAddToQueue}>
-        <div className="context-menu-item-content">
-          <Plus size={14} />
-          <span>Añadir a la cola</span>
-        </div>
-      </button>
-
-      <button className="context-menu-item" onClick={handleToggleLike}>
-        <div className="context-menu-item-content">
-          <Heart size={14} fill={isLiked ? "currentColor" : "none"} style={{ color: isLiked ? "var(--color-accent)" : "inherit" }} />
-          <span>{isLiked ? "Quitar de favoritos" : "Añadir a favoritos"}</span>
-        </div>
-      </button>
-
-      {/* Submenu for adding to collection/playlist */}
-      <div className="context-menu-item context-menu-submenu-trigger">
-        <div className="context-menu-item-content">
-          <Music2 size={14} />
-          <span>Añadir a colección</span>
-        </div>
-        <ArrowRight size={12} />
-        
-        <div className="context-menu-submenu">
-          {loadingCollections ? (
-            <div style={{ display: "flex", justifyContent: "center", padding: "8px 0" }}>
-              <Loader2 className="animate-spin" size={14} style={{ color: "var(--color-muted)" }} />
+  return (
+    <>
+      {createPortal(
+        <div
+          ref={menuRef}
+          className="context-menu-wrapper"
+          style={{
+            left: `${adjustedPos.left}px`,
+            top: `${adjustedPos.top}px`,
+          }}
+        >
+          <button className="context-menu-item" onClick={handlePlay}>
+            <div className="context-menu-item-content">
+              <Play size={14} fill="currentColor" />
+              <span>Reproducir ahora</span>
             </div>
-          ) : (
-            <>
-              {collections.map((col) => (
-                <button
-                  key={col.id}
-                  className="context-menu-item"
-                  onClick={() => handleAddToCollection(col.id)}
-                >
-                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {col.nombre}
-                  </span>
-                </button>
-              ))}
-              <div style={{ height: "1px", background: "rgba(255,255,255,0.06)", margin: "4px 0" }} />
-              <button className="context-menu-item" onClick={handleCreateAndAddCollection}>
-                <div className="context-menu-item-content">
-                  <Plus size={12} />
-                  <span style={{ fontWeight: 600 }}>+ Nueva colección</span>
+          </button>
+
+          <button className="context-menu-item" onClick={handleAddToQueue}>
+            <div className="context-menu-item-content">
+              <Plus size={14} />
+              <span>Añadir a la cola</span>
+            </div>
+          </button>
+
+          <button className="context-menu-item" onClick={handleToggleLike}>
+            <div className="context-menu-item-content">
+              <Heart size={14} fill={isLiked ? "currentColor" : "none"} style={{ color: isLiked ? "var(--color-accent)" : "inherit" }} />
+              <span>{isLiked ? "Quitar de favoritos" : "Añadir a favoritos"}</span>
+            </div>
+          </button>
+
+          {/* Submenu for adding to collection/playlist */}
+          <div className="context-menu-item context-menu-submenu-trigger">
+            <div className="context-menu-item-content">
+              <Music2 size={14} />
+              <span>Añadir a colección</span>
+            </div>
+            <ArrowRight size={12} />
+            
+            <div className="context-menu-submenu">
+              {loadingCollections ? (
+                <div style={{ display: "flex", justifyContent: "center", padding: "8px 0" }}>
+                  <Loader2 className="animate-spin" size={14} style={{ color: "var(--color-muted)" }} />
                 </div>
-              </button>
-            </>
-          )}
-        </div>
-      </div>
+              ) : (
+                <>
+                  {collections.map((col) => (
+                    <button
+                      key={col.id}
+                      className="context-menu-item"
+                      onClick={() => handleAddToCollection(col.id)}
+                    >
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {col.nombre}
+                      </span>
+                    </button>
+                  ))}
+                  <div style={{ height: "1px", background: "rgba(255,255,255,0.06)", margin: "4px 0" }} />
+                  <button className="context-menu-item" onClick={handleCreateAndAddCollection}>
+                    <div className="context-menu-item-content">
+                      <Plus size={12} />
+                      <span style={{ fontWeight: 600 }}>+ Nueva colección</span>
+                    </div>
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
 
-      <div style={{ height: "1px", background: "rgba(255,255,255,0.06)", margin: "4px 0" }} />
+          <div style={{ height: "1px", background: "rgba(255,255,255,0.06)", margin: "4px 0" }} />
 
-      <button className="context-menu-item" onClick={() => showInfoModal(menuSong)}>
-        <div className="context-menu-item-content">
-          <Info size={14} />
-          <span>Información de la música</span>
-        </div>
-      </button>
-    </div>,
-    document.body
+          <button className="context-menu-item" onClick={() => showInfoModal(menuSong)}>
+            <div className="context-menu-item-content">
+              <Info size={14} />
+              <span>Información de la música</span>
+            </div>
+          </button>
+        </div>,
+        document.body
+      )}
+
+      {showCreateModal && createPortal(
+        <div
+          className="modal-overlay"
+          onClick={() => { if (!creating) setShowCreateModal(false); }}
+          onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setShowCreateModal(false); } }}
+        >
+          <div
+            className="modal-content"
+            style={{ maxWidth: '380px', padding: '0' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header">
+              <h3 className="modal-title">Nueva colección</h3>
+            </div>
+            <div
+              className="modal-body"
+              style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}
+            >
+              <input
+                type="text"
+                className="form-input"
+                value={newCollectionName}
+                onChange={(e) => setNewCollectionName(e.target.value.slice(0, 80))}
+                placeholder="Nombre de la colección"
+                maxLength={80}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSaveNewCollection();
+                  if (e.key === 'Escape') { e.stopPropagation(); setShowCreateModal(false); }
+                }}
+              />
+              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                <button
+                  className="context-menu-item"
+                  style={{ width: 'auto', padding: '8px 16px' }}
+                  onClick={() => setShowCreateModal(false)}
+                  disabled={creating}
+                >
+                  Cancelar
+                </button>
+                <button
+                  className="context-menu-item"
+                  style={{
+                    width: 'auto',
+                    padding: '8px 16px',
+                    background: 'var(--color-accent, #d95840)',
+                    color: '#ffffff',
+                  }}
+                  onClick={handleSaveNewCollection}
+                  disabled={creating || !newCollectionName.trim()}
+                >
+                  {creating ? <Loader2 className="animate-spin" size={14} /> : 'Guardar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+    </>
   );
 }

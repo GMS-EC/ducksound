@@ -5,6 +5,25 @@ El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1
 
 ---
 
+## [1.1.0] - 2026-06-18
+
+### Fixed
+- Corregido CSRF token nunca generado en login, expuesto vía /api/csrf-token
+- Hecho configurables los orígenes CORS vía variable de entorno
+- Eliminado `as any` en estado `repeat` de PlayerContext (Type safety)
+- Reemplazado `window.prompt()` por modal React en creación de colecciones (iOS PWA)
+- Corregido N+1 query en /api/favoritos/canciones (JOIN directo)
+- Agregado `total` en respuestas paginadas de /api/canciones
+- Eliminado código muerto duplicado en scanner.py (~150 líneas)
+- Eliminado `os.path.exists()` en descarga batch de letras (50k+ syscalls)
+- Agregada caché Redis en endpoint de traducción de letras
+- Corregido N+1 en DailyMix.to_dict() con joinedload
+
+### Changed
+- Actualizada versión a 1.1.0
+
+---
+
 ## [1.0.0] - 2026-06-04
 
 ### 🎉 Lanzamiento Inicial Estable — Versión Consolidada

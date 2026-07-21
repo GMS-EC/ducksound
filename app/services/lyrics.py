@@ -284,17 +284,7 @@ def _descargar_letras_impl(batch_size):
         )
     ).all()
     
-    # Obtener todas las canciones con letra registrada para verificar referencias rotas
-    canciones_con_letra_db = Cancion.query.filter(
-        Cancion.ruta_archivo_lrc.isnot(None),
-        Cancion.ruta_archivo_lrc != ''
-    ).all()
-    
-    # Filtrar aquellas cuyas referencias de archivo no existen físicamente
-    canciones_rotas = [c for c in canciones_con_letra_db if not os.path.exists(c.ruta_archivo_lrc)]
-    
-    # Combinar ambas listas
-    canciones_sin_letra = canciones_sin_letra_db + canciones_rotas
+    canciones_sin_letra = canciones_sin_letra_db
     
     if not canciones_sin_letra:
         print("✅ Todas las canciones ya tienen letras locales indexadas correctamente.")
