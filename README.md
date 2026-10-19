@@ -47,45 +47,63 @@
 - **Pre-carga en background** durante el escaneo para disponibilidad inmediata
 
 ### 📚 Biblioteca inteligente
-- **Escaneo recursivo** con detección de formatos (MP3, FLAC, WAV, M4A, OGG)
-- **Análisis técnico en paralelo** con ThreadPoolExecutor (hasta 6 hilos concurrentes) usando Mutagen + librosa
-- **Extracción de metadatos** ID3v2 / Vorbis Comments
-- **Inferencia por carpetas** cuando no hay metadatos
-- **Escaneo incremental (rápido)** — detecta automáticamente canciones nuevas *y* registros con datos técnicos incompletos, actualizándolos sin duplicar entradas
-- **Normalización** de nombres de artistas y detección de versiones de álbumes
-- **Deduplicación 100% con MusicBrainz ID** — UUID único por artista, romanización automática de japonés/chino/coreano
-- **Fuzzy matching** (`token_set_ratio ≥ 80%`) como respaldo para nombres con colaboraciones
-- Todo el escaneo corre en el **worker RQ** (proceso separado) — nunca bloquea al usuario
+### 🏷️ Editor de Etiquetas en Almacenamiento (In-App Tagger)
+- **Modificación directa de tags en archivos físicos** usando Mutagen para formatos ID3v2.3/ID3v2.4 (MP3), Vorbis Comments (FLAC, OGG) y MP4 Atoms (M4A, AAC).
+- Sincronización atómica dual: actualiza el archivo en disco y sincroniza inmediatamente los registros de la base de datos.
+- Interfaz gráfica accesible mediante el menú contextual con `EditTagsModal`.
+
+### 🧠 Mezclas Inteligentes & Regla de Distanciamiento (Gap Rule)
+- **Algoritmo `balance_mix`**: Garantiza una separación mínima de 2 pistas entre canciones del mismo artista, evitando la monotonía en mezclas continuas.
+- **Estaciones y Radios Dinámicas**:
+  - *Track Radio*: Generada a partir de firmas acústicas (BPM, RMS, Dynamic Range y similitud difusa) fijando la semilla en la primera posición.
+  - *Artist Radio*: Mezcla temática del artista con bandas relacionadas de la colección.
+  - *Top Mix* & *Recent Mix*: Listas automáticas ponderadas por el historial de escucha o incorporaciones recientes.
+
+### 🖼️ Motor Semántico de Carátulas y Paleta Cromática
+- **Puntuación léxica de imágenes**: Priorización inteligente de archivos (`front`, `cover`, `folder`) frente a descartes (`back`, `spine`, `cd`, `booklet`).
+- **Validación geométrica con Pillow**: Preferencia por relaciones de aspecto cuadradas ($1:1 \pm 10\%$) y resoluciones $\ge 500\text{px}$.
+- **Extracción de paletas reactivas**: Generación en tiempo real del color dominante y de acento para iluminar el fondo y el reproductor de la SPA.
+
+### 🔍 Buscador Global Optimizado con "Top Result"
+- Búsqueda fuzzy tolerante a erratas impulsada por **RapidFuzz** con clave de resultado dominante (*Top Result*).
+- Eliminación de cuellos de botella mediante un pool inteligente de candidatos clasificados por popularidad y matching relacional.
+- Indexación veloz y respuestas sub-milisegundo.
+
+### ⚡ Bus de Eventos SSE y Vigilancia en Tiempo Real
+- **Server-Sent Events (`/api/events/stream`)**: Notificaciones automáticas push al navegador sin peticiones continuas de sondeo (polling).
+- **Watchdog del Sistema de Archivos**: Detección reactiva de adiciones, modificaciones y borrados en la carpeta de música.
+
+### 📚 Biblioteca inteligente
+- **Escaneo recursivo** con detección de formatos (MP3, FLAC, WAV, M4A, OGG).
+- **Análisis técnico en paralelo** con ThreadPoolExecutor (hasta 6 hilos concurrentes) usando Mutagen + librosa.
+- **Extracción de metadatos** ID3v2 / Vorbis Comments e inferencia por carpetas.
+- **Escaneo incremental (rápido)** — detecta automáticamente canciones nuevas *y* registros con datos técnicos incompletos.
+- **Normalización y deduplicación 100% con MusicBrainz ID** — UUID único por artista, romanización automática de caracteres asiáticos.
+- **Fuzzy matching** (`token_set_ratio ≥ 80%`) como respaldo para nombres con colaboraciones.
 
 ### 🌐 Enriquecimiento automático
-- **Fotos de artistas** desde Deezer API
-- **Portadas de álbumes** desde Deezer + iTunes + extracción de tags embebidos
-- **Biografías** construidas desde datos de Deezer (discografía, oyentes)
-- Fallback inteligente: API → tag embebido → placeholder SVG
+- **Fotos de artistas** desde Deezer API.
+- **Portadas de álbumes** desde Deezer + iTunes + extracción de tags embebidos.
+- **Biografías** construidas desde datos de Deezer (discografía, oyentes).
+- Fallback inteligente: API → tag embebido → placeholder SVG.
 
-### 🎯 Recomendaciones y Daily Mixes
-- **Motor híbrido** con 5 factores: Género (35%), Acústico (35%), Artista (10%), Álbum (10%), Duración (10%)
-- **Similitud acústica** por dynamic range, RMS, Nyquist y bitrate
-- **Daily Mixes** (Morning Vibes, Afternoon Chill, Night Beats) basados en historial real + similitud
-- **Diversidad forzada** — máximo 2 canciones del mismo álbum, 3 del mismo artista
-
-### 📊 Perfil y estadísticas
-- Top canciones y artistas personales, total de reproducciones, horas escuchadas, últimas 24h
-- Preferencias configurables: calidad de audio, crossfade, idioma, tracking de actividad
-- **Estadísticas globales** en panel admin
+### 📊 Perfil y estadísticas por ventana temporal
+- Métricas dinámicas por período (`?period=week|month|day|all`).
+- Top canciones y artistas personales, omisiones (skips), horas y minutos acumulados legibles ("X hrs, Y mins").
+- Preferencias configurables: calidad de audio, crossfade, idioma, tracking de actividad.
 
 ### 🔧 Panel de administración
-- Escaneo asíncrono con barra de progreso en tiempo real (persistente en Redis)
-- **Workers RQ dedicados** — tareas background (letras, MusicBrainz, transcodificación) en procesos separados
-- Estadísticas globales, gestión de usuarios, changelog integrado
-- Protección por sesión + token Bearer (`ADMIN_SECRET_TOKEN`)
+- Escaneo asíncrono con barra de progreso en tiempo real.
+- Tareas de fondo (letras, MusicBrainz, transcodificación) en workers dedicados o integrados.
+- Estadísticas globales, gestión de usuarios, changelog integrado.
+- Protección por sesión + token Bearer (`ADMIN_SECRET_TOKEN`).
 
 ---
 
 ## 🚀 Inicio rápido
 
 ```bash
-git clone https://github.com/GamersEC/ducksound.git
+git clone https://github.com/GMS-EC/ducksound.git
 cd ducksound
 cp .env.example .env
 # Edita MUSIC_PATH y ADMIN_SECRET_TOKEN en .env

@@ -159,6 +159,39 @@ DuckSound/
 | GET | `/album-art/<id>` | Portada (fallback: API → tag → placeholder) |
 | POST | `/api/play/<id>` | Registrar reproducción |
 | POST | `/api/translate` | Traducir texto |
+| GET | `/api/stats` | Estadísticas por ventana de tiempo (`?period=week\|month\|day\|all`) |
+| GET | `/api/events/stream` | Bus en tiempo real con Server-Sent Events (SSE) |
+| GET | `/api/events/status` | Estado de conexión del bus SSE |
+
+### Biblioteca y Álbumes Guardados
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/api/biblioteca/albums` | Álbumes guardados en la biblioteca del usuario |
+| POST | `/api/biblioteca/albums/<id>/toggle` | Guardar o quitar un álbum de la biblioteca |
+| GET | `/api/biblioteca/albums/<id>/check` | Verificar si un álbum está guardado |
+
+### Editor de Etiquetas (In-App Tagger)
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/api/song/<id>/tags` | Leer tags físicos del archivo de audio (Mutagen) |
+| POST | `/api/song/<id>/tags` | Escribir tags en archivo físico y sincronizar base de datos |
+
+### Recetas, Mezclas y Estaciones
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/api/recipes/balance` | Balancear cola aplicando la regla de distanciamiento (Gap Rule) |
+| GET | `/api/station/track/<id>` | Radio dinámica a partir de la firma acústica de una pista |
+| GET | `/api/station/artist/<id>` | Radio dinámica centrada en un artista y artistas relacionados |
+
+### Paletas y Colores Adaptativos
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/api/album/<id>/colors` | Paleta cromática dominante extraída de la carátula con Pillow |
+| GET | `/api/song/<id>/colors` | Paleta cromática para ambientar el reproductor en tiempo real |
 
 ### Favoritos
 
@@ -292,28 +325,40 @@ Perfil → selecciona calidad:
 
 ## 📦 Servicios Docker
 
+### Despliegue Estándar (Single-Container Ultra-Ligero)
+
+DuckSound opera por defecto en una arquitectura unificada ultra-ligera en un solo contenedor con SQLite en modo WAL y worker de fondo integrado:
+
 ```yaml
 services:
-  postgres:  # Base de datos principal
-    image: postgres:16-alpine
-    volumes: postgres_data:/var/lib/postgresql/data
-
-  redis:     # Cola RQ + cache de estado + caché de recomendaciones
-    image: redis:7-alpine
-    volumes: redis_data:/data
-
-  web:       # Servidor Flask + Gunicorn (4 workers, 2 threads)
+  ducksound:
     build: .
-    command: web  # entrypoint.sh web
-    depends_on: [postgres, redis]
-    ports: 8604:8604
+    container_name: ducksound
+    restart: unless-stopped
+    volumes:
+      - type: bind
+        source: ${MUSIC_PATH}
+        target: /music
+        read_only: true
+      - ducksound_data:/data
+    environment:
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-ducksound}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-ducksound}
+      - ADMIN_SECRET_TOKEN=${ADMIN_SECRET_TOKEN:-ducksound_admin_token}
+      - SECRET_KEY=${SECRET_KEY:-}
+      - PORT=8604
+      - WEB_WORKERS=2
+      - WEB_THREADS=2
+      - LOG_LEVEL=info
+    ports:
+      - '8604:8604'
 
-  worker:    # Procesador de tareas background (RQ)
-    build: .
-    command: worker  # entrypoint.sh worker
-    depends_on: [postgres, redis]
-    # Tareas: escaneo, letras, MusicBrainz, pretranscodificación
+volumes:
+  ducksound_data:
+    driver: local
 ```
+
+> **Nota:** Para despliegues distribuidos o corporativos, DuckSound también soporta bases de datos externas PostgreSQL (`DATABASE_URL` o `DB_HOST`) y colas externas Redis (`REDIS_HOST`).
 
 ---
 
@@ -321,10 +366,8 @@ services:
 
 | Volumen | Contenido |
 |---|---|
-| Tu música (`/music`, ro) | Biblioteca musical del usuario (solo lectura) |
-| `ducksound_data` (`/data`, rw) | Letras (.lrc), carátulas (covers), transcodes cacheados |
-| `postgres_data` | Datos de PostgreSQL |
-| `redis_data` | Datos de Redis |
+| Tu música (`/music`, ro) | Biblioteca musical local montada en solo lectura |
+| `ducksound_data` (`/data`, rw) | Base de datos SQLite (`ducksound.db`), letras (`.lrc`), carátulas (`album_art`), miniaturas y caché de transcodificación |
 
 ---
 
@@ -332,12 +375,17 @@ services:
 
 | Variable | Requerida | Descripción | Default |
 |---|---|---|---|
-| `MUSIC_PATH` | ✅ | Ruta a tu música en el host | — |
-| `ADMIN_SECRET_TOKEN` | ✅ | Token para endpoints `/admin/*` | — |
-| `DB_PASSWORD` | ❌ | Contraseña PostgreSQL | `ducksound` |
-| `REDIS_HOST` | ❌ | Host de Redis | `redis` |
-| `LOG_LEVEL` | ❌ | Nivel de log | `info` |
-| `SECRET_KEY` | ❌ | Clave de sesión Flask | Auto-generada |
+| `MUSIC_PATH` | ✅ | Ruta física absoluta a tu música en el host | — |
+| `ADMIN_SECRET_TOKEN` | ✅ | Token Bearer para endpoints de `/admin/*` y API administrativa | `ducksound_admin_token` |
+| `ADMIN_USERNAME` | ❌ | Nombre de usuario administrador inicial | `ducksound` |
+| `ADMIN_PASSWORD` | ❌ | Contraseña del usuario administrador inicial | `ducksound` |
+| `PORT` | ❌ | Puerto de enlace del servidor web | `8604` |
+| `WEB_WORKERS` | ❌ | Número de workers Gunicorn | `2` |
+| `WEB_THREADS` | ❌ | Hilos por worker Gunicorn | `2` |
+| `DATABASE_URL` | ❌ | URL de conexión de base de datos externa (PostgreSQL) | SQLite en `/data/ducksound.db` |
+| `REDIS_HOST` | ❌ | Host de servidor Redis opcional | — |
+| `LOG_LEVEL` | ❌ | Nivel de registro (debug, info, warning, error) | `info` |
+| `SECRET_KEY` | ❌ | Clave secreta para cookies de sesión Flask | Auto-generada y persistida en `.secret_key` |
 
 ---
 
