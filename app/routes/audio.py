@@ -266,14 +266,27 @@ def servir_album_art(cancion_id):
     thumbnail_path = Config.THUMBNAILS_FOLDER / thumbnail_filename
     
     if thumbnail_path.exists():
-        resp = send_file(str(thumbnail_path), mimetype='image/webp')
-        resp.headers['Cache-Control'] = 'public, no-cache, must-revalidate'
-        return resp
+        if thumbnail_path.stat().st_size > 0:
+            resp = send_file(str(thumbnail_path), mimetype='image/webp')
+            resp.headers['Cache-Control'] = 'public, max-age=86400, stale-while-revalidate=604800'
+            return resp
+        else:
+            try:
+                thumbnail_path.unlink()
+            except Exception:
+                pass
+
+    # 4. Fallback visual total (SVG)
+    placeholder_svg = '''<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300">
+        <rect width="300" height="300" fill="#2a2a33" rx="12"/>
+        <circle cx="150" cy="150" r="70" fill="none" stroke="#9ca3af" stroke-width="2" opacity="0.3"/>
+        <text x="150" y="172" font-size="90" text-anchor="middle" fill="#9ca3af" font-family="sans-serif" opacity="0.5">&#9835;</text>
+    </svg>'''
 
     # 2. Buscar la imagen original usando la cascada de niveles
     cancion = db.session.get(Cancion, cancion_id)
     if not cancion:
-        return "Canción no encontrada", 404
+        return placeholder_svg, 200, {'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=3600'}
 
     original_path = cancion.ruta_imagen_album
     img_source = None
@@ -323,15 +336,9 @@ def servir_album_art(cancion_id):
         if img:
             img.save(thumbnail_path, 'WEBP', quality=80)
             resp = send_file(str(thumbnail_path), mimetype='image/webp')
-            resp.headers['Cache-Control'] = 'public, no-cache, must-revalidate'
+            resp.headers['Cache-Control'] = 'public, max-age=86400, stale-while-revalidate=604800'
             return resp
 
-    # 4. Fallback visual total (SVG)
-    placeholder_svg = '''<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300">
-        <rect width="300" height="300" fill="#2a2a33" rx="12"/>
-        <circle cx="150" cy="150" r="70" fill="none" stroke="#9ca3af" stroke-width="2" opacity="0.3"/>
-        <text x="150" y="172" font-size="90" text-anchor="middle" fill="#9ca3af" font-family="sans-serif" opacity="0.5">&#9835;</text>
-    </svg>'''
     return placeholder_svg, 200, {'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=3600'}
 
 

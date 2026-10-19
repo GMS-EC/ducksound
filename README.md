@@ -23,6 +23,7 @@
 ## ✨ Funcionalidades
 
 ### 🎵 Reproductor de música & Frontend React 18 SPA
+
 - **Single Page Application (SPA)** reactiva construida en React 18, TypeScript y Vite con diseño Glassmorphism y fluidez total.
 - **Reproducción Continua (True Gapless)** y streaming HTTP con soporte `206 Partial Content` (byte ranges).
 - **Vista de Pantalla Completa (`NowPlayingModal`)** con carátula cuadrada protegida, letras sincronizadas estilo Karaoke y buscador interactivo.
@@ -34,12 +35,14 @@
 - **Panel de Calidad de Audio** — botón ⓘ en el reproductor muestra specs técnicas en tiempo real: Sample Rate, Bit Depth, Channels, Nyquist, Dynamic Range, Peak, RMS, Total Samples, Bit Rate y Tempo (BPM).
 
 ### 🎧 Calidad de audio seleccionable
+
 - **Hi-Res Lossless** — stream directo del archivo original (FLAC, WAV) sin ninguna pérdida de calidad
 - **Normal / Comprimida** — transcodificación bajo demanda a MP3/OGG vía ffmpeg para menor consumo de ancho de banda
 - La preferencia se configura en el **Perfil de usuario** y se aplica globalmente a todas las reproducciones
 - La transcodificación ocurre en el **worker background** (Redis/RQ) sin bloquear el servidor web
 
 ### 🎤 Letras sincronizadas
+
 - Archivos **.lrc** con highlight en tiempo real y scroll automático
 - **Descarga automática** desde LRCLIB, con fallbacks a **Lyrics.ovh** y **Genius**
 - **Caché en RAM** con TTL de 1 hora — segunda carga instantánea
@@ -47,52 +50,62 @@
 - **Pre-carga en background** durante el escaneo para disponibilidad inmediata
 
 ### 📚 Biblioteca inteligente
+
 ### 🏷️ Editor de Etiquetas en Almacenamiento (In-App Tagger)
+
 - **Modificación directa de tags en archivos físicos** usando Mutagen para formatos ID3v2.3/ID3v2.4 (MP3), Vorbis Comments (FLAC, OGG) y MP4 Atoms (M4A, AAC).
 - Sincronización atómica dual: actualiza el archivo en disco y sincroniza inmediatamente los registros de la base de datos.
 - Interfaz gráfica accesible mediante el menú contextual con `EditTagsModal`.
 
 ### 🧠 Mezclas Inteligentes & Regla de Distanciamiento (Gap Rule)
+
 - **Algoritmo `balance_mix`**: Garantiza una separación mínima de 2 pistas entre canciones del mismo artista, evitando la monotonía en mezclas continuas.
 - **Estaciones y Radios Dinámicas**:
-  - *Track Radio*: Generada a partir de firmas acústicas (BPM, RMS, Dynamic Range y similitud difusa) fijando la semilla en la primera posición.
-  - *Artist Radio*: Mezcla temática del artista con bandas relacionadas de la colección.
-  - *Top Mix* & *Recent Mix*: Listas automáticas ponderadas por el historial de escucha o incorporaciones recientes.
+  - _Track Radio_: Generada a partir de firmas acústicas (BPM, RMS, Dynamic Range y similitud difusa) fijando la semilla en la primera posición.
+  - _Artist Radio_: Mezcla temática del artista con bandas relacionadas de la colección.
+  - _Top Mix_ & _Recent Mix_: Listas automáticas ponderadas por el historial de escucha o incorporaciones recientes.
 
 ### 🖼️ Motor Semántico de Carátulas y Paleta Cromática
+
 - **Puntuación léxica de imágenes**: Priorización inteligente de archivos (`front`, `cover`, `folder`) frente a descartes (`back`, `spine`, `cd`, `booklet`).
 - **Validación geométrica con Pillow**: Preferencia por relaciones de aspecto cuadradas ($1:1 \pm 10\%$) y resoluciones $\ge 500\text{px}$.
 - **Extracción de paletas reactivas**: Generación en tiempo real del color dominante y de acento para iluminar el fondo y el reproductor de la SPA.
 
 ### 🔍 Buscador Global Optimizado con "Top Result"
-- Búsqueda fuzzy tolerante a erratas impulsada por **RapidFuzz** con clave de resultado dominante (*Top Result*).
+
+- Búsqueda fuzzy tolerante a erratas impulsada por **RapidFuzz** con clave de resultado dominante (_Top Result_).
 - Eliminación de cuellos de botella mediante un pool inteligente de candidatos clasificados por popularidad y matching relacional.
 - Indexación veloz y respuestas sub-milisegundo.
 
 ### ⚡ Bus de Eventos SSE y Vigilancia en Tiempo Real
+
 - **Server-Sent Events (`/api/events/stream`)**: Notificaciones automáticas push al navegador sin peticiones continuas de sondeo (polling).
 - **Watchdog del Sistema de Archivos**: Detección reactiva de adiciones, modificaciones y borrados en la carpeta de música.
 
 ### 📚 Biblioteca inteligente
+
 - **Escaneo recursivo** con detección de formatos (MP3, FLAC, WAV, M4A, OGG).
 - **Análisis técnico en paralelo** con ThreadPoolExecutor (hasta 6 hilos concurrentes) usando Mutagen + librosa.
 - **Extracción de metadatos** ID3v2 / Vorbis Comments e inferencia por carpetas.
-- **Escaneo incremental (rápido)** — detecta automáticamente canciones nuevas *y* registros con datos técnicos incompletos.
+- **Escaneo incremental (rápido)** — detecta automáticamente canciones nuevas _y_ registros con datos técnicos incompletos.
 - **Normalización y deduplicación 100% con MusicBrainz ID** — UUID único por artista, romanización automática de caracteres asiáticos.
 - **Fuzzy matching** (`token_set_ratio ≥ 80%`) como respaldo para nombres con colaboraciones.
 
 ### 🌐 Enriquecimiento automático
+
 - **Fotos de artistas** desde Deezer API.
 - **Portadas de álbumes** desde Deezer + iTunes + extracción de tags embebidos.
 - **Biografías** construidas desde datos de Deezer (discografía, oyentes).
 - Fallback inteligente: API → tag embebido → placeholder SVG.
 
 ### 📊 Perfil y estadísticas por ventana temporal
+
 - Métricas dinámicas por período (`?period=week|month|day|all`).
 - Top canciones y artistas personales, omisiones (skips), horas y minutos acumulados legibles ("X hrs, Y mins").
 - Preferencias configurables: calidad de audio, crossfade, idioma, tracking de actividad.
 
 ### 🔧 Panel de administración
+
 - Escaneo asíncrono con barra de progreso en tiempo real.
 - Tareas de fondo (letras, MusicBrainz, transcodificación) en workers dedicados o integrados.
 - Estadísticas globales, gestión de usuarios, changelog integrado.
@@ -118,9 +131,8 @@ Ve a **Panel de Administración → Escaneo completo** para indexar tu música.
 
 ## 📚 Recursos y Documentación
 
-| Recurso | Descripción | Enlace |
-|---|---|---|
-| 📱 Cliente Android | Aplicación nativa oficial en Kotlin con soporte offline | [ducksound-android](https://github.com/GMS-EC/ducksound-android) |
+| Recurso         | Descripción                                          | Enlace                             |
+| --------------- | ---------------------------------------------------- | ---------------------------------- |
 | 🏗️ Arquitectura | Stack, endpoints, servicios Docker y modelo de datos | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| 📋 Historial | Historial de versiones y cambios del servidor | [CHANGELOG.md](CHANGELOG.md) |
-| 📄 Licencia | Licencia de software libre AGPLv3 | [LICENSE](LICENSE) |
+| 📋 Historial    | Historial de versiones y cambios del servidor        | [CHANGELOG.md](CHANGELOG.md)       |
+| 📄 Licencia     | Licencia de software libre AGPLv3                    | [LICENSE](LICENSE)                 |

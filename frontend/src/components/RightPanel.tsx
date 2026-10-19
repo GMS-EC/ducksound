@@ -23,6 +23,18 @@ export default function RightPanel() {
   const [loadingLyrics, setLoadingLyrics] = useState(false);
   const [lyricError, setLyricError] = useState<string | null>(null);
 
+  const [coverError, setCoverError] = useState(false);
+  const [useFallbackArt, setUseFallbackArt] = useState(false);
+
+  useEffect(() => {
+    setCoverError(false);
+    setUseFallbackArt(false);
+  }, [currentSong?.id]);
+
+  const primaryCover = currentSong?.cover_url;
+  const albumArtEndpoint = currentSong ? `/album-art/${currentSong.id}?size=small` : "";
+  const coverSrc = (!useFallbackArt && primaryCover) ? primaryCover : albumArtEndpoint;
+
   const [targetLang, setTargetLang] = useState("es");
   const [translating, setTranslating] = useState(false);
   const [translated, setTranslated] = useState(false);
@@ -192,17 +204,23 @@ export default function RightPanel() {
                     flexShrink: 0,
                     boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
                   }}>
-                    <img
-                      src={`/album-art/${currentSong.id}?size=small`}
-                      alt={currentSong.titulo}
-                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                      onError={(e) => {
-                        (e.currentTarget as HTMLImageElement).style.display = "none";
-                        const sibling = e.currentTarget.nextElementSibling as HTMLElement;
-                        if (sibling) sibling.style.display = "flex";
-                      }}
-                    />
-                    <div style={{ display: "none", alignItems: "center", justifyContent: "center", width: "100%", height: "100%", fontSize: 24, color: "#555" }}>♫</div>
+                    {currentSong && !coverError ? (
+                      <img
+                        key={`${currentSong.id}-${useFallbackArt ? "fallback" : "primary"}`}
+                        src={coverSrc}
+                        alt={currentSong.titulo}
+                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                        onError={() => {
+                          if (!useFallbackArt && primaryCover && primaryCover !== albumArtEndpoint) {
+                            setUseFallbackArt(true);
+                          } else {
+                            setCoverError(true);
+                          }
+                        }}
+                      />
+                    ) : (
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%", fontSize: 24, color: "#555" }}>♫</div>
+                    )}
                   </div>
 
                   {/* Metadata column */}
@@ -390,13 +408,19 @@ export default function RightPanel() {
                         justifyContent: "center", flexShrink: 0,
                       }}>
                         <img
-                          src={`/album-art/${s.id}?size=small`}
+                          key={s.id}
+                          src={s.cover_url || `/album-art/${s.id}?size=small`}
                           alt={s.titulo}
                           style={{ width: "100%", height: "100%", objectFit: "cover" }}
                           onError={(e) => {
                             (e.currentTarget as HTMLImageElement).style.display = "none";
                             const sibling = e.currentTarget.nextElementSibling as HTMLElement;
                             if (sibling) sibling.style.display = "block";
+                          }}
+                          onLoad={(e) => {
+                            (e.currentTarget as HTMLImageElement).style.display = "block";
+                            const sibling = e.currentTarget.nextElementSibling as HTMLElement;
+                            if (sibling) sibling.style.display = "none";
                           }}
                         />
                         <span style={{ display: "none" }}>♪</span>

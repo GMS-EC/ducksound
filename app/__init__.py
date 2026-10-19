@@ -193,10 +193,14 @@ def create_app(config_class=Config):
         if request.method == 'OPTIONS':
             return
             
+        # Carátulas de álbumes (album-art) son recursos estáticos públicos (usados por <img> y MediaSession del SO)
+        if request.path.startswith('/album-art/'):
+            return
+
         # Si no hay sesión activa y el endpoint es privado
         if request.endpoint and request.endpoint not in allowed_endpoints and 'user_id' not in session:
-            # Respuestas planas de audio, letras y carátulas (previene fugas de HTML a reproductores)
-            if request.path.startswith('/audio/') or request.path.startswith('/album-art/') or request.path.startswith('/lyrics/'):
+            # Respuestas planas de audio y letras (previene fugas de HTML a reproductores)
+            if request.path.startswith('/audio/') or request.path.startswith('/lyrics/'):
                 return "Acceso denegado", 401
                 
             return jsonify({'error': 'Acceso denegado: Inicia sesión primero'}), 401

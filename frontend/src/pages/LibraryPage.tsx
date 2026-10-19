@@ -223,7 +223,7 @@ export default function LibraryPage() {
                       </div>
                       <div className="lib-track-thumb">
                         <img
-                          src={`/album-art/${c.id}?size=small`}
+                          src={c.cover_url || `/album-art/${c.id}?size=small`}
                           alt={c.titulo}
                           onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
                         />

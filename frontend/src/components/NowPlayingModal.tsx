@@ -27,7 +27,18 @@ export default function NowPlayingModal({ isOpen, onClose }: NowPlayingModalProp
   const [lyrics, setLyrics] = useState<LyricCue[] | null>(null);
   const [lyricType, setLyricType] = useState<"lrc" | "txt" | null>(null);
   const [isLiked, setIsLiked] = useState(false);
+  const [coverError, setCoverError] = useState(false);
+  const [useFallbackArt, setUseFallbackArt] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setCoverError(false);
+    setUseFallbackArt(false);
+  }, [currentSong?.id]);
+
+  const primaryCover = currentSong?.cover_url;
+  const albumArtEndpoint = currentSong ? `/album-art/${currentSong.id}?size=large` : "";
+  const coverSrc = (!useFallbackArt && primaryCover) ? primaryCover : albumArtEndpoint;
 
   // Fetch color when currentSong changes
   useEffect(() => {
@@ -286,16 +297,28 @@ export default function NowPlayingModal({ isOpen, onClose }: NowPlayingModalProp
               marginBottom: "clamp(10px, 1.8vh, 18px)",
               flexShrink: 0,
               transition: "transform 0.3s ease",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
             }}
           >
-            <img
-              src={`/album-art/${currentSong.id}?size=large`}
-              alt={currentSong.titulo}
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-              onError={(e) => {
-                (e.currentTarget as HTMLImageElement).style.display = "none";
-              }}
-            />
+            {currentSong && !coverError ? (
+              <img
+                key={`${currentSong.id}-${useFallbackArt ? "fallback" : "primary"}`}
+                src={coverSrc}
+                alt={currentSong.titulo}
+                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                onError={() => {
+                  if (!useFallbackArt && primaryCover && primaryCover !== albumArtEndpoint) {
+                    setUseFallbackArt(true);
+                  } else {
+                    setCoverError(true);
+                  }
+                }}
+              />
+            ) : (
+              <span style={{ fontSize: 64, color: "#444" }}>♫</span>
+            )}
           </div>
 
           <div

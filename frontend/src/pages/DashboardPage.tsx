@@ -268,7 +268,7 @@ export default function DashboardPage() {
                 )}
                 <div className="track-cover-sm">
                   <img
-                    src={`/album-art/${item.cancion.id}?size=small`}
+                    src={item.cancion.cover_url || `/album-art/${item.cancion.id}?size=small`}
                     alt={item.cancion.titulo}
                     onError={(e) => {
                       (e.currentTarget as HTMLImageElement).style.display = 'none';

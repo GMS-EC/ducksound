@@ -379,6 +379,11 @@ class Cancion(db.Model):
         """Convierte el modelo de canción a un diccionario nativo de Python para serialización JSON."""
         artista = self.artista_obj.nombre if self.artista_obj else None
         album = self.album_obj.titulo if self.album_obj else None
+        cover_url = (
+            self.album_obj.portada_url
+            if (self.album_obj and self.album_obj.portada_url)
+            else f"/album-art/{self.id}"
+        )
         data = {
             'id': self.id,
             'titulo': self.titulo,
@@ -391,6 +396,7 @@ class Cancion(db.Model):
             'ruta_audio': self.ruta_archivo_audio,
             'ruta_lrc': self.ruta_archivo_lrc,
             'ruta_imagen': self.ruta_imagen_album,
+            'cover_url': cover_url,
             'numero_pista': self.numero_pista,
             'numero_disco': self.numero_disco,
             'genero': self.genero,

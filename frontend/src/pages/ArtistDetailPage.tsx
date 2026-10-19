@@ -187,7 +187,7 @@ export default function ArtistDetailPage() {
               )}
               <div className="track-cover-sm" style={{ width: 32, height: 32, borderRadius: 4, overflow: "hidden", background: "#2a2a33", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <img
-                  src={`/album-art/${c.id}?size=small`}
+                  src={c.cover_url || `/album-art/${c.id}?size=small`}
                   alt={c.titulo}
                   style={{ width: "100%", height: "100%", objectFit: "cover" }}
                   onError={(e) => {

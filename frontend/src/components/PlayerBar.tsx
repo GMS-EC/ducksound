@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Volume2, VolumeX, Maximize2 } from "lucide-react";
 import { usePlayer } from "../contexts/PlayerContext";
 import Equalizer from "./Equalizer";
@@ -6,12 +6,24 @@ import NowPlayingModal from "./NowPlayingModal";
 
 export default function PlayerBar() {
   const [showFullscreen, setShowFullscreen] = useState(false);
+  const [coverError, setCoverError] = useState(false);
+  const [useFallbackArt, setUseFallbackArt] = useState(false);
+
   const {
     currentSong, playing, volume, muted, shuffle, repeat,
     currentTime, duration,
     togglePlay, next, prev, seek, setVolume, toggleMute,
     toggleShuffle, toggleRepeat,
   } = usePlayer();
+
+  useEffect(() => {
+    setCoverError(false);
+    setUseFallbackArt(false);
+  }, [currentSong?.id]);
+
+  const primaryCover = currentSong?.cover_url;
+  const albumArtEndpoint = currentSong ? `/album-art/${currentSong.id}?size=small` : "";
+  const coverSrc = (!useFallbackArt && primaryCover) ? primaryCover : albumArtEndpoint;
 
   const fmt = (s: number) => {
     if (!s || !isFinite(s)) return "0:00";
@@ -32,19 +44,19 @@ export default function PlayerBar() {
     <div className="player-bar">
       <div className="player-left">
         <div className="player-cover">
-          {currentSong ? (
-            <>
-              <img
-                src={`/album-art/${currentSong.id}?size=small`}
-                alt={currentSong.titulo}
-                onError={(e) => {
-                  (e.currentTarget as HTMLImageElement).style.display = 'none';
-                  const nextEl = e.currentTarget.nextElementSibling as HTMLElement;
-                  if (nextEl) nextEl.style.display = 'flex';
-                }}
-              />
-              <span className="player-cover-icon" style={{ display: 'none' }}>♫</span>
-            </>
+          {currentSong && !coverError ? (
+            <img
+              key={`${currentSong.id}-${useFallbackArt ? "fallback" : "primary"}`}
+              src={coverSrc}
+              alt={currentSong.titulo}
+              onError={() => {
+                if (!useFallbackArt && primaryCover && primaryCover !== albumArtEndpoint) {
+                  setUseFallbackArt(true);
+                } else {
+                  setCoverError(true);
+                }
+              }}
+            />
           ) : (
             <span className="player-cover-icon">♫</span>
           )}
