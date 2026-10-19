@@ -56,8 +56,6 @@ export interface Cancion {
   rms_level: number | null;
   total_samples: number | null;
   bit_rate: number | null;
-  numero_pista?: number | null;
-  numero_disco?: number | null;
 }
 
 export interface DailyMix {

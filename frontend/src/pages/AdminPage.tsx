@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import {
-  BarChart3, Scan, Users, FileText, RefreshCw, Activity, User, Disc,
-
+  BarChart3, Scan, Users, FileText, RefreshCw, Activity, User, Disc, Music, Check,
 } from "lucide-react";
 import client from "../api/client";
 
