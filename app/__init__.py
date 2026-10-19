@@ -184,9 +184,7 @@ def create_app(config_class=Config):
                         if not sesion_db:
                             # La sesión fue revocada
                             session.clear()
-                            if request.path.startswith('/api/'):
-                                return jsonify({'error': 'Sesión revocada'}), 401
-                            return redirect(url_for('auth.login'))
+                            return jsonify({'error': 'Sesión revocada'}), 401
                         
                         # Actualizar caché para futuras peticiones
                         r.setex(f"ducksound:session:{token}", 3600, sesion_db.usuario_id)
@@ -195,9 +193,7 @@ def create_app(config_class=Config):
                     sesion_db = SesionActiva.query.filter_by(session_token=token).first()
                     if not sesion_db:
                         session.clear()
-                        if request.path.startswith('/api/'):
-                            return jsonify({'error': 'Sesión revocada'}), 401
-                        return redirect(url_for('auth.login'))
+                        return jsonify({'error': 'Sesión revocada'}), 401
                 
                 # Actualizar última actividad cada 5 minutos para no saturar la DB
                 ahora = datetime.utcnow()

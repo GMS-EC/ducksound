@@ -4,6 +4,9 @@ import Sidebar from "./components/Sidebar";
 import PlayerBar from "./components/PlayerBar";
 import RightPanel from "./components/RightPanel";
 import LoginPage from "./pages/LoginPage";
+import { ContextMenuProvider } from "./contexts/ContextMenuContext";
+import ContextMenu from "./components/ContextMenu";
+import AudioInfoModal from "./components/AudioInfoModal";
 import DashboardPage from "./pages/DashboardPage";
 import ExplorePage from "./pages/ExplorePage";
 import FavoritesPage from "./pages/FavoritesPage";
@@ -44,6 +47,8 @@ function AppContent() {
         <RightPanel />
       </div>
       <PlayerBar />
+      <ContextMenu />
+      <AudioInfoModal />
     </div>
   );
 }
@@ -63,5 +68,9 @@ export default function App() {
     return <LoginPage />;
   }
 
-  return <AppContent />;
+  return (
+    <ContextMenuProvider>
+      <AppContent />
+    </ContextMenuProvider>
+  );
 }

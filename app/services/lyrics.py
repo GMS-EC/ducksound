@@ -250,6 +250,7 @@ def _guardar_letra(cancion, letra_contenido, tipo_letra, cancion_id):
         _lyrics_cache[cancion_id] = (time.time(), resultado)
         return resultado
     except Exception as e:
+        db.session.rollback()
         print(f"Error al guardar archivo físico de letra: {e}")
         return None
 

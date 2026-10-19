@@ -1,5 +1,6 @@
 import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Volume2, VolumeX } from "lucide-react";
 import { usePlayer } from "../contexts/PlayerContext";
+import Equalizer from "./Equalizer";
 
 export default function PlayerBar() {
   const {
@@ -45,8 +46,9 @@ export default function PlayerBar() {
           )}
         </div>
         <div className="player-track-info">
-          <div className="player-track-title">
+          <div className="player-track-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {currentSong ? currentSong.titulo : "Sin canción seleccionada"}
+            {currentSong && <Equalizer />}
           </div>
           <div className="player-track-artist">
             {currentSong ? currentSong.artista : "Artista desconocido"}

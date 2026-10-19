@@ -55,6 +55,8 @@ class Config:
         THUMBNAILS_FOLDER.mkdir(parents=True, exist_ok=True)
         TRANSCODE_CACHE_FOLDER = DATA_DIR / 'transcode_cache'
         TRANSCODE_CACHE_FOLDER.mkdir(parents=True, exist_ok=True)
+        ORIGINAL_CACHE_FOLDER = DATA_DIR / 'original_cache'
+        ORIGINAL_CACHE_FOLDER.mkdir(parents=True, exist_ok=True)
     else:
         MEDIA_FOLDER = Path(r'C:\Users\marcu\Downloads\Musica')
         AUDIO_FOLDER = MEDIA_FOLDER / 'music'
@@ -65,6 +67,8 @@ class Config:
         THUMBNAILS_FOLDER.mkdir(parents=True, exist_ok=True)
         TRANSCODE_CACHE_FOLDER = Path(__file__).resolve().parent / 'transcode_cache'
         TRANSCODE_CACHE_FOLDER.mkdir(parents=True, exist_ok=True)
+        ORIGINAL_CACHE_FOLDER = Path(__file__).resolve().parent / 'original_cache'
+        ORIGINAL_CACHE_FOLDER.mkdir(parents=True, exist_ok=True)
     
     MAX_CONTENT_LENGTH = 100 * 1024 * 1024
     ALLOWED_AUDIO_EXTENSIONS = {'mp3', 'flac', 'wav', 'm4a'}

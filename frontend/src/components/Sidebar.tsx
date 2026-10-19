@@ -34,7 +34,7 @@ export default function Sidebar() {
       <aside className="sidebar">
         <NavLink to="/dashboard" className="sidebar-logo">
           <span className="sidebar-logo-mark">
-            <img src="/logo.svg" alt="" />
+            <img src="/logo.svg" alt="DuckSound Logo" style={{ width: 28, height: 28 }} />
           </span>
           <span>DuckSound</span>
         </NavLink>

@@ -44,8 +44,8 @@ export interface Cancion {
   ruta_audio: string;
   ruta_lrc: string | null;
   ruta_imagen: string | null;
-  numero_pista: number | null;
-  numero_disco: number | null;
+  numero_pista?: number | null;
+  numero_disco?: number | null;
   genero: string | null;
   sample_rate: number | null;
   bit_depth: number | null;
