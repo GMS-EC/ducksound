@@ -40,12 +40,19 @@ except ImportError:
 def analyze_audio(filepath):
     """
     Analiza un archivo físico de música y calcula todas las características acústicas.
-    
+
     Args:
         filepath (str o Path): Ruta física al archivo de música (.mp3, .flac, .wav, etc.).
-        
+
     Returns:
-        dict: Diccionario con todos los valores extraídos o estimados.
+        dict: Diccionario con los valores extraídos. Las métricas principales incluyen:
+            - nyquist_freq: Frecuencia de Nyquist en kHz (sample_rate / 2000). Representa la 
+              frecuencia más alta que puede ser representada digitalmente sin aliasing.
+            - dynamic_range: Diferencia entre el pico máximo y el nivel RMS. Indica cuán 
+              comprimida está la grabación.
+            - rms_level: Nivel de sonoridad promedio (Root Mean Square) en dBFS.
+            - peak_level: Nivel de pico máximo absoluto en dBFS.
+            - bpm: Tempo estimado en pulsos por minuto mediante detección de beats con librosa.
     """
     fp = Path(filepath)
     if not fp.exists():
@@ -120,7 +127,8 @@ def analyze_audio(filepath):
     except Exception as e:
         logger.warning(f"Error extrayendo cabeceras con mutagen para {filepath}: {e}")
 
-    # Calcular la frecuencia de Nyquist (Tasa de muestreo / 2)
+    # Calcular la frecuencia de Nyquist (Tasa de muestreo / 2). 
+    # Es la frecuencia máxima que puede ser capturada fielmente sin producir aliasing.
     if result['sample_rate']:
         result['nyquist_freq'] = result['sample_rate'] / 2000  # Convertir a kHz
 
@@ -129,9 +137,11 @@ def analyze_audio(filepath):
         result['total_samples'] = int(result['duration'] * result['sample_rate'])
 
     # --- FASE 2: Análisis acústico y digital de señal con librosa ---
+    # En esta etapa procesamos la señal de audio real (PCM) para obtener métricas de sonoridad y tempo.
     if HAS_LIBROSA and result['sample_rate']:
         try:
-            # Cargamos solo una porción de 30 segundos (a partir del segundo 30) para acelerar el escaneo
+            # Optimizamos el escaneo cargando solo una ventana de 30 segundos.
+            # Si la canción es larga, saltamos los primeros 30s para evitar intros silenciosas.
             duration = result.get('duration', 0)
             if duration >= 60:
                 y, sr = librosa.load(filepath, sr=None, mono=True, offset=30.0, duration=30.0)
@@ -139,19 +149,19 @@ def analyze_audio(filepath):
                 y, sr = librosa.load(filepath, sr=None, mono=True)
 
             if len(y) > 0:
-                # Nivel de pico máximo en dB
+                # Nivel de pico máximo en dB (dBFS). Se calcula buscando el valor absoluto máximo.
                 peak = np.max(np.abs(y))
                 result['peak_level'] = float(20 * np.log10(max(peak, 1e-10)))
 
-                # Nivel RMS (volumen promedio de la señal)
+                # Nivel RMS (Root Mean Square). Representa la energía promedio de la señal.
                 rms = np.sqrt(np.mean(y ** 2))
                 result['rms_level'] = float(20 * np.log10(max(rms, 1e-10)))
 
-                # Estimar el tempo de la canción (BPM)
+                # Estimación del tempo (BPM) mediante análisis de la función de autocorrelación del onset.
                 tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
                 result['bpm'] = float(tempo.item() if hasattr(tempo, 'item') else tempo)
 
-                # Calcular el rango dinámico de la porción analizada (Diferencia Pico a RMS)
+                # El rango dinámico se define aquí como la diferencia entre el pico y la media (RMS).
                 if result['peak_level'] is not None and result['rms_level'] is not None:
                     result['dynamic_range'] = float(result['peak_level'] - result['rms_level'])
 

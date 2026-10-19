@@ -7,6 +7,7 @@ Todos los modelos son compatibles con SQLite (desarrollo local) y PostgreSQL (pr
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
+from sqlalchemy.orm import joinedload
 
 # Instancia central de SQLAlchemy. Se vinculará a la aplicación Flask en la fábrica (create_app).
 db = SQLAlchemy()
@@ -203,6 +204,27 @@ class Favorito(db.Model):
         return f'<Favorito usuario={self.usuario_id} cancion={self.cancion_id}>'
 
 
+class AlbumGuardado(db.Model):
+    """
+    Modelo de Álbumes Guardados en Biblioteca.
+    Vincula a un usuario con los álbumes que ha guardado en su biblioteca personal.
+    """
+    __tablename__ = 'albums_guardados'
+
+    id = db.Column(db.Integer, primary_key=True)
+    usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
+    album_id = db.Column(db.Integer, db.ForeignKey('albums.id'), nullable=False)
+    fecha_agregado = db.Column(db.DateTime, default=datetime.utcnow)
+
+    usuario = db.relationship('Usuario', backref=db.backref('albums_guardados', lazy='dynamic'))
+    album = db.relationship('Album', backref=db.backref('guardados', lazy='dynamic'))
+
+    __table_args__ = (db.UniqueConstraint('usuario_id', 'album_id', name='uq_usuario_album'),)
+
+    def __repr__(self):
+        return f'<AlbumGuardado usuario={self.usuario_id} album={self.album_id}>'
+
+
 # Tabla auxiliar de asociación muchos a muchos entre Colecciones y Canciones
 coleccion_canciones = db.Table(
     'coleccion_canciones',
@@ -284,13 +306,19 @@ class DailyMix(db.Model):
 
 
     def to_dict(self):
+        from app.models import Cancion
+        canciones = db.session.query(Cancion)\
+            .options(joinedload(Cancion.artista_obj), joinedload(Cancion.album_obj))\
+            .join(daily_mix_canciones, daily_mix_canciones.c.cancion_id == Cancion.id)\
+            .filter(daily_mix_canciones.c.daily_mix_id == self.id)\
+            .all()
         return {
             'id': self.id,
             'usuario_id': self.usuario_id,
             'nombre': self.nombre,
             'fecha': self.fecha.isoformat() if self.fecha else None,
             'fecha_creacion': self.fecha_creacion.isoformat() if self.fecha_creacion else None,
-            'canciones': [c.to_dict() for c in self.canciones],
+            'canciones': [c.to_dict() for c in canciones],
         }
 
     def __repr__(self):
@@ -355,7 +383,10 @@ class Cancion(db.Model):
             'id': self.id,
             'titulo': self.titulo,
             'artista': artista,
+            'artista_id': self.artista_id,
             'album': album,
+            'album_id': self.album_id,
+            'anio': self.album_obj.anio if self.album_obj else None,
             'duracion': self.duracion,
             'ruta_audio': self.ruta_archivo_audio,
             'ruta_lrc': self.ruta_archivo_lrc,
@@ -377,3 +408,4 @@ class Cancion(db.Model):
             'last_played': self.last_played.isoformat() if self.last_played else None,
         }
         return data
+

@@ -121,6 +121,9 @@ def login():
         session['nombre_usuario'] = usuario.nombre_usuario
         session['session_token'] = session_token
         
+        # Generar y guardar token CSRF en la sesión para protección de formularios
+        session['_csrf_token'] = secrets.token_hex(16)
+        
         return jsonify({
             'success': True,
             'user': usuario.to_dict(),

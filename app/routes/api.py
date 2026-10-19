@@ -18,13 +18,14 @@ la aplicación de una sola página (SPA) y los scripts del frontend en el navega
 
 import time
 import re
+import secrets
 import requests
 from datetime import datetime, timedelta
 from urllib.parse import quote
 
 from flask import Blueprint, jsonify, request, session, url_for, current_app, Response
 from sqlalchemy import func, desc
-from app.models import db, Usuario, Artista, Album, Playlist, Cancion, Favorito, Coleccion, DailyMix, HistorialEscucha, SesionActiva
+from app.models import db, Usuario, Artista, Album, Playlist, Cancion, Favorito, Coleccion, DailyMix, HistorialEscucha, SesionActiva, AlbumGuardado
 from app.services.queue import get_connection as get_redis_connection
 import json
 
@@ -40,6 +41,18 @@ from app.services.tagger import read_audio_tags, write_audio_tags
 
 # Definición del Blueprint de API
 api_bp = Blueprint('api', __name__)
+
+
+# ==============================================================================
+# SECCIÓN 0: TOKEN CSRF PARA PROTECCIÓN DE FORMULARIOS
+# ==============================================================================
+
+@api_bp.route('/api/csrf-token')
+def csrf_token():
+    """Expone el token CSRF actual para que el frontend lo incluya en peticiones POST."""
+    if '_csrf_token' not in session:
+        session['_csrf_token'] = secrets.token_hex(16)
+    return jsonify({'csrf_token': session['_csrf_token']})
 
 
 # ==============================================================================
@@ -318,6 +331,7 @@ def api_canciones():
     """
     Retorna la lista de canciones indexadas en formato JSON.
     Soporta parámetros de consulta opcionales 'limit' y 'offset' para paginación.
+    Devuelve {'total': N, 'data': [...]} cuando se usa paginación.
     """
     try:
         limit = request.args.get('limit', type=int)
@@ -325,11 +339,19 @@ def api_canciones():
         
         query = Cancion.query.order_by(Cancion.titulo)
         
-        if limit is not None:
+        # Calcular total si hay paginación
+        if limit is not None or offset is not None:
+            total = query.count()
+            
             if offset is not None:
                 query = query.offset(offset)
-            query = query.limit(limit)
+            if limit is not None:
+                query = query.limit(limit)
             
+            canciones = query.all()
+            return jsonify({'total': total, 'data': [c.to_dict() for c in canciones]})
+        
+        # Sin paginación: devuelve lista plana (compatibilidad hacia atrás)
         canciones = query.all()
         return jsonify([c.to_dict() for c in canciones])
     except Exception as e:
@@ -956,7 +978,70 @@ def api_favoritos_canciones():
 
 
 # ==============================================================================
-# SECCIÓN 9: REGISTRO DE AUDICIONES Y ACTIVIDAD (PLAY LOGGER)
+# SECCIÓN 9: BIBLIOTECA DE ÁLBUMES GUARDADOS
+# ==============================================================================
+
+@api_bp.route('/api/biblioteca/albums', methods=['GET'])
+def api_biblioteca_albums():
+    """Retorna la lista de álbumes guardados en la biblioteca del usuario."""
+    usuario_id = session.get('user_id')
+    if not usuario_id:
+        return jsonify([]), 200
+
+    guardados = AlbumGuardado.query.filter_by(usuario_id=usuario_id)\
+        .order_by(AlbumGuardado.fecha_agregado.desc()).all()
+
+    result = []
+    for g in guardados:
+        al = db.session.get(Album, g.album_id)
+        if al:
+            artista_nombre = al.artista.nombre if al.artista else None
+            artista_id = al.artista_id
+            # Usa el ID de la primera canción del álbum para servir la portada
+            primera_cancion = al.canciones[0] if al.canciones else None
+            result.append({
+                'id': al.id,
+                'titulo': al.titulo,
+                'anio': al.anio,
+                'artista': artista_nombre,
+                'artista_id': artista_id,
+                'cancion_id': primera_cancion.id if primera_cancion else None,
+                'fecha_guardado': g.fecha_agregado.isoformat() if g.fecha_agregado else None,
+            })
+    return jsonify(result)
+
+
+@api_bp.route('/api/biblioteca/albums/<int:album_id>/toggle', methods=['POST'])
+def api_biblioteca_album_toggle(album_id):
+    """Guarda o elimina un álbum de la biblioteca del usuario."""
+    usuario_id = session.get('user_id')
+    if not usuario_id:
+        return jsonify({'error': 'No autenticado'}), 401
+
+    guardado = AlbumGuardado.query.filter_by(usuario_id=usuario_id, album_id=album_id).first()
+    if guardado:
+        db.session.delete(guardado)
+        db.session.commit()
+        return jsonify({'saved': False})
+    else:
+        nuevo = AlbumGuardado(usuario_id=usuario_id, album_id=album_id)
+        db.session.add(nuevo)
+        db.session.commit()
+        return jsonify({'saved': True})
+
+
+@api_bp.route('/api/biblioteca/albums/<int:album_id>/check', methods=['GET'])
+def api_biblioteca_album_check(album_id):
+    """Comprueba si un álbum está guardado en la biblioteca del usuario."""
+    usuario_id = session.get('user_id')
+    if not usuario_id:
+        return jsonify({'saved': False})
+    guardado = AlbumGuardado.query.filter_by(usuario_id=usuario_id, album_id=album_id).first()
+    return jsonify({'saved': bool(guardado)})
+
+
+# ==============================================================================
+# SECCIÓN 10: REGISTRO DE AUDICIONES Y ACTIVIDAD (PLAY LOGGER)
 # ==============================================================================
 
 @api_bp.route('/api/play/<int:cancion_id>', methods=['POST'])
@@ -1227,6 +1312,16 @@ def api_translate():
     if not text:
         return jsonify({'error': 'No text'}), 400
 
+    cache_key = f"ducksound:translate:{hash(text)}:{target}"
+
+    try:
+        r = get_redis_connection()
+        cached = r.get(cache_key)
+        if cached:
+            return jsonify({'translated': cached, 'source': 'cache'})
+    except Exception:
+        pass
+
     try:
         # LibreTranslate
         resp = requests.post('https://libretranslate.com/translate', json={
@@ -1240,6 +1335,11 @@ def api_translate():
             result = resp.json()
             translated = result.get('translatedText', '')
             if translated:
+                try:
+                    r = get_redis_connection()
+                    r.setex(cache_key, 86400, translated)
+                except Exception:
+                    pass
                 return jsonify({'translated': translated, 'source': 'libre'})
 
         # Fallback Google Translate
@@ -1251,6 +1351,11 @@ def api_translate():
             parts = resp2.json()
             translated = ''.join(p[0] for p in parts[0] if p[0])
             if translated:
+                try:
+                    r = get_redis_connection()
+                    r.setex(cache_key, 86400, translated)
+                except Exception:
+                    pass
                 return jsonify({'translated': translated, 'source': 'google'})
 
         return jsonify({'error': 'Translation failed'}), 502
