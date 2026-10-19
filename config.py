@@ -10,6 +10,8 @@ class Config:
 
     # Secret key para sesiones y CSRF
     SECRET_KEY = os.environ.get('SECRET_KEY')
+    ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', 'ducksound')
+    ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'ducksound')
     if not SECRET_KEY:
         _secret_file = BASE_DIR / '.secret_key'
         try:

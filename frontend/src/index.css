@@ -14,7 +14,7 @@
   --color-border: #2a2a33;
   --color-border-hover: #363642;
   --color-border-light: #25252d;
-  --color-eq: #1db954;
+  --color-eq: #d95840;
 }
 
 *,
@@ -1945,7 +1945,7 @@ input:focus {
 
 .playing-eq span {
   width: 3px;
-  background-color: var(--color-eq, #1db954);
+  background-color: var(--color-eq, #d95840);
   border-radius: 1px;
   animation: eqBar 0.8s ease-in-out infinite alternate;
   min-height: 4px;
@@ -2048,10 +2048,29 @@ input:focus {
   padding-bottom: 200px; /* Leave space at the bottom for scroll centering */
 }
 
+/* Modo texto plano (sin timestamps / lrc) */
+.lyrics-lines.plain .lyric-line {
+  padding: 8px 16px;
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 15px;
+  line-height: 1.8;
+  cursor: default;
+  transition: all 0.2s ease;
+  border-left: 3px solid transparent;
+}
+
+.lyrics-lines.plain .lyric-line:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #ffffff;
+}
+
+/* Modo sincronizado (LRC / karaoke) */
+.lyrics-lines.synced .lyric-line,
 .lyric-line {
   padding: 10px 16px;
   border-radius: 6px;
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.45);
   cursor: pointer;
   font-size: 15px;
   line-height: 1.6;
@@ -2059,17 +2078,20 @@ input:focus {
   border-left: 3px solid transparent;
 }
 
+.lyrics-lines.synced .lyric-line:hover,
 .lyric-line:hover {
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(255, 255, 255, 0.75);
   background: rgba(255, 255, 255, 0.04);
 }
 
+.lyrics-lines.synced .lyric-line.active,
 .lyric-line.active {
   color: #ffffff;
   font-weight: 700;
   font-size: 17px;
   background: var(--color-accent-soft);
   border-left-color: var(--color-accent);
+  text-shadow: 0 0 16px rgba(217, 88, 64, 0.35);
 }
 
 .lyric-main-text {
@@ -2662,5 +2684,32 @@ input:focus {
 
 .track-item-with-cover:hover {
   background: #24242d;
+}
+
+/* ===== FULLSCREEN NOW PLAYING MODAL ===== */
+.fullscreen-lyrics-scroll {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+.fullscreen-lyrics-scroll::-webkit-scrollbar {
+  display: none !important;
+}
+
+.fullscreen-lyric {
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 8px;
+  padding: 4px 10px;
+}
+
+.fullscreen-lyric:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.8) !important;
+}
+
+.fullscreen-lyric.active:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff !important;
 }
 

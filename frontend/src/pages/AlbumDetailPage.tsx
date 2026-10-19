@@ -15,6 +15,7 @@ export default function AlbumDetailPage() {
   const { currentSong, playing, play } = usePlayer();
   const { showMenu } = useContextMenu();
   const [album, setAlbum] = useState<Album | null>(null);
+  const [colorData, setColorData] = useState<{ primary: string; accent: string; gradient: string; glow: string } | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   
   const [showAddDropdown, setShowAddDropdown] = useState(false);
@@ -91,6 +92,10 @@ export default function AlbumDetailPage() {
       })
       .catch(console.error)
       .finally(() => setLoading(false));
+
+    client.get("/api/album/" + id + "/color")
+      .then((res) => setColorData(res.data))
+      .catch(() => {});
   }, [id]);
 
   const fmt = (s: number) => {
@@ -110,17 +115,34 @@ export default function AlbumDetailPage() {
   const allSongs = discos.flatMap((d) => d.songs);
 
   return (
-    <div className="album-detail">
-      <button className="btn-back" onClick={() => navigate(-1)}><ArrowLeft size={16} /> Volver</button>
+    <div className="album-detail" style={{ position: "relative" }}>
+      {colorData && (
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            height: "380px",
+            background: colorData.gradient,
+            opacity: 0.85,
+            pointerEvents: "none",
+            zIndex: 0,
+            transition: "all 0.5s ease"
+          }}
+        />
+      )}
+      <div style={{ position: "relative", zIndex: 1 }}>
+        <button className="btn-back" onClick={() => navigate(-1)}><ArrowLeft size={16} /> Volver</button>
 
-      <div className="album-header">
-        <div className="album-header-cover">
-          {coverUrl ? (
-            <img src={coverUrl} alt={album.titulo} />
-          ) : (
-            <span className="album-header-placeholder">♫</span>
-          )}
-        </div>
+        <div className="album-header">
+          <div className="album-header-cover" style={{ boxShadow: colorData?.glow || "0 12px 40px rgba(0, 0, 0, 0.6)" }}>
+            {coverUrl ? (
+              <img src={coverUrl} alt={album.titulo} />
+            ) : (
+              <span className="album-header-placeholder">♫</span>
+            )}
+          </div>
         <div>
           <div className="album-header-label">Álbum</div>
           <h1 className="album-header-title">{album.titulo}</h1>
@@ -248,6 +270,7 @@ export default function AlbumDetailPage() {
             );
           });
         })()}
+      </div>
       </div>
     </div>
   );

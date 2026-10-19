@@ -5,10 +5,13 @@ interface ContextMenuContextType {
   menuPosition: { x: number; y: number } | null;
   menuSong: Cancion | null;
   infoSong: Cancion | null;
+  editSong: Cancion | null;
   showMenu: (e: React.MouseEvent | MouseEvent, song: Cancion) => void;
   closeMenu: () => void;
   showInfoModal: (song: Cancion) => void;
   closeInfoModal: () => void;
+  showEditModal: (song: Cancion) => void;
+  closeEditModal: () => void;
 }
 
 const ContextMenuContext = createContext<ContextMenuContextType | undefined>(undefined);
@@ -17,6 +20,7 @@ export function ContextMenuProvider({ children }: { children: ReactNode }) {
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const [menuSong, setMenuSong] = useState<Cancion | null>(null);
   const [infoSong, setInfoSong] = useState<Cancion | null>(null);
+  const [editSong, setEditSong] = useState<Cancion | null>(null);
 
   const showMenu = useCallback((e: React.MouseEvent | MouseEvent, song: Cancion) => {
     e.preventDefault();
@@ -38,16 +42,28 @@ export function ContextMenuProvider({ children }: { children: ReactNode }) {
     setInfoSong(null);
   }, []);
 
+  const showEditModal = useCallback((song: Cancion) => {
+    setEditSong(song);
+    closeMenu();
+  }, [closeMenu]);
+
+  const closeEditModal = useCallback(() => {
+    setEditSong(null);
+  }, []);
+
   return (
     <ContextMenuContext.Provider
       value={{
         menuPosition,
         menuSong,
         infoSong,
+        editSong,
         showMenu,
         closeMenu,
         showInfoModal,
         closeInfoModal,
+        showEditModal,
+        closeEditModal,
       }}
     >
       {children}

@@ -73,17 +73,34 @@ def create_app(config_class=Config):
             print(f"⚠️ [DuckSound] Error en migración de base de datos para 'audio_quality': {e}")
 
         
-        # Crear un usuario administrador inicial por defecto si la base de datos está vacía
+        # Crear o actualizar usuario administrador desde configuración / .env
         try:
-            if Usuario.query.count() == 0:
+            admin_user = Usuario.query.filter_by(role='admin').first()
+            default_user = app.config.get('ADMIN_USERNAME', 'ducksound')
+            default_pass = app.config.get('ADMIN_PASSWORD', 'ducksound')
+
+            if not admin_user:
+                # Si no hay admin, crearlo
                 admin_user = Usuario(
-                    nombre_usuario='ducksound',
+                    nombre_usuario=default_user,
                     role='admin'
                 )
-                admin_user.set_password('ducksound')  # Contraseña por defecto
+                admin_user.set_password(default_pass)
                 db.session.add(admin_user)
                 db.session.commit()
-                print("⚠️ [DuckSound] Usuario administrador inicial creado: ducksound / ducksound")
+                print(f"✅ [DuckSound] Usuario administrador inicial creado: {default_user}")
+            else:
+                # Si se definieron explícitamente en el entorno, sincronizar cambios
+                updated = False
+                if os.environ.get('ADMIN_PASSWORD') and not admin_user.check_password(default_pass):
+                    admin_user.set_password(default_pass)
+                    updated = True
+                if os.environ.get('ADMIN_USERNAME') and admin_user.nombre_usuario != default_user:
+                    admin_user.nombre_usuario = default_user
+                    updated = True
+                if updated:
+                    db.session.commit()
+                    print(f"✅ [DuckSound] Credenciales de administrador sincronizadas desde .env: {admin_user.nombre_usuario}")
         except Exception as e:
             db.session.rollback()
             print(f"⚠️ [DuckSound] No se pudo comprobar/crear usuario inicial: {e}")
@@ -103,6 +120,13 @@ def create_app(config_class=Config):
                 print(f"✅ [DuckSound] {msg}")
         except Exception as e:
             print(f"⚠️ [DuckSound] Error limpiando sesiones: {e}")
+
+        # Iniciar vigilancia de archivos en tiempo real (Watchdog del sistema de archivos)
+        try:
+            from app.services.watcher import iniciar_vigilancia
+            iniciar_vigilancia(app)
+        except Exception as e:
+            print(f"⚠️ [DuckSound] Error iniciando vigilancia watchdog: {e}")
 
     # 3. Interceptores de Seguridad y Encabezados HTTP globales
     @app.errorhandler(403)
@@ -176,26 +200,22 @@ def create_app(config_class=Config):
         if 'user_id' in session and request.endpoint and request.endpoint not in allowed_endpoints:
             token = session.get('session_token')
             if token:
-                # 1. Intentar validación rápida vía Redis
                 from app.services.queue import get_connection
+                sesion_db = None
+                # 1. Intentar validación rápida vía Redis
                 try:
                     r = get_connection()
-                    cached_user_id = r.get(f"ducksound:session:{token}")
-                    if cached_user_id:
-                        # Sesión válida y cacheada
+                    if r and r.get(f"ducksound:session:{token}"):
                         pass
                     else:
-                        # 2. Fallback a DB si no está en caché
                         sesion_db = SesionActiva.query.filter_by(session_token=token).first()
                         if not sesion_db:
-                            # La sesión fue revocada
                             session.clear()
                             return jsonify({'error': 'Sesión revocada'}), 401
-                        
-                        # Actualizar caché para futuras peticiones
-                        r.setex(f"ducksound:session:{token}", 3600, sesion_db.usuario_id)
-                except Exception as e:
-                    # En caso de error de Redis, fallamos hacia la DB para no bloquear al usuario
+                        if r:
+                            r.setex(f"ducksound:session:{token}", 3600, sesion_db.usuario_id)
+                except Exception:
+                    # En caso de error de Redis, fallback a la DB
                     sesion_db = SesionActiva.query.filter_by(session_token=token).first()
                     if not sesion_db:
                         session.clear()
@@ -203,12 +223,9 @@ def create_app(config_class=Config):
                 
                 # Actualizar última actividad cada 5 minutos para no saturar la DB
                 ahora = datetime.utcnow()
-                # Solo intentamos actualizar si ya tenemos el objeto sesion_db o si ha pasado tiempo
-                # Para evitar el UnboundLocalError, primero nos aseguramos de tener el objeto si queremos actualizarlo
                 try:
-                    if 'sesion_db' not in locals():
+                    if sesion_db is None:
                         sesion_db = SesionActiva.query.filter_by(session_token=token).first()
-                    
                     if sesion_db and (not sesion_db.ultima_actividad or (ahora - sesion_db.ultima_actividad) > timedelta(minutes=5)):
                         sesion_db.ultima_actividad = ahora
                         db.session.commit()

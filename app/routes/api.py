@@ -16,12 +16,14 @@ la aplicación de una sola página (SPA) y los scripts del frontend en el navega
 10. Traducción dinámica de letras mediante APIs libres con fallback automático.
 """
 
+import time
 import re
 import requests
 from datetime import datetime, timedelta
 from urllib.parse import quote
 
 from flask import Blueprint, jsonify, request, session, url_for, current_app, Response
+from sqlalchemy import func, desc
 from app.models import db, Usuario, Artista, Album, Playlist, Cancion, Favorito, Coleccion, DailyMix, HistorialEscucha, SesionActiva
 from app.services.queue import get_connection as get_redis_connection
 import json
@@ -31,6 +33,10 @@ from app.services.lyrics import obtener_o_descargar_letra
 from app.services.recommender import get_similar_songs
 from app.services.queue import progress_get
 from app.services.metadata import get_mb_progress
+from app.services.color import extraer_colores_imagen
+from app.services.events import event_bus
+from app.services.silence import detect_silence_padding
+from app.services.tagger import read_audio_tags, write_audio_tags
 
 # Definición del Blueprint de API
 api_bp = Blueprint('api', __name__)
@@ -43,46 +49,138 @@ api_bp = Blueprint('api', __name__)
 @api_bp.route('/api/search', methods=['GET'])
 def api_search():
     """
-    Endpoint principal del motor de búsqueda global con caché de Redis.
-    Aplica coincidencia flexible insensible a acentos e insensible a mayúsculas/minúsculas
-    en canciones, artistas y álbumes. Retorna arrays JSON limitados para alto rendimiento.
+    Endpoint principal del motor de búsqueda global con RapidFuzz y caché de Redis.
+    Aplica concordancia difusa (Fuzzy Matching con scoring WRatio), tolerancia a errores tipográficos,
+    e insensibilidad a mayúsculas y acentos en canciones, artistas y álbumes.
+    Calcula el 'top_result' (Mejor Resultado estilo Spotify) para destacar el elemento principal.
     """
     q = request.args.get('q', '').strip()
     if not q or len(q) < 2:
-        return jsonify({'songs': [], 'artists': [], 'albums': []})
+        return jsonify({'top_result': None, 'songs': [], 'artists': [], 'albums': []})
 
     # Intentar obtener la respuesta desde la caché de Redis
-    cache_key = f"ducksound:cache:search:{q.lower()}"
+    cache_key = f"ducksound:cache:search:fuzzy:{q.lower()}"
     try:
         r = get_redis_connection()
-        cached_data = r.get(cache_key)
-        if cached_data:
-            return Response(cached_data, mimetype='application/json')
+        if r:
+            cached_data = r.get(cache_key)
+            if cached_data:
+                return Response(cached_data, mimetype='application/json')
     except Exception as e:
         current_app.logger.warning(f"[Cache Search] Error leyendo de Redis: {e}")
 
+    from rapidfuzz import fuzz
+    from app.services.parsers import normalize_search_text
+    
+    q_norm = normalize_search_text(q)
     term = f'%{q}%'
-    try:
-        from unidecode import unidecode
-        q_norm = unidecode(q)
-    except Exception:
-        q_norm = q
-    term_norm = f'%{q_norm}%'
 
-    # Consultas optimizadas con límite para mantener el retardo de red bajo
-    songs = Cancion.query.filter(
-        Cancion.titulo.ilike(term) | Cancion.titulo.ilike(term_norm)
-    ).limit(8).all()
+    # 1. BÚSQUEDA DE CANCIONES (Piscina Inteligente de Candidatos + Scoring)
+    # Direct matches by title, artist, album, plus popular pool
+    candidate_songs = {}
     
-    artists = Artista.query.filter(
-        (Artista.nombre.ilike(term)) | (Artista.nombre_normalizado.ilike(term_norm))
-    ).limit(5).all()
-    
-    albums = Album.query.filter(
-        Album.titulo.ilike(term) | Album.titulo.ilike(term_norm)
-    ).limit(5).all()
+    for s in Cancion.query.filter(Cancion.titulo.ilike(term)).limit(40).all():
+        candidate_songs[s.id] = s
+    for s in Cancion.query.join(Artista).filter(Artista.nombre.ilike(term)).limit(40).all():
+        candidate_songs[s.id] = s
+    for s in Cancion.query.join(Album).filter(Album.titulo.ilike(term)).limit(40).all():
+        candidate_songs[s.id] = s
+    for s in Cancion.query.order_by(Cancion.play_count.desc(), Cancion.id.desc()).limit(150).all():
+        if s.id not in candidate_songs and len(candidate_songs) < 250:
+            candidate_songs[s.id] = s
+
+    scored_songs = []
+    for s in candidate_songs.values():
+        t_norm = normalize_search_text(s.titulo)
+        comb_norm = normalize_search_text(f"{s.artista_obj.nombre} {s.titulo}" if s.artista_obj else s.titulo)
+        score = max(fuzz.WRatio(q_norm, t_norm), fuzz.WRatio(q_norm, comb_norm))
+        if q.lower() in (s.titulo or '').lower():
+            score = max(score, 88.0)
+        if score >= 60:
+            scored_songs.append((score, s))
+
+    scored_songs.sort(key=lambda x: (x[0], x[1].play_count or 0), reverse=True)
+    top_songs = [s for _, s in scored_songs[:10]]
+
+    # 2. BÚSQUEDA DE ARTISTAS (Fuzzy & Scoring)
+    all_artists = Artista.query.all()
+    scored_artists = []
+    for a in all_artists:
+        a_norm = normalize_search_text(a.nombre)
+        score = fuzz.WRatio(q_norm, a_norm)
+        if q.lower() in a.nombre.lower():
+            score = max(score, 90.0)
+        if score >= 60:
+            scored_artists.append((score, a))
+
+    scored_artists.sort(key=lambda x: x[0], reverse=True)
+    top_artists = [a for _, a in scored_artists[:6]]
+
+    # 3. BÚSQUEDA DE ÁLBUMES (Fuzzy & Scoring)
+    all_albums = Album.query.all()
+    scored_albums = []
+    for al in all_albums:
+        al_norm = normalize_search_text(al.titulo)
+        al_comb = normalize_search_text(f"{al.artista.nombre} {al.titulo}" if al.artista else al.titulo)
+        score = max(fuzz.WRatio(q_norm, al_norm), fuzz.WRatio(q_norm, al_comb))
+        if q.lower() in al.titulo.lower():
+            score = max(score, 90.0)
+        if score >= 60:
+            scored_albums.append((score, al))
+
+    scored_albums.sort(key=lambda x: x[0], reverse=True)
+    top_albums = [al for _, al in scored_albums[:6]]
+
+    # 4. DETERMINACIÓN DEL "TOP RESULT"
+    # Jerarquía en empates: Artista > Álbum > Canción
+    best_cand = None
+    best_score = 0.0
+
+    if scored_artists:
+        a_score, a_obj = scored_artists[0]
+        if a_score >= 65 and a_score >= best_score:
+            best_score = a_score
+            best_cand = {
+                'type': 'artist',
+                'id': a_obj.id,
+                'nombre': a_obj.nombre,
+                'foto': a_obj.foto_url or '',
+                'score': round(a_score, 1)
+            }
+
+    if scored_albums:
+        al_score, al_obj = scored_albums[0]
+        # Si el álbum supera al artista por al menos 5 puntos o no hay artista
+        if al_score >= 65 and (best_cand is None or al_score > best_score + 5.0):
+            best_score = al_score
+            first_song_id = al_obj.canciones[0].id if al_obj.canciones else None
+            cover_url = url_for('audio.servir_album_art', cancion_id=first_song_id) if first_song_id else None
+            best_cand = {
+                'type': 'album',
+                'id': al_obj.id,
+                'titulo': al_obj.titulo,
+                'artista': al_obj.artista.nombre if al_obj.artista else None,
+                'cover': cover_url,
+                'score': round(al_score, 1)
+            }
+
+    if scored_songs:
+        s_score, s_obj = scored_songs[0]
+        # Si la canción supera significativamente al candidato previo
+        if s_score >= 70 and (best_cand is None or s_score > best_score + 8.0):
+            best_cand = {
+                'type': 'song',
+                'id': s_obj.id,
+                'titulo': s_obj.titulo,
+                'artista': s_obj.artista_obj.nombre if s_obj.artista_obj else None,
+                'audio': url_for('audio.servir_audio', cancion_id=s_obj.id),
+                'cover': url_for('audio.servir_album_art', cancion_id=s_obj.id),
+                'lyrics': url_for('audio.servir_lyrics', cancion_id=s_obj.id),
+                'score': round(s_score, 1)
+            }
 
     response_data = {
+        'top_result': best_cand,
         'songs': [{
             'id': s.id,
             'titulo': s.titulo,
@@ -90,27 +188,125 @@ def api_search():
             'audio': url_for('audio.servir_audio', cancion_id=s.id),
             'cover': url_for('audio.servir_album_art', cancion_id=s.id),
             'lyrics': url_for('audio.servir_lyrics', cancion_id=s.id),
-        } for s in songs],
+        } for s in top_songs],
         'artists': [{
             'id': a.id,
             'nombre': a.nombre,
             'foto': a.foto_url or '',
-        } for a in artists],
+        } for a in top_artists],
         'albums': [{
             'id': al.id,
             'titulo': al.titulo,
             'artista': al.artista.nombre if al.artista else None,
-        } for al in albums],
+        } for al in top_albums],
     }
 
-    # Escribir en caché con TTL de 5 minutos (300 segundos)
     try:
         r = get_redis_connection()
-        r.setex(cache_key, 300, json.dumps(response_data))
+        if r:
+            r.setex(cache_key, 300, json.dumps(response_data))
     except Exception as e:
         current_app.logger.warning(f"[Cache Search] Error escribiendo en Redis: {e}")
 
     return jsonify(response_data)
+
+
+def _seconds_to_time_string(seconds: int) -> str:
+    """Convierte segundos a una representación humana concisa."""
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    if hours > 0:
+        return f"{hours} hr{'s' if hours > 1 else ''}, {minutes} min{'s' if minutes > 1 else ''}" if minutes > 0 else f"{hours} hr{'s' if hours > 1 else ''}"
+    if minutes > 0:
+        return f"{minutes} min{'s' if minutes > 1 else ''}"
+    return f"{seconds % 60} seg"
+
+
+@api_bp.route('/api/stats', methods=['GET'])
+def api_stats():
+    """
+    Endpoint de estadísticas de escucha dinámicas por ventana de tiempo.
+    Soporta los parámetros de consulta: period=week|month|day|all (por defecto 'all').
+    """
+    from datetime import datetime, timedelta
+    from app.models import HistorialEscucha
+
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'No autorizado'}), 401
+
+    period = request.args.get('period', 'all').lower()
+    now = datetime.utcnow()
+    start_date = None
+
+    if period == 'week':
+        start_date = now - timedelta(days=7)
+    elif period == 'month':
+        start_date = now - timedelta(days=30)
+    elif period == 'day':
+        start_date = now - timedelta(days=1)
+
+    # 1. Total plays y skips
+    q_base = HistorialEscucha.query.filter(HistorialEscucha.usuario_id == user_id)
+    if start_date:
+        q_base = q_base.filter(HistorialEscucha.reproducido_en >= start_date)
+
+    total_plays = q_base.filter(HistorialEscucha.skip == False).count()
+    total_skips = q_base.filter(HistorialEscucha.skip == True).count()
+
+    # 2. Top canciones en el período
+    top_songs_q = db.session.query(
+        Cancion, func.count(HistorialEscucha.id).label('plays')
+    ).join(HistorialEscucha).filter(
+        HistorialEscucha.usuario_id == user_id,
+        HistorialEscucha.skip == False
+    )
+    if start_date:
+        top_songs_q = top_songs_q.filter(HistorialEscucha.reproducido_en >= start_date)
+    top_songs = top_songs_q.group_by(Cancion).order_by(desc('plays')).limit(10).all()
+
+    # 3. Top artistas en el período
+    top_artists_q = db.session.query(
+        Artista.id, Artista.nombre, Artista.foto_url, func.count(HistorialEscucha.id).label('plays')
+    ).select_from(HistorialEscucha)\
+     .join(Cancion, HistorialEscucha.cancion_id == Cancion.id)\
+     .join(Artista, Cancion.artista_id == Artista.id)\
+     .filter(HistorialEscucha.usuario_id == user_id, HistorialEscucha.skip == False)
+    if start_date:
+        top_artists_q = top_artists_q.filter(HistorialEscucha.reproducido_en >= start_date)
+    top_artists = top_artists_q.group_by(Artista.id, Artista.nombre, Artista.foto_url).order_by(desc('plays')).limit(8).all()
+
+    # 4. Duración acumulada
+    dur_q = db.session.query(func.sum(Cancion.duracion))\
+        .join(HistorialEscucha)\
+        .filter(HistorialEscucha.usuario_id == user_id, HistorialEscucha.skip == False, Cancion.duracion.isnot(None))
+    if start_date:
+        dur_q = dur_q.filter(HistorialEscucha.reproducido_en >= start_date)
+    total_seconds = int(dur_q.scalar() or 0)
+
+    return jsonify({
+        'period': period,
+        'total_plays': total_plays,
+        'total_skips': total_skips,
+        'total_seconds': total_seconds,
+        'total_hours': round(total_seconds / 3600.0, 1),
+        'time_string': _seconds_to_time_string(total_seconds),
+        'top_songs': [{
+            'id': c.id,
+            'titulo': c.titulo,
+            'artista': c.artista_obj.nombre if c.artista_obj else None,
+            'cover': url_for('audio.servir_album_art', cancion_id=c.id),
+            'audio': url_for('audio.servir_audio', cancion_id=c.id),
+            'plays': plays
+        } for c, plays in top_songs],
+        'top_artists': [{
+            'id': a_id,
+            'nombre': a_nombre,
+            'foto': a_foto or '',
+            'plays': plays
+        } for a_id, a_nombre, a_foto, plays in top_artists]
+    })
+
 
 
 # ==============================================================================
@@ -501,6 +697,120 @@ def api_cancion_lyrics(cancion_id):
         return jsonify({'error': 'Error interno del servidor'}), 500
 
 
+@api_bp.route('/api/album/<int:album_id>/color', methods=['GET'])
+@api_bp.route('/api/album/<int:album_id>/colors', methods=['GET'])
+def api_album_color(album_id):
+    """Retorna la paleta de color ambiental de un álbum (dominante, acento y gradiente)."""
+    from pathlib import Path
+    from config import Config
+    from app.models import Album
+    from app.services.color import extraer_colores_imagen, _color_por_defecto
+    album = db.session.get(Album, album_id)
+    if not album:
+        return jsonify(_color_por_defecto()), 200
+
+    img_path = album.portada_url
+    if not img_path or not Path(img_path).exists():
+        # Buscar en miniaturas de sus canciones
+        for c in album.canciones:
+            thumb = Config.THUMBNAILS_FOLDER / f"thumb_small_{c.id}.webp"
+            if thumb.exists():
+                img_path = str(thumb)
+                break
+
+    return jsonify(extraer_colores_imagen(img_path)), 200
+
+
+@api_bp.route('/api/cancion/<int:cancion_id>/color', methods=['GET'])
+@api_bp.route('/api/song/<int:cancion_id>/colors', methods=['GET'])
+def api_cancion_color(cancion_id):
+    """Retorna la paleta de color ambiental asociada a una canción."""
+    from pathlib import Path
+    from config import Config
+    from app.models import Cancion
+    from app.services.color import extraer_colores_imagen, _color_por_defecto
+    cancion = db.session.get(Cancion, cancion_id)
+    if not cancion:
+        return jsonify(_color_por_defecto()), 200
+
+    img_path = cancion.ruta_imagen_album or (cancion.album_obj.portada_url if cancion.album_obj else None)
+    if not img_path or not Path(img_path).exists():
+        thumb = Config.THUMBNAILS_FOLDER / f"thumb_small_{cancion.id}.webp"
+        if thumb.exists():
+            img_path = str(thumb)
+
+    return jsonify(extraer_colores_imagen(img_path)), 200
+
+# ==============================================================================
+# SECCIÓN 6.5: SMART MIXES & RECIPES (TOP STREAMED, RECENT, RADIOS)
+# ==============================================================================
+
+@api_bp.route('/api/cancion/<int:cancion_id>/radio', methods=['GET'])
+@api_bp.route('/api/mixes/radio/<int:cancion_id>', methods=['GET'])
+def api_cancion_radio(cancion_id):
+    """
+    Genera una lista de reproducción inteligente tipo 'Radio' a partir de la canción base,
+    usando similitud acústica híbrida (BPM, dynamic range, RMS) y compatibilidad de género/artista.
+    """
+    from app.services.recipes import get_radio_mix
+    limit = request.args.get('limit', 25, type=int)
+    resultado = get_radio_mix(cancion_id, limit=limit)
+    if not resultado:
+        return jsonify({'error': 'Canción no encontrada o sin recomendaciones'}), 404
+    return jsonify(resultado), 200
+
+
+@api_bp.route('/api/mixes/top', methods=['GET'])
+@api_bp.route('/api/songs/top', methods=['GET'])
+def api_mixes_top():
+    """
+    Retorna la mezcla de canciones más reproducidas (Top Streamed).
+    Prioriza el historial del usuario autenticado si existe sesión.
+    """
+    from app.services.recipes import get_top_mix
+    user_id = session.get('user_id')
+    limit = request.args.get('limit', 25, type=int)
+    resultado = get_top_mix(user_id=user_id, limit=limit)
+    return jsonify(resultado), 200
+
+
+@api_bp.route('/api/mixes/recent', methods=['GET'])
+@api_bp.route('/api/songs/recent', methods=['GET'])
+def api_mixes_recent():
+    """
+    Retorna la mezcla de adiciones recientes o canciones escuchadas recientemente.
+    """
+    from app.services.recipes import get_recent_mix
+    user_id = session.get('user_id')
+    limit = request.args.get('limit', 25, type=int)
+    resultado = get_recent_mix(user_id=user_id, limit=limit)
+    return jsonify(resultado), 200
+
+
+@api_bp.route('/api/mixes/artist/<int:artista_id>', methods=['GET'])
+def api_mixes_artist(artista_id):
+    """
+    Genera una estación de radio centrada en un artista y artistas con afinidad estilística.
+    """
+    from app.services.recipes import get_artist_radio
+    limit = request.args.get('limit', 25, type=int)
+    resultado = get_artist_radio(artista_id, limit=limit)
+    if not resultado:
+        return jsonify({'error': 'Artista no encontrado'}), 404
+    return jsonify(resultado), 200
+
+
+@api_bp.route('/api/mixes', methods=['GET'])
+def api_mixes_overview():
+    """
+    Retorna el catálogo o resumen de todas las mezclas inteligentes disponibles para el usuario.
+    """
+    from app.services.recipes import get_smart_mixes_overview
+    user_id = session.get('user_id')
+    overview = get_smart_mixes_overview(user_id=user_id)
+    return jsonify(overview), 200
+
+
 # ==============================================================================
 # SECCIÓN 7: API DE COLECCIONES (PLAYLISTS PERSONALIZADAS DE USUARIO)
 # ==============================================================================
@@ -636,23 +946,13 @@ def api_favoritos_canciones():
     if not usuario_id:
         return jsonify([]), 200
 
-    favoritos = Favorito.query.filter_by(usuario_id=usuario_id)\
-        .order_by(Favorito.fecha_agregado.desc()).all()
+    canciones = Cancion.query.join(
+        Favorito, Favorito.cancion_id == Cancion.id
+    ).filter(
+        Favorito.usuario_id == usuario_id
+    ).order_by(Favorito.fecha_agregado.desc()).all()
 
-    canciones = []
-    for fav in favoritos:
-        c = db.session.get(Cancion, fav.cancion_id)
-        if c:
-            canciones.append({
-                'id': c.id,
-                'titulo': c.titulo,
-                'artista': c.artista_obj.nombre if c.artista_obj else 'Desconocido',
-                'album': c.album_obj.titulo if c.album_obj else None,
-                'duracion': c.duracion,
-                'cover': url_for('audio.servir_album_art', cancion_id=c.id),
-                'lyrics': url_for('audio.servir_lyrics', cancion_id=c.id)
-            })
-    return jsonify(canciones)
+    return jsonify([c.to_dict() for c in canciones])
 
 
 # ==============================================================================
@@ -662,25 +962,50 @@ def api_favoritos_canciones():
 @api_bp.route('/api/play/<int:cancion_id>', methods=['POST'])
 def api_register_play(cancion_id):
     """
-    Registra una canción en el historial de audición.
-    Respeta la privacidad: si el usuario tiene desactivado 'activity_tracking', no persiste nada.
+    Registra una canción en el historial de audición y actualiza los contadores
+    rápidos desnormalizados (play_count, play_duration, last_played).
+    Respeta la privacidad del usuario en 'HistorialEscucha'.
     """
-    if 'user_id' not in session:
-        return jsonify({'error': 'No auth'}), 401
-        
-    usuario = db.session.get(Usuario, session['user_id'])
-    if usuario and not usuario.activity_tracking:
-        return jsonify({'ok': True, 'tracking': False})
-        
     data = request.get_json(silent=True) or {}
-    entry = HistorialEscucha(
-        usuario_id=session['user_id'],
-        cancion_id=cancion_id,
-        skip=data.get('skip', False)
-    )
-    db.session.add(entry)
+    is_skip = data.get('skip', False)
+
+    cancion = db.session.get(Cancion, cancion_id)
+    if cancion and not is_skip:
+        cancion.play_count = (cancion.play_count or 0) + 1
+        dur = data.get('duration') or cancion.duracion or 0
+        try:
+            cancion.play_duration = (cancion.play_duration or 0) + int(dur)
+        except (ValueError, TypeError):
+            pass
+        cancion.last_played = datetime.utcnow()
+        if cancion.album_obj:
+            cancion.album_obj.play_count = (cancion.album_obj.play_count or 0) + 1
+
+    if 'user_id' in session:
+        usuario = db.session.get(Usuario, session['user_id'])
+        if not usuario or usuario.activity_tracking:
+            entry = HistorialEscucha(
+                usuario_id=session['user_id'],
+                cancion_id=cancion_id,
+                skip=is_skip
+            )
+            db.session.add(entry)
+
     db.session.commit()
+    if cancion and not is_skip:
+        try:
+            event_bus.dispatch('track_played', {
+                'cancion_id': cancion.id,
+                'titulo': cancion.titulo,
+                'artista': cancion.artista_obj.nombre if cancion.artista_obj else None,
+                'play_count': cancion.play_count,
+                'album_id': cancion.album_id
+            })
+        except Exception:
+            pass
     return jsonify({'ok': True})
+
+
 
 
 # ==============================================================================
@@ -932,3 +1257,197 @@ def api_translate():
     except Exception as e:
         current_app.logger.error(f"Error al traducir: {e}")
         return jsonify({'error': str(e)}), 502
+
+
+
+
+# ==============================================================================
+# SECCIÓN 14: DETECCIÓN DE SILENCIOS Y AUDIO GAPLESS
+# ==============================================================================
+
+@api_bp.route('/api/song/<int:cancion_id>/silence', methods=['GET'])
+def api_song_silence(cancion_id):
+    """
+    Retorna el análisis de corte de silencio inicial y final de una pista
+    para permitir transiciones continuas sin espacios muertos (True Gapless).
+    """
+    cancion = Cancion.query.get_or_404(cancion_id)
+    silence_info = detect_silence_padding(cancion.ruta_archivo_audio)
+    return jsonify({
+        'cancion_id': cancion.id,
+        'titulo': cancion.titulo,
+        **silence_info
+    })
+
+
+@api_bp.route('/api/gapless/pair/<int:song1_id>/<int:song2_id>', methods=['GET'])
+def api_gapless_pair(song1_id, song2_id):
+    """
+    Calcula los puntos de corte encadenados entre dos pistas consecutivas.
+    """
+    s1 = Cancion.query.get_or_404(song1_id)
+    s2 = Cancion.query.get_or_404(song2_id)
+    p1 = detect_silence_padding(s1.ruta_archivo_audio)
+    p2 = detect_silence_padding(s2.ruta_archivo_audio)
+    return jsonify({
+        'song1': {
+            'id': s1.id,
+            'trim_end': p1['trim_end'],
+            'trailing_silence': p1['trailing_silence'],
+            'duration': p1['duration']
+        },
+        'song2': {
+            'id': s2.id,
+            'trim_start': p2['trim_start'],
+            'leading_silence': p2['leading_silence'],
+            'duration': p2['duration']
+        }
+    })
+
+
+# ==============================================================================
+# SECCIÓN 15: CANAL DE EVENTOS EN TIEMPO REAL (SERVER-SENT EVENTS - SSE)
+# ==============================================================================
+
+@api_bp.route('/api/events/stream', methods=['GET'])
+def api_events_stream():
+    """
+    Stream Server-Sent Events (SSE) para actualizaciones en vivo de biblioteca,
+    progreso de indexación, sincronización de letras y reproducción.
+    """
+    def event_generator():
+        # Enviar evento inicial de conexión inmediatamente para confirmar el canal HTTP
+        yield f"id: 0\nevent: connected\ndata: {json.dumps({'status': 'connected', 'timestamp': time.time()})}\n\n"
+        for event_id, payload in event_bus.listen(timeout=15.0):
+            yield f"id: {event_id}\nevent: {payload['event']}\ndata: {json.dumps(payload)}\n\n"
+
+    response = Response(
+        event_generator(),
+        mimetype="text/event-stream"
+    )
+    response.headers["Cache-Control"] = "no-cache, no-transform"
+    response.headers["X-Accel-Buffering"] = "no"
+    response.headers["Connection"] = "keep-alive"
+    return response
+
+
+@api_bp.route('/api/events/status', methods=['GET'])
+def api_events_status():
+    """Retorna estadísticas del bus de eventos SSE."""
+    return jsonify({
+        'active_listeners': event_bus.listener_count()
+    })
+
+
+# ==============================================================================
+# SECCIÓN 16: EDITOR DE ETIQUETAS Y METADATOS (IN-APP TAGGER)
+# ==============================================================================
+
+@api_bp.route('/api/track/<int:cancion_id>/tags', methods=['GET', 'POST'])
+def api_track_tags(cancion_id):
+    """
+    Lectura y edición de metadatos de audio en el archivo físico y en la base de datos.
+    GET: Retorna las etiquetas físicas y del sistema.
+    POST: (Solo admin) Escribe las etiquetas en el archivo físico y actualiza la BD.
+    """
+    cancion = Cancion.query.get_or_404(cancion_id)
+
+    if request.method == 'GET':
+        raw_tags = read_audio_tags(cancion.ruta_archivo_audio)
+        return jsonify({
+            'cancion_id': cancion.id,
+            'titulo': cancion.titulo,
+            'artista': cancion.artista_obj.nombre if cancion.artista_obj else '',
+            'album': cancion.album_obj.titulo if cancion.album_obj else '',
+            'numero_pista': cancion.numero_pista,
+            'genero': cancion.genero or '',
+            'anio': cancion.album_obj.anio if cancion.album_obj else None,
+            'raw_file_tags': raw_tags,
+            'filepath': cancion.ruta_archivo_audio
+        })
+
+    # POST: Requiere rol admin
+    if 'user_id' not in session:
+        return jsonify({'error': 'Acceso no autenticado'}), 401
+    user = db.session.get(Usuario, session['user_id'])
+    if not user or not user.is_admin():
+        return jsonify({'error': 'Permiso denegado: solo administradores pueden editar etiquetas físicas'}), 403
+
+    data = request.get_json(silent=True) or {}
+    nuevo_titulo = data.get('titulo', '').strip()
+    nuevo_artista = data.get('artista', '').strip()
+    nuevo_album = data.get('album', '').strip()
+    nuevo_genero = data.get('genero', '').strip()
+    nuevo_num_pista = data.get('numero_pista')
+    nuevo_anio = data.get('anio')
+
+    if not nuevo_titulo:
+        return jsonify({'error': 'El título de la canción no puede estar vacío'}), 400
+
+    # 1. Escribir metadatos en el archivo físico con mutagen
+    ok, err = write_audio_tags(cancion.ruta_archivo_audio, {
+        'titulo': nuevo_titulo,
+        'artista': nuevo_artista,
+        'album': nuevo_album,
+        'genero': nuevo_genero,
+        'numero_pista': nuevo_num_pista,
+        'anio': nuevo_anio
+    })
+
+    if not ok:
+        current_app.logger.warning(f"[Tagger] Falló escritura física en {cancion.ruta_archivo_audio}: {err}")
+
+    # 2. Actualizar entidad Artista si cambió
+    if nuevo_artista:
+        artista_obj = Artista.query.filter(Artista.nombre.ilike(nuevo_artista)).first()
+        if not artista_obj:
+            artista_obj = Artista(nombre=nuevo_artista)
+            db.session.add(artista_obj)
+            db.session.flush()
+        cancion.artista_id = artista_obj.id
+
+    # 3. Actualizar entidad Album si cambió
+    if nuevo_album:
+        album_obj = Album.query.filter(
+            Album.titulo.ilike(nuevo_album),
+            Album.artista_id == cancion.artista_id
+        ).first()
+        if not album_obj:
+            album_obj = Album(
+                titulo=nuevo_album,
+                artista_id=cancion.artista_id,
+                anio=int(nuevo_anio) if nuevo_anio and str(nuevo_anio).isdigit() else None
+            )
+            db.session.add(album_obj)
+            db.session.flush()
+        else:
+            if nuevo_anio and str(nuevo_anio).isdigit():
+                album_obj.anio = int(nuevo_anio)
+        cancion.album_id = album_obj.id
+
+    # 4. Actualizar campos de la canción
+    cancion.titulo = nuevo_titulo
+    if nuevo_genero:
+        cancion.genero = nuevo_genero
+    if nuevo_num_pista is not None and str(nuevo_num_pista).isdigit():
+        cancion.numero_pista = int(nuevo_num_pista)
+
+    db.session.commit()
+
+    # 5. Notificar por SSE a todos los clientes que la biblioteca se actualizó
+    try:
+        event_bus.dispatch('track_updated', {
+            'cancion_id': cancion.id,
+            'titulo': cancion.titulo,
+            'artista': cancion.artista_obj.nombre if cancion.artista_obj else None,
+            'album': cancion.album_obj.titulo if cancion.album_obj else None
+        })
+    except Exception:
+        pass
+
+    return jsonify({
+        'ok': True,
+        'message': 'Metadatos actualizados exitosamente en disco y base de datos',
+        'cancion': cancion.to_dict()
+    })
+

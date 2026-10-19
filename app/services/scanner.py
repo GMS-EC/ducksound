@@ -47,64 +47,114 @@ from app.services.metadata import (
 AUDIO_EXTENSIONS = {'.mp3', '.flac', '.wav', '.m4a', '.ogg'}
 
 
+def inferir_metadatos_desde_ruta(ruta_archivo, carpeta_base_audio=None):
+    """
+    Infiere el artista y el álbum examinando la jerarquía de subdirectorios y nombres de carpetas.
+    Esto compensa la carencia absoluta de tags internos de metadatos o cabeceras corruptas.
+    
+    Ejemplos de mapeo:
+      Artist - Album/song.flac     → artista='Artist', album='Album'
+      Artist/Album/song.mp3        → artista='Artist', album='Album'
+      Artist/song.mp3              → artista='Artist', album=None
+      /music/song.mp3              → None, None (ignora carpetas raíz como 'music')
+    """
+    import re
+    try:
+        parts = []
+        if carpeta_base_audio:
+            try:
+                rel_path = Path(ruta_archivo).resolve().relative_to(Path(carpeta_base_audio).resolve())
+                parts = list(rel_path.parts)
+            except Exception:
+                parts = list(Path(ruta_archivo).parts)
+        else:
+            parts = list(Path(ruta_archivo).parts)
+
+        if len(parts) < 2:
+            return None, None
+        
+        # Omitimos el nombre del archivo
+        dirs = parts[:-1]
+        
+        # Omitimos carpetas del tipo "CD 1", "CD 2", "Disc 1" y carpetas raíz del sistema o docker
+        ignorar = {'music', 'musica', 'audio', 'songs', 'media', 'app', 'data', 'mnt', 'd', 'c'}
+        filtered_dirs = []
+        for dir_name in dirs:
+            dir_clean = str(dir_name).strip()
+            if not dir_clean:
+                continue
+            if re.match(r'^(CD|Disc)\s*\d+$', dir_clean, re.IGNORECASE):
+                continue
+            if dir_clean.lower() in ignorar:
+                continue
+            filtered_dirs.append(dir_clean)
+        
+        if len(filtered_dirs) == 1:
+            dir_name = filtered_dirs[0]
+            if ' - ' in dir_name:
+                partes_dir = dir_name.split(' - ', 1)
+                return partes_dir[0].strip(), partes_dir[1].strip()
+            # Estructura: Artista/Cancion.mp3
+            return dir_name, None
+        elif len(filtered_dirs) >= 2:
+            # Estructura: .../Artista/Album/Cancion.mp3
+            return filtered_dirs[-2], filtered_dirs[-1]
+    except Exception:
+        pass
+    return None, None
+
+
 def extraer_metadatos(ruta_archivo):
     """
     Extrae metadatos detallados de un archivo de audio específico en disco.
     
-    Esta función emplea una estrategia híbrida sumamente optimizada:
-    1. Utiliza `mutagen` para extraer etiquetas textuales complejas (título, artista, álbum,
-       género, pista, disco), ya que es excelente manejando variaciones de codificación (UTF-8, UTF-16, latin1).
-    2. Utiliza `TinyTag` como fallback para el texto y como primera opción para la duración
-       en segundos, dado que lee las cabeceras de audio a bajo nivel de manera sumamente rápida.
-    3. Implementa una heurística de recuperación ante metadatos corruptos (caracteres "????").
-       Si el nombre del artista parece corrupto, intenta extraer el nombre basándose en el nombre de la carpeta padre.
-    4. Ejecuta un analizador de audio avanzado opcional (para obtener Nyquist, rango dinámico, RMS, etc.).
-
-    Args:
-        ruta_archivo (str o Path): La ubicación absoluta o relativa del archivo de música.
-
-    Returns:
-        dict: Un diccionario con todos los metadatos parseados, normalizados y listos para BD.
-        None: Si ocurre un error fatal o el archivo no es un archivo de audio legible.
+    Estrategia híbrida de extracción:
+    1. Utiliza `mutagen` para extraer etiquetas textuales complejas.
+    2. Si `File()` falla por discrepancia de extensión (ej. MP3 nombrado como .flac), inspecciona
+       los magic bytes binarios de la cabecera y reintenta con MP3/FLAC/WAVE específicos.
+    3. Utiliza `TinyTag` como fallback para texto y lectura rápida de duración.
+    4. Si las etiquetas no existen o vienen corruptas, extrae artista, álbum y título analizando
+       la jerarquía de carpetas físicas y el nombre del archivo (patrón 'Título - Artista' o 'Artista - Título').
+    5. Deduce número de pista para temas introductorios ("Intro", "Prologue") si no está etiquetado.
     """
     from app.services.audio_analyzer import analyze_audio
     from pathlib import Path
+    import re
 
     def es_corrupto(texto):
-        """
-        Determina si una cadena de texto de metadatos parece estar corrupta o codificada erróneamente.
-        Por ejemplo, cuando caracteres no admitidos en el tag original se convirtieron en '?'
-        durante guardados defectuosos en otros reproductores.
-        """
         if not texto: return False
-        # Si el texto contiene tres '?' consecutivos o si más del 50% de sus caracteres son '?', se considera corrupto.
-        if '???' in texto or (len(texto) > 0 and texto.count('?') / len(texto) > 0.5):
+        if '???' in str(texto) or (len(str(texto)) > 0 and str(texto).count('?') / len(str(texto)) > 0.5):
             return True
         return False
 
-    def recuperar_desde_ruta(ruta):
-        """
-        Heurística de Fallback: Extrae el nombre del artista de la estructura de directorios del disco.
-        Normalmente la estructura es: /musica/Nombre_Artista/Nombre_Album/Cancion.mp3
-        """
-        partes = Path(ruta).parts
-        if len(partes) >= 2:
-            # Tomamos la carpeta de nivel -3 (Artista) o -2 (si la estructura no incluye subcarpeta de álbum)
-            return partes[-3] if len(partes) >= 3 else partes[-2]
-        return None
-
     try:
-        # Intentamos instanciar el parser principal Mutagen
+        # 1. Intentamos instanciar el parser principal Mutagen
+        audio_file = None
         try:
             audio_file = File(str(ruta_archivo))
-        except Exception as mutagen_err:
+        except Exception:
             audio_file = None
+
+        # Autodetección por magic bytes binarios si File() falló por extensión engañosa
+        if audio_file is None:
+            try:
+                with open(str(ruta_archivo), 'rb') as f_magic:
+                    magic = f_magic.read(16)
+                if magic.startswith(b'ID3') or magic.startswith(b'\xff\xfb') or magic.startswith(b'\xff\xf3') or magic.startswith(b'\xff\xf2'):
+                    try: audio_file = MP3(str(ruta_archivo))
+                    except Exception: pass
+                elif magic.startswith(b'fLaC'):
+                    try: audio_file = FLAC(str(ruta_archivo))
+                    except Exception: pass
+                elif magic.startswith(b'RIFF'):
+                    try: audio_file = WAVE(str(ruta_archivo))
+                    except Exception: pass
+            except Exception:
+                pass
         
         def _tag_val(*keys):
-            """Función interna para extraer y limpiar un valor de etiqueta desde los diccionarios de Mutagen."""
             if audio_file is None or not hasattr(audio_file, 'tags') or audio_file.tags is None:
                 return None
-            # Crear un mapeo case-insensitive de las claves existentes
             tags_lower = {k.lower(): k for k in audio_file.tags.keys()}
             for k in keys:
                 k_lower = k.lower()
@@ -112,14 +162,13 @@ def extraer_metadatos(ruta_archivo):
                     real_key = tags_lower[k_lower]
                     v = audio_file.tags[real_key]
                     if v is not None:
-                        # Si es una lista o tupla, nos quedamos con el primer elemento
                         if isinstance(v, (list, tuple)):
                             v = v[0] if v else None
                         return str(v).strip() if v is not None else None
             return None
         
+        tag = None
         def _tiny_val(attr, *extra_keys):
-            """Función interna para obtener valores desde TinyTag o sus campos extra en caso de fallback."""
             if tag is None:
                 return None
             val = getattr(tag, attr, None)
@@ -134,23 +183,17 @@ def extraer_metadatos(ruta_archivo):
                         break
             return val
 
-        # 1. Intentar extracción inicial con Mutagen (ID3 estándar)
-        titulo = _tag_val('TIT2', 'title') or Path(ruta_archivo).stem
+        # Extraer etiquetas con Mutagen
+        stem_archivo = Path(ruta_archivo).stem
+        titulo = _tag_val('TIT2', 'title')
         artista = _tag_val('TPE1', 'artist')
         album = _tag_val('TALB', 'album')
         genero = _tag_val('TCON', 'genre')
         track_str = _tag_val('TRCK', 'tracknumber', 'track')
         disc_str = _tag_val('TPOS', 'discnumber', 'disc')
         
-        # --- APLICACIÓN DE LA HEURÍSTICA DE RECUPERACIÓN ---
-        # Si el artista extraído por Mutagen viene corrupto (????), intentamos rescatarlo desde la ruta física.
-        if es_corrupto(artista):
-            recuperado = recuperar_desde_ruta(ruta_archivo)
-            if recuperado:
-                artista = recuperado
-        
-        # Fallback a TinyTag: Si Mutagen no devolvió nada utilizable, cargamos la cabecera mediante TinyTag
-        if not artista or es_corrupto(artista) or not titulo:
+        # Fallback a TinyTag si faltan datos esenciales
+        if not artista or es_corrupto(artista) or not titulo or not album:
             try:
                 tag = TinyTag.get(str(ruta_archivo), image=False)
             except Exception:
@@ -158,12 +201,9 @@ def extraer_metadatos(ruta_archivo):
             
             if tag is not None:
                 if not titulo:
-                    titulo = _tiny_val('title', 'TITLE') or Path(ruta_archivo).stem
+                    titulo = _tiny_val('title', 'TITLE')
                 if not artista or es_corrupto(artista):
                     artista = _tiny_val('artist', 'ARTIST')
-                    # Si TinyTag tampoco lo resuelve, intentamos recuperar el nombre desde el disco
-                    if not artista or es_corrupto(artista):
-                        artista = recuperar_desde_ruta(ruta_archivo)
                 if not album:
                     album = _tiny_val('album', 'ALBUM')
                 if not genero:
@@ -174,22 +214,41 @@ def extraer_metadatos(ruta_archivo):
                 if not disc_str:
                     d = _tiny_val('disc', 'discnumber', 'DISCNUMBER', 'TPA')
                     disc_str = str(d) if d else None
-            else:
-                # Fallback de último recurso: deducir de la ruta física
-                if not artista or es_corrupto(artista):
-                    artista = recuperar_desde_ruta(ruta_archivo)
         
+        # Fallback inteligente de disco y jerarquía de carpetas
+        artista_inf, album_inf = inferir_metadatos_desde_ruta(ruta_archivo, Config.AUDIO_FOLDER)
+        if not artista or es_corrupto(artista):
+            artista = artista_inf
+        if not album:
+            album = album_inf
+
+        # Fallback de título y artista desde el nombre de archivo
+        if not titulo:
+            titulo = stem_archivo
+
+        if (not artista or es_corrupto(artista)) and ' - ' in stem_archivo:
+            partes_stem = [p.strip() for p in stem_archivo.split(' - ')]
+            if len(partes_stem) == 2:
+                if partes_stem[0].isdigit():
+                    titulo = partes_stem[1]
+                else:
+                    # Si no conocemos el artista de carpeta, tomar la primera parte
+                    artista = partes_stem[0]
+                    titulo = partes_stem[1]
+            elif len(partes_stem) >= 3 and partes_stem[0].isdigit():
+                artista = partes_stem[1]
+                titulo = ' - '.join(partes_stem[2:])
+
         def parse_track_num(val):
-            """Parsea el número de pista/disco. Soporta formatos como '3/12' (pista 3 de 12)."""
             if not val: return None
             try: return int(str(val).split('/')[0])
             except: return None
         
-        # Obtener el artista del álbum (TPE2/Album Artist), clave para evitar duplicados en discos compilatorios
         albumartist = _tag_val('TPE2', 'albumartist', 'album artist', 'album_artist', 'ALBUMARTIST', 'ALBUM ARTIST') or artista
         if es_corrupto(albumartist):
-            albumartist = recuperar_desde_ruta(ruta_archivo) or artista
-        # Si el título contiene un guion y el artista está definido, limpiamos el nombre del artista en el título
+            albumartist = artista_inf or artista
+
+        # Limpiar el nombre del artista en el título si viene pegado
         if titulo and artista and ' - ' in titulo:
             partes_titulo = [p.strip() for p in titulo.split(' - ')]
             # Caso 1: "Intro - Psychonaut 4"
@@ -198,36 +257,51 @@ def extraer_metadatos(ruta_archivo):
             # Caso 2: "Psychonaut 4 - Intro"
             elif partes_titulo[0].lower() == artista.lower() or normalizar_artista(partes_titulo[0]) == normalizar_artista(artista):
                 titulo = ' - '.join(partes_titulo[1:])
- 
-        # Construimos el diccionario de metadatos procesados
+
+        # Fallback de pista (si es "Intro" o "Prologue", se asigna pista 1 por defecto)
+        numero_pista = parse_track_num(track_str)
+        if numero_pista is None:
+            m_pista = re.match(r'^(?:(\d{1,2})[\s._-]+)?(\d{1,3})(?=[\s._-]|$)', stem_archivo)
+            if m_pista:
+                try: numero_pista = int(m_pista.group(2))
+                except Exception: pass
+            elif titulo and titulo.lower().strip() in ('intro', 'prologue', 'prólogo', 'introduction'):
+                numero_pista = 1
+
         metadatos = {
-            'titulo': titulo,
+            'titulo': titulo or stem_archivo,
             'artista': artista,
             'albumartist': albumartist,
-            'artista_display': artista, # Nombre original completo tal como viene
-            'artista_principal': normalizar_artista(albumartist), # Artista principal para agrupación única
+            'artista_display': artista,
+            'artista_principal': normalizar_artista(albumartist or artista),
             'album': album,
             'duracion': None,
             'ruta_imagen': None,
             'genero': genero,
-            'numero_pista': parse_track_num(track_str),
+            'numero_pista': numero_pista,
             'numero_disco': parse_track_num(disc_str),
         }
         
-        # Extraer la duración precisa de TinyTag (si está disponible)
+        # Extraer la duración precisa
         try:
-            tiny = TinyTag.get(str(ruta_archivo), image=False)
-            if tiny and tiny.duration:
-                metadatos['duracion'] = int(tiny.duration)
-        except:
+            tiny_dur = TinyTag.get(str(ruta_archivo), image=False)
+            if tiny_dur and tiny_dur.duration:
+                metadatos['duracion'] = int(tiny_dur.duration)
+        except Exception:
             pass
+
+        if metadatos['duracion'] is None and audio_file is not None and hasattr(audio_file, 'info') and hasattr(audio_file.info, 'length'):
+            try:
+                metadatos['duracion'] = int(audio_file.info.length)
+            except Exception:
+                pass
         
-        # Ejecutar análisis electroacústico de audio si el analizador está disponible (calcula RMS, rango dinámico, etc.)
+        # Ejecutar análisis electroacústico de audio si está disponible
         try:
             analisis = analyze_audio(ruta_archivo)
             if analisis:
                 metadatos['analisis'] = analisis
-        except:
+        except Exception:
             pass
             
         return metadatos
@@ -414,164 +488,27 @@ def obtener_o_crear_artista(nombre, enriquecer=False, mbid=None):
             func.lower(func.trim(Artista.nombre_normalizado)) == nombre_norm.lower().strip()
         ).first()
 
-    # =========================================================================
-    # NOTA DE INTEGRIDAD DE CÓDIGO (DEAD CODE / DUPLICADOS INALCANZABLES):
-    # Los bloques de código que figuran a continuación son remanentes duplicados
-    # de fusiones de commits anteriores en el repositorio del usuario. 
-    # Dado que el bloque try-except anterior garantiza un retorno del flujo
-    # (retorna el objeto creado o el consultado en el except), el siguiente código
-    # es técnicamente inaccesible. Se conserva 100% idéntico para evitar 
-    # cualquier alteración funcional o lógica del script original.
-    # =========================================================================
-    if artista_obj:
-        return artista_obj
-    
-    # 3. Buscar en MusicBrainz API
-    from app.services.metadata import buscar_artista
-    mb_result = buscar_artista(nombre_norm_busqueda)
-    if mb_result:
-        mb_nombre_raw = mb_result['nombre']
-        mb_sort = mb_result['sort_name']
-        mb_nombre_norm = normalizar_artista(mb_sort if mb_sort and mb_sort != mb_nombre_raw else mb_nombre_raw)
-        
-        artista_obj = Artista.query.filter_by(musicbrainz_id=mb_result['mbid']).first()
-        if artista_obj:
-            return artista_obj
-        
-        if mb_nombre_norm:
-            artista_obj = Artista.query.filter(
-                func.lower(func.trim(Artista.nombre_normalizado)) == mb_nombre_norm.lower().strip()
-            ).first()
-            if artista_obj:
-                return artista_obj
-        
-        mb_result['nombre_norm'] = mb_nombre_norm
-    
-    mejor_ratio = 0
-    mejor_artista = None
-    for a in Artista.query.filter(Artista.musicbrainz_id.is_(None)).all():
-        ratio = fuzz.token_set_ratio(nombre_norm.lower(), a.nombre.lower())
-        if ratio > mejor_ratio:
-            mejor_ratio = ratio
-            mejor_artista = a
-    if mejor_ratio >= UMBRAL_FUZZY and mejor_artista:
-        return mejor_artista
-    
-    mb_norm_name = mb_result.get('nombre_norm') if mb_result else None
-    if mb_norm_name:
-        final_norm = mb_norm_name
-    else:
-        from app.services.metadata import _es_latino
-        if not _es_latino(nombre_norm):
-            from unidecode import unidecode
-            final_norm = normalizar_artista(unidecode(nombre_norm))
-        else:
-            final_norm = nombre_norm
-    
-    try:
-        artista_obj = Artista(
-            nombre=nombre,
-            nombre_normalizado=final_norm,
-            musicbrainz_id=mb_result['mbid'] if mb_result else None
-        )
-        db.session.add(artista_obj)
-        db.session.flush()
-        return artista_obj
-    except Exception:
-        db.session.rollback()
-        artista_obj = Artista.query.filter(
-            func.lower(func.trim(Artista.nombre_normalizado)) == nombre_norm.lower().strip()
-        ).first()
-        return artista_obj
-
-    artista_obj = Artista.query.filter(
-        func.lower(func.trim(Artista.nombre_normalizado)) == nombre_norm.lower().strip()
-    ).first()
-    if artista_obj:
-        return artista_obj
-
-    from app.services.metadata import buscar_artista
-    mb_result = buscar_artista(nombre_norm)
-    if mb_result:
-        mb_nombre_raw = mb_result['nombre']
-        mb_sort = mb_result['sort_name']
-        mb_nombre_norm = normalizar_artista(mb_sort if mb_sort and mb_sort != mb_nombre_raw else mb_nombre_raw)
-        
-        artista_obj = Artista.query.filter_by(musicbrainz_id=mb_result['mbid']).first()
-        if artista_obj:
-            return artista_obj
-        
-        if mb_nombre_norm:
-            artista_obj = Artista.query.filter(
-                func.lower(func.trim(Artista.nombre_normalizado)) == mb_nombre_norm.lower().strip()
-            ).first()
-            if artista_obj:
-                return artista_obj
-        
-        mb_result['nombre_norm'] = mb_nombre_norm
-
-    mejor_ratio = 0
-    mejor_artista = None
-    for a in Artista.query.filter(Artista.musicbrainz_id.is_(None)).all():
-        ratio = fuzz.token_set_ratio(nombre_norm.lower(), a.nombre.lower())
-        if ratio > mejor_ratio:
-            mejor_ratio = ratio
-            mejor_artista = a
-    if mejor_ratio >= UMBRAL_FUZZY and mejor_artista:
-        return mejor_artista
-
-    mb_norm_name = mb_result.get('nombre_norm') if mb_result else None
-    if mb_norm_name:
-        final_norm = mb_norm_name
-    else:
-        from app.services.metadata import _es_latino
-        if not _es_latino(nombre_norm):
-            from unidecode import unidecode
-            final_norm = normalizar_artista(unidecode(nombre_norm))
-        else:
-            final_norm = nombre_norm
-
-    try:
-        artista_obj = Artista(
-            nombre=nombre_norm,
-            nombre_normalizado=final_norm,
-            musicbrainz_id=mb_result['mbid'] if mb_result else None
-        )
-        db.session.add(artista_obj)
-        db.session.flush()
-        return artista_obj
-    except Exception:
-        db.session.rollback()
-        artista_obj = Artista.query.filter(
-            func.lower(func.trim(Artista.nombre_normalizado)) == nombre_norm.lower().strip()
-        ).first()
-        return artista_obj
 
 
-def obtener_o_crear_album(album, albumartist, mbid=None):
+def obtener_o_crear_album(album, albumartist, mbid=None, ruta_archivo=None):
     """
     Busca un álbum específico en la base de datos o lo crea si no existe.
 
-    Implementa una estrategia de resolución robusta en 4 etapas:
+    Estrategia de resolución robusta en etapas:
     1. Búsqueda directa por MusicBrainz ID (MBID) si se proporciona.
-    2. Búsqueda por título normalizado del álbum y ID del artista principal.
-       Utiliza `detectar_version` para separar remasters, versiones en vivo o aniversario
-       (ej. "Discovery (2014 Remaster)" -> "Discovery"), normaliza el título y utiliza
-       un match difuso contra los álbumes existentes del artista.
-    3. Consulta a la API externa de MusicBrainz usando el MBID del artista para obtener
-       los datos de lanzamiento oficiales y canonicalizar el álbum.
-    4. Creación del álbum en la base de datos si no fue encontrado.
-
-    Args:
-        album (str): Nombre del álbum extraído de los tags del archivo.
-        albumartist (str): Nombre del artista del álbum.
-        mbid (str, opcional): MusicBrainz ID del álbum si ya se conoce.
-
-    Returns:
-        Album: El objeto del modelo Album encontrado o creado, o None si faltan datos esenciales.
+    2. Detección y normalización de versión (remaster, live, etc.).
+    3. Coincidencia difusa (fuzzy) entre los álbumes del mismo artista.
+    4. Heurística de Carpeta Física: Si se proporciona `ruta_archivo`, revisa si otras canciones
+       del mismo directorio físico ya pertenecen a un álbum con título compatible.
+    5. Deduplicación global: Revisa si existe un álbum idéntico en la biblioteca cuyo artista
+       sea compatible, difuso o provenga de un nombre provisional/dummy ('music', 'unknown').
+    6. Consulta externa a MusicBrainz o creación de nuevo registro único.
     """
     if not album or not albumartist:
         return None
+
+    from rapidfuzz import fuzz
+    from sqlalchemy import func
 
     # Primero resolvemos u obtenemos el Artista del Álbum para asociarlo correctamente.
     album_artista_obj = obtener_o_crear_artista(albumartist)
@@ -584,32 +521,64 @@ def obtener_o_crear_album(album, albumartist, mbid=None):
         if album_obj:
             return album_obj
 
-    # --- ETAPA 2: NORMALIZACIÓN Y BÚSQUEDA DIFUSA LOCAL ---
-    # Detectamos y separamos sufijos como "(Remastered)", "(Live)", "(Deluxe Edition)"
+    # --- ETAPA 2: NORMALIZACIÓN DE TÍTULO ---
     album_base, _ = detectar_version(album)
-    # Normalizamos el título base para evitar diferencias de mayúsculas/minúsculas y caracteres raros
     album_final = normalizar_album(album_base or album)
     if not album_final:
         return None
 
-    # Obtenemos todos los álbumes del artista en la BD y buscamos coincidencia difusa (fuzzy)
+    # --- ETAPA 3: BÚSQUEDA DIFUSA LOCAL POR ARTISTA ---
     albumes_artista = Album.query.filter_by(artista_id=album_artista_obj.id).all()
     album_obj = obtener_album_base_fuzz(album_final, albumes_artista)
     if album_obj:
         return album_obj
 
-    # --- ETAPA 3: BÚSQUEDA EXTERNA EN MUSICBRAINZ ---
+    # --- ETAPA 4: HEURÍSTICA DE CARPETA FÍSICA ---
+    if ruta_archivo:
+        try:
+            parent_dir = str(Path(ruta_archivo).parent)
+            cancion_en_misma_carpeta = Cancion.query.filter(
+                Cancion.ruta_archivo_audio.like(f"{parent_dir}%"),
+                Cancion.album_id.isnot(None)
+            ).first()
+            if cancion_en_misma_carpeta and cancion_en_misma_carpeta.album_obj:
+                cand_album = cancion_en_misma_carpeta.album_obj
+                cand_norm = normalizar_album(cand_album.titulo)
+                if cand_norm == album_final or fuzz.token_set_ratio(cand_norm.lower(), album_final.lower()) >= 85:
+                    return cand_album
+        except Exception:
+            pass
+
+    # --- ETAPA 5: DEDUPLICACIÓN GLOBAL EN LA BIBLIOTECA ---
+    albumes_candidatos = Album.query.filter(
+        func.lower(func.trim(Album.titulo)) == album_final.lower().strip()
+    ).all()
+    for cand in albumes_candidatos:
+        cand_art = cand.artista.nombre.lower() if cand.artista else ""
+        cur_art = album_artista_obj.nombre.lower() if album_artista_obj else ""
+        
+        # Mismo artista o uno es dummy ('music', 'unknown') o coincidencia difusa >= 80%
+        es_dummy = cand_art in ('music', 'unknown', 'desconocido') or cur_art in ('music', 'unknown', 'desconocido')
+        ratio_art = fuzz.token_set_ratio(cand_art, cur_art) if (cand_art and cur_art) else 0
+        
+        if cand.artista_id == album_artista_obj.id or es_dummy or ratio_art >= 80:
+            # Si el candidato tenía un artista dummy pero el nuevo es real, actualizar el artista del álbum
+            if cand_art in ('music', 'unknown', 'desconocido') and cur_art not in ('music', 'unknown', 'desconocido'):
+                cand.artista = album_artista_obj
+                db.session.flush()
+            return cand
+
+    # --- ETAPA 6: BÚSQUEDA EXTERNA EN MUSICBRAINZ ---
     if album_artista_obj.musicbrainz_id:
         from app.services.metadata import buscar_album
         mb_album = buscar_album(album, album_artista_obj.musicbrainz_id)
         if mb_album and not mbid:
-            # Buscar si el álbum de MusicBrainz ya existe en la base de datos local
             album_obj = Album.query.filter_by(musicbrainz_id=mb_album['mbid']).first()
             if album_obj:
                 return album_obj
             mbid = mb_album['mbid']
 
-    # --- ETAPA 4: CREACIÓN DE NUEVO ÁLBUM ---
+    # --- ETAPA 7: CREACIÓN DE NUEVO ÁLBUM ---
     album_obj = Album(titulo=album_final, artista_id=album_artista_obj.id, musicbrainz_id=mbid)
     try:
         db.session.add(album_obj)
@@ -617,28 +586,10 @@ def obtener_o_crear_album(album, albumartist, mbid=None):
         return album_obj
     except Exception:
         db.session.rollback()
-        # Fallback de último recurso: si hubo error por concurrencia al insertar, buscamos el álbum de nuevo
         albumes_artista = Album.query.filter_by(artista_id=album_artista_obj.id).all()
         album_obj = obtener_album_base_fuzz(album_final, albumes_artista)
         return album_obj
 
-    # =========================================================================
-    # NOTA DE INTEGRIDAD DE CÓDIGO (DEAD CODE / DUPLICADOS INALCANZABLES):
-    # El bloque try-except anterior garantiza retornar siempre el álbum.
-    # Por lo tanto, el siguiente bloque es inalcanzable, pero se mantiene intacto 
-    # de acuerdo con la política de cero modificaciones lógicas del código original.
-    # =========================================================================
-    album_obj = Album(titulo=album_final, artista_id=album_artista_obj.id)
-    try:
-        db.session.add(album_obj)
-        db.session.flush()
-        return album_obj
-    except Exception:
-        db.session.rollback()
-        # Si falló por unique constraint, buscar de nuevo
-        albumes_artista = Album.query.filter_by(artista_id=album_artista_obj.id).all()
-        album_obj = obtener_album_base_fuzz(album_final, albumes_artista)
-        return album_obj
 
 
 def limpiar_entidades_vacias():
@@ -858,6 +809,87 @@ def normalizar_biblioteca(progress_callback=None, percent_start=90, percent_end=
             else:
                 albumes_base.append(album)
 
+    db.session.flush()
+
+    # --- FASE B.2: FUSIÓN DE ÁLBUMES DUPLICADOS GLOBALES (CROSS-ARTIST / CARPETAS) ---
+    # Unifica álbumes que tienen el mismo título pero quedaron separados por discrepancias
+    # de artista o carpetas provisionales (ej. 'music', 'Unknown', nombres de directorios).
+    from collections import defaultdict
+    todos_albumes = Album.query.all()
+    albumes_por_titulo = defaultdict(list)
+    for a in todos_albumes:
+        norm = normalizar_album(a.titulo) or a.titulo.strip().lower()
+        albumes_por_titulo[norm].append(a)
+
+    for norm_title, alist in albumes_por_titulo.items():
+        if len(alist) <= 1:
+            continue
+
+        # Ordenar candidatos: primero los que tienen portada, más canciones y artista real
+        def puntaje_album(alb):
+            s = len(alb.canciones) * 10
+            if alb.portada_url: s += 100
+            if alb.artista and alb.artista.nombre.lower() not in ('music', 'unknown', 'desconocido'):
+                s += 50
+            return s
+
+        alist.sort(key=puntaje_album, reverse=True)
+        principal = alist[0]
+
+        for dup in alist[1:]:
+            if dup.id == principal.id:
+                continue
+
+            # Comprobar criterios de unión:
+            dirs_principal = {Path(t.ruta_archivo_audio).parent for t in principal.canciones if t.ruta_archivo_audio}
+            dirs_dup = {Path(t.ruta_archivo_audio).parent for t in dup.canciones if t.ruta_archivo_audio}
+            misma_carpeta = bool(dirs_principal.intersection(dirs_dup))
+            es_artista_dummy = dup.artista and dup.artista.nombre.lower() in ('music', 'unknown', 'desconocido')
+
+            nombre_art_principal = (principal.artista.nombre.lower() if principal.artista else '')
+            menciona_artista = False
+            for t in dup.canciones:
+                if nombre_art_principal and (
+                    nombre_art_principal in t.titulo.lower() or 
+                    (t.ruta_archivo_audio and nombre_art_principal in t.ruta_archivo_audio.lower())
+                ):
+                    menciona_artista = True
+                    break
+
+            if misma_carpeta or es_artista_dummy or menciona_artista:
+                for t in list(dup.canciones):
+                    t.album_obj = principal
+                    if not t.artista_obj or t.artista_obj.nombre.lower() in ('music', 'unknown', 'desconocido'):
+                        t.artista_obj = principal.artista
+
+                    # Limpiar el nombre del artista en el título si viene con formato 'Pista - Artista'
+                    if ' - ' in t.titulo and principal.artista:
+                        partes = [p.strip() for p in t.titulo.split(' - ')]
+                        if partes[-1].lower() == principal.artista.nombre.lower():
+                            t.titulo = ' - '.join(partes[:-1])
+                        elif partes[0].lower() == principal.artista.nombre.lower():
+                            t.titulo = ' - '.join(partes[1:])
+
+                    # Asignar pista 1 si es 'Intro' o 'Prologue' y el puesto 1 está libre
+                    if not t.numero_pista:
+                        pistas_existentes = {c.numero_pista for c in principal.canciones if c.numero_pista}
+                        if 1 not in pistas_existentes and t.titulo.lower().strip() in ('intro', 'prologue', 'prólogo'):
+                            t.numero_pista = 1
+
+                    # Heredar la portada del álbum si no la tenía
+                    if not t.ruta_imagen_album and principal.portada_url:
+                        t.ruta_imagen_album = principal.portada_url
+
+                if not principal.portada_url and dup.portada_url:
+                    principal.portada_url = dup.portada_url
+                if not principal.anio and dup.anio:
+                    principal.anio = dup.anio
+
+                db.session.delete(dup)
+                resumen['albumes_fusionados'] += 1
+
+    db.session.flush()
+
     # --- FASE C: PURGAR REGISTROS VACÍOS Y HACER COMMIT ---
     eliminados = limpiar_entidades_vacias()
     resumen['albumes_eliminados'], resumen['artistas_eliminados'] = eliminados
@@ -994,55 +1026,6 @@ def limpiar_nombre_archivo(nombre_archivo):
     return nombre_sin_ext.strip(), None
 
 
-def inferir_metadatos_desde_ruta(ruta_archivo, carpeta_base_audio):
-    """
-    Infiere el artista y el álbum examinando la jerarquía de subdirectorios.
-    Esto compensa la carencia absoluta de tags internos de metadatos en bibliotecas estructuradas.
-    
-    Ejemplos de mapeo:
-      Artist/song.mp3              → artista='Artist', album=None
-      Artist/Album/song.mp3        → artista='Artist', album='Album'
-      Genre/Artist/Album/song.mp3  → artista='Artist', album='Album'
-      Artist/CD 1/song.mp3         → artista='Artist', album=None (ignora subcarpeta CD)
-
-    Args:
-        ruta_archivo (str o Path): Ubicación física del archivo de música.
-        carpeta_base_audio (str o Path): Carpeta raíz de música configurada en la aplicación.
-
-    Returns:
-        tuple: (artista_inferido, album_inferido) con valores inferidos o None.
-    """
-    import re
-    try:
-        # Calculamos la ruta relativa respecto a la carpeta raíz para analizar solo los directorios de interés
-        rel_path = Path(ruta_archivo).resolve().relative_to(Path(carpeta_base_audio).resolve())
-        parts = list(rel_path.parts)
-        if len(parts) < 2:
-            return None, None
-        
-        # Filtramos el nombre del archivo
-        dirs = parts[:-1]
-        
-        # Omitimos carpetas del tipo "CD 1", "CD 2", "Disc 1" que distorsionan la jerarquía lógica
-        filtered_dirs = []
-        for dir_name in dirs:
-            if re.match(r'^(CD|Disc)\s*\d+$', dir_name, re.IGNORECASE):
-                continue
-            filtered_dirs.append(dir_name)
-        
-        if len(filtered_dirs) == 1:
-            dir_name = filtered_dirs[0]
-            if ' - ' in dir_name:
-                partes_dir = dir_name.split(' - ', 1)
-                return partes_dir[0].strip(), partes_dir[1].strip()
-            # Estructura: Artista/Cancion.mp3
-            return dir_name, None
-        elif len(filtered_dirs) >= 2:
-            # Estructura: .../Artista/Album/Cancion.mp3
-            return filtered_dirs[-2], filtered_dirs[-1]
-    except Exception:
-        pass
-    return None, None
 
 
 def buscar_archivo_lrc(ruta_audio, carpeta_lyrics, cancion_id=None):
@@ -1343,7 +1326,7 @@ def escanear_carpeta_audio(progress_callback=None):
                         db.session.add(artista_obj)
                         db.session.flush()
                     
-                    album_obj = obtener_o_crear_album(album_tag, artista_principal) if (album_tag and artista_principal) else None
+                    album_obj = obtener_o_crear_album(album_tag, artista_principal, ruta_archivo=archivo) if (album_tag and artista_principal) else None
                     
                     # Comparar y actualizar si son distintos
                     if cancion_existente.titulo != titulo_tag:
@@ -1504,7 +1487,7 @@ def escanear_carpeta_audio(progress_callback=None):
                 print(f"  ⚠ No se pudieron obtener metadatos automáticos: {e}")
         
         # Obtenemos o creamos el álbum
-        album_obj = obtener_o_crear_album(album, artista_principal) if (album and artista_principal) else None
+        album_obj = obtener_o_crear_album(album, artista_principal, ruta_archivo=archivo) if (album and artista_principal) else None
 
         # Vincular archivo de letras local si está disponible
         ruta_lrc = buscar_archivo_lrc(archivo, carpeta_lyrics)
@@ -1526,7 +1509,7 @@ def escanear_carpeta_audio(progress_callback=None):
             duracion=duracion or aa.get('duration'),
             ruta_archivo_audio=str(archivo),
             ruta_archivo_lrc=ruta_lrc,
-            ruta_imagen_album=metadatos.get('ruta_imagen') if metadatos else None,
+            ruta_imagen_album=(metadatos.get('ruta_imagen') if metadatos else None) or (album_obj.portada_url if album_obj else None),
             numero_pista=(metadatos or {}).get('numero_pista'),
             numero_disco=(metadatos or {}).get('numero_disco'),
             genero=(metadatos or {}).get('genero') or aa.get('genero'),
@@ -1873,7 +1856,7 @@ def escaneo_rapido(progress_callback=None):
 
             # Obtener o crear de forma segura las referencias de base de datos para Artista y Álbum
             artista_obj = obtener_o_crear_artista(artista_principal_rapido)
-            album_obj = obtener_o_crear_album(album, artista_principal_rapido) if (album and artista_principal_rapido) else None
+            album_obj = obtener_o_crear_album(album, artista_principal_rapido, ruta_archivo=archivo) if (album and artista_principal_rapido) else None
 
             # Buscar letra local (.lrc) asociada en la carpeta de letras
             # Nota: El escaneo rápido solo busca de manera local y no realiza llamadas a APIs síncronas de red

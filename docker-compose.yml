@@ -10,6 +10,8 @@ services:
         read_only: true
       - ducksound_data:/data
     environment:
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-ducksound}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-ducksound}
       - ADMIN_SECRET_TOKEN=${ADMIN_SECRET_TOKEN:-ducksound_admin_token}
       - SECRET_KEY=${SECRET_KEY:-}
       - PORT=8604

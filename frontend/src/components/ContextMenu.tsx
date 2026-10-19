@@ -1,14 +1,16 @@
 import { useEffect, useState, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Play, Plus, Heart, Music2, Info, ArrowRight, Loader2 } from "lucide-react";
+import { Play, Plus, Heart, Music2, Info, ArrowRight, Loader2, Radio, Tag } from "lucide-react";
 import client from "../api/client";
 import { useContextMenu } from "../contexts/ContextMenuContext";
 import { usePlayer } from "../contexts/PlayerContext";
+import { useAuth } from "../contexts/AuthContext";
 import type { Coleccion } from "../types";
 
 export default function ContextMenu() {
-  const { menuPosition, menuSong, closeMenu, showInfoModal } = useContextMenu();
+  const { menuPosition, menuSong, closeMenu, showInfoModal, showEditModal } = useContextMenu();
   const { play, addToQueue } = usePlayer();
+  const { user } = useAuth();
 
   const [isLiked, setIsLiked] = useState(false);
   const [collections, setCollections] = useState<Coleccion[]>([]);
@@ -105,6 +107,19 @@ export default function ContextMenu() {
     closeMenu();
   };
 
+  const handleStartRadio = async () => {
+    try {
+      const res = await client.get(`/api/cancion/${menuSong.id}/radio`);
+      if (Array.isArray(res.data) && res.data.length > 0) {
+        play(res.data, 0);
+      }
+      closeMenu();
+    } catch (err) {
+      console.error("Error starting radio:", err);
+      alert("No se pudo iniciar la radio para esta canción.");
+    }
+  };
+
   const handleToggleLike = async () => {
     try {
       await client.post(`/api/favoritos/toggle/${menuSong.id}`);
@@ -179,6 +194,13 @@ export default function ContextMenu() {
         </div>
       </button>
 
+      <button className="context-menu-item" onClick={handleStartRadio}>
+        <div className="context-menu-item-content">
+          <Radio size={14} />
+          <span>Iniciar Radio / Mix</span>
+        </div>
+      </button>
+
       <button className="context-menu-item" onClick={handleToggleLike}>
         <div className="context-menu-item-content">
           <Heart size={14} fill={isLiked ? "currentColor" : "none"} style={{ color: isLiked ? "var(--color-accent)" : "inherit" }} />
@@ -232,6 +254,15 @@ export default function ContextMenu() {
           <span>Información de la música</span>
         </div>
       </button>
+
+      {user?.role === "admin" && (
+        <button className="context-menu-item" onClick={() => showEditModal(menuSong)}>
+          <div className="context-menu-item-content">
+            <Tag size={14} />
+            <span>Editar metadatos / etiquetas</span>
+          </div>
+        </button>
+      )}
     </div>,
     document.body
   );

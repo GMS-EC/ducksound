@@ -31,115 +31,46 @@ from app.services.lyrics import obtener_o_descargar_letra
 # Definición del Blueprint de Audio
 audio_bp = Blueprint('audio', __name__)
 
-# Lock para sincronizar copia de archivos originales locales
-_copy_locks = {}
-_copy_lock_mutex = threading.Lock()
-
-def _get_copy_lock(cancion_id):
-    with _copy_lock_mutex:
-        if cancion_id not in _copy_locks:
-            _copy_locks[cancion_id] = threading.Lock()
-        return _copy_locks[cancion_id]
-
 def resolver_ruta_fisica(original_path):
-    """Resuelve la ruta física real de un archivo en disco."""
+    """Resuelve la ruta física real de un archivo en disco soportando entornos Docker/Linux y Windows."""
     if not original_path:
         return None
     if os.path.exists(original_path):
         return original_path
         
-    # Conversión Heurística de rutas Windows montadas en volúmenes Docker/Linux
+    # Conversión heurística de rutas Windows montadas en volúmenes Docker/Linux
     try:
-        p = original_path.replace('\\\\', '/').replace(':/', ':/')
+        p = original_path.replace('\\', '/')
         m = re.match(r'^([A-Za-z]):/(.*)', p)
         if m:
             alt = '/music/' + m.group(2)
             if os.path.exists(alt):
                 return alt
+            alt2 = str(Config.MUSIC_FOLDER / m.group(2))
+            if os.path.exists(alt2):
+                return alt2
     except Exception:
         pass
 
-    # Intentar buscar como ruta relativa
+    # Búsqueda directa por nombre en la carpeta de música de Docker
+    try:
+        fname = Path(original_path).name
+        direct_music = Path('/music') / fname
+        if direct_music.exists():
+            return str(direct_music)
+        cfg_music = Config.MUSIC_FOLDER / fname
+        if cfg_music.exists():
+            return str(cfg_music)
+    except Exception:
+        pass
+
+    # Intentar buscar como ruta relativa al directorio actual
     rel = os.path.join(os.getcwd(), original_path)
     if os.path.exists(rel):
         return rel
         
     return None
 
-def copiar_archivo_original(cancion_id, src_path, dest_path):
-    """Copia un archivo de origen a la caché local de forma secuencial y atómica."""
-    lock = _get_copy_lock(cancion_id)
-    with lock:
-        if dest_path.exists() and dest_path.stat().st_size > 0:
-            return True
-            
-        temp_dest = Path(str(dest_path) + ".tmp")
-        try:
-            dest_path.parent.mkdir(parents=True, exist_ok=True)
-            if temp_dest.exists():
-                try:
-                    temp_dest.unlink()
-                except:
-                    pass
-            
-            with open(src_path, 'rb') as fsrc:
-                with open(temp_dest, 'wb') as fdst:
-                    while True:
-                        buf = fsrc.read(64*1024)
-                        if not buf:
-                            break
-                        fdst.write(buf)
-                        
-            temp_dest.rename(dest_path)
-            current_app.logger.info(f"[Audio Server] Copiado original de ID {cancion_id} a caché local completado con éxito.")
-            return True
-        except Exception as e:
-            current_app.logger.error(f"[Audio Server] Error copiando original ID {cancion_id} a caché: {e}")
-            if temp_dest.exists():
-                try:
-                    temp_dest.unlink()
-                except:
-                    pass
-            return False
-
-def generar_streaming_dinamico(ruta_final, ruta_temporal, max_wait_sec=10):
-    """Generador que transmite el contenido del archivo a medida que se escribe."""
-    start_time = time.time()
-    while not ruta_final.exists() and (not ruta_temporal.exists() or ruta_temporal.stat().st_size < 16384):
-        if time.time() - start_time > max_wait_sec:
-            break
-        time.sleep(0.1)
-
-    if ruta_final.exists():
-        def simple_gen():
-            with open(ruta_final, 'rb') as f:
-                while True:
-                    chunk = f.read(40960)
-                    if not chunk:
-                        break
-                    yield chunk
-        return simple_gen()
-
-    if ruta_temporal.exists():
-        def dynamic_gen():
-            is_temp = True
-            with open(ruta_temporal, 'rb') as f:
-                while True:
-                    chunk = f.read(40960)
-                    if chunk:
-                        yield chunk
-                    else:
-                        if ruta_temporal.exists() and not ruta_final.exists():
-                            time.sleep(0.1)
-                            continue
-                        else:
-                            chunk = f.read(40960)
-                            if chunk:
-                                yield chunk
-                            break
-        return dynamic_gen()
-
-    return None
 
 # ==============================================================================
 # SECCIÓN 2: TRANSMISIÓN DE AUDIO CON CABECERAS DE RANGO (HTTP 206)
@@ -187,79 +118,37 @@ def servir_audio(cancion_id):
     requires_transcode = (calidad != 'lossless') and (ext_original in ['.flac', '.wav', '.ogg'])
 
     if requires_transcode:
-        # --- CASO 1: TRANSCODIFICACIÓN A MP3 ---
+        # --- CASO 1: TRANSCODIFICACIÓN A MP3 (CON SOPORTE DE RANGOS) ---
         from app.services.transcoder import obtener_ruta_cache, transcodificar_cancion
         
         ruta_final = obtener_ruta_cache(cancion_id, calidad=calidad)
-        suffix = "320k"
-        if calidad == 'standard':
-            suffix = "192k"
-        elif calidad == 'saver':
-            suffix = "96k"
-        ruta_temporal = Config.TRANSCODE_CACHE_FOLDER / f"{cancion_id}_{suffix}.mp3.tmp"
-        
-        # Si ya existe el caché final completo, servirlo directamente con send_file (soporta rangos)
-        if ruta_final.exists() and ruta_final.stat().st_size > 0:
-            current_app.logger.info(f"[Audio Server] Sirviendo versión transcodificada ({calidad}) desde caché: {ruta_final}")
-            return send_file(str(ruta_final), mimetype='audio/mpeg', conditional=True, max_age=86400)
+        if not (ruta_final.exists() and ruta_final.stat().st_size > 0):
+            current_app.logger.info(f"[Audio Server] Transcodificando al vuelo ID {cancion_id} a calidad {calidad}...")
+            transcodificar_cancion(cancion_id, calidad)
             
-        # Si no existe, iniciamos la transcodificación en segundo plano e iniciamos streaming dinámico
-        current_app.logger.info(f"[Audio Server] Transcodificando al vuelo ID {cancion_id} a calidad {calidad}...")
-        
-        app = current_app._get_current_object()
-        def run_in_context():
-            with app.app_context():
-                try:
-                    transcodificar_cancion(cancion_id, calidad)
-                except Exception as e:
-                    app.logger.error(f"[Audio Server] Error en hilo de transcodificación: {e}")
-                    
-        t = threading.Thread(target=run_in_context)
-        t.daemon = True
-        t.start()
-        
-        gen = generar_streaming_dinamico(ruta_final, ruta_temporal)
-        if gen:
-            response = Response(gen, mimetype='audio/mpeg')
-            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-            return response
+        if ruta_final.exists() and ruta_final.stat().st_size > 0:
+            current_app.logger.info(f"[Audio Server] Sirviendo versión transcodificada ({calidad}) con rangos: {ruta_final}")
+            resp = send_file(str(ruta_final), mimetype='audio/mpeg', conditional=True, max_age=86400)
+            resp.headers['Accept-Ranges'] = 'bytes'
+            return resp
         else:
-            current_app.logger.warning(f"[Audio Server] Falló la inicialización del stream dinámico para ID {cancion_id}. Sirviendo original.")
-            return send_file(resolved_path, mimetype=_mime_for(resolved_path), conditional=True, max_age=86400)
+            current_app.logger.warning(f"[Audio Server] Falló la transcodificación para ID {cancion_id}. Sirviendo original con rangos.")
+            resp = send_file(resolved_path, mimetype=_mime_for(resolved_path), conditional=True, max_age=86400)
+            resp.headers['Accept-Ranges'] = 'bytes'
+            return resp
 
     else:
-        # --- CASO 2: SERVIR ORIGINAL (CON CACHÉ LOCAL PARA EVITAR LATENCIA RCLONE) ---
-        ruta_final = Config.ORIGINAL_CACHE_FOLDER / f"{cancion_id}{ext_original}"
-        ruta_temporal = Config.ORIGINAL_CACHE_FOLDER / f"{cancion_id}{ext_original}.tmp"
-        
-        # Si ya existe en la caché local, servirlo directamente con send_file
-        if ruta_final.exists() and ruta_final.stat().st_size > 0:
-            current_app.logger.info(f"[Audio Server] Sirviendo archivo original desde caché local: {ruta_final}")
-            return send_file(str(ruta_final), mimetype=_mime_for(resolved_path), conditional=True, max_age=86400)
-            
-        # Si no existe localmente, copiamos de Rclone a la caché local e iniciamos streaming dinámico
-        current_app.logger.info(f"[Audio Server] Copiando al vuelo ID {cancion_id} a caché local original...")
-        
-        app = current_app._get_current_object()
-        def run_copy_in_context():
-            with app.app_context():
-                try:
-                    copiar_archivo_original(cancion_id, resolved_path, ruta_final)
-                except Exception as e:
-                    app.logger.error(f"[Audio Server] Error en hilo de copia: {e}")
-                    
-        t = threading.Thread(target=run_copy_in_context)
-        t.daemon = True
-        t.start()
-        
-        gen = generar_streaming_dinamico(ruta_final, ruta_temporal)
-        if gen:
-            response = Response(gen, mimetype=_mime_for(resolved_path))
-            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-            return response
-        else:
-            current_app.logger.warning(f"[Audio Server] Falló la inicialización del copia-stream para ID {cancion_id}. Sirviendo directamente de Rclone.")
-            return send_file(resolved_path, mimetype=_mime_for(resolved_path), conditional=True, max_age=86400)
+        # --- CASO 2: SERVIR ORIGINAL DIRECTAMENTE CON SOPORTE COMPLETO HTTP 206 BYTE-RANGE ---
+        # send_file con conditional=True gestiona nativamente cabeceras Range, Content-Range, 206 Partial Content y seeking
+        resp = send_file(
+            resolved_path,
+            mimetype=_mime_for(resolved_path),
+            conditional=True,
+            max_age=86400
+        )
+        resp.headers['Accept-Ranges'] = 'bytes'
+        return resp
+
 
 
 # ==============================================================================
@@ -286,32 +175,12 @@ def servir_lyrics(cancion_id):
         return response
     
     # Fallback físico directo si el scraping falló
-    original_path = cancion.ruta_archivo_lrc
-    tried_paths = [original_path]
+    if cancion.ruta_archivo_lrc:
+        resolved_lrc = resolver_ruta_fisica(cancion.ruta_archivo_lrc)
+        if resolved_lrc and os.path.exists(resolved_lrc):
+            return send_file(resolved_lrc, mimetype='text/plain', max_age=0)
 
-    if original_path and os.path.exists(original_path):
-        return send_file(original_path, mimetype='text/plain', max_age=0)
-
-    # Conversión de rutas Windows a volúmenes Docker
-    try:
-        if original_path:
-            p = original_path.replace('\\\\', '/').replace(':/', ':/')
-            m = re.match(r'^([A-Za-z]):/(.*)', p)
-            if m:
-                alt = '/music/' + m.group(2)
-                tried_paths.append(alt)
-                if os.path.exists(alt):
-                    return send_file(alt, mimetype='text/plain')
-    except Exception as e:
-        current_app.logger.error(f"[Lyrics Server] Error al mapear ruta física LRC: {e}")
-
-    # Intentar buscar bajo ruta relativa
-    rel = os.path.join(os.getcwd(), original_path or '')
-    tried_paths.append(rel)
-    if original_path and os.path.exists(rel):
-        return send_file(rel, mimetype='text/plain')
-
-    current_app.logger.warning(f"[Lyrics Server] Letras no encontradas para id={cancion_id}. Intentos: {tried_paths}")
+    current_app.logger.warning(f"[Lyrics Server] Letras no encontradas para id={cancion_id}.")
     return "Archivo de letras no encontrado", 404
 
 
@@ -424,44 +293,29 @@ def servir_album_art(cancion_id):
         elif os.path.exists(portada):
             img_source = portada
 
-    if not img_source:
-        if original_path and os.path.exists(original_path):
-            img_source = original_path
-        elif original_path:
+    if not img_source and original_path:
+        resolved_art = resolver_ruta_fisica(original_path)
+        if resolved_art and os.path.exists(resolved_art):
+            img_source = resolved_art
+        else:
             alt_path = Config.ALBUM_ART_FOLDER / Path(original_path).name
-            if alt_path.exists(): img_source = str(alt_path)
-        
-        if not img_source and hasattr(Config, 'MEDIA_FOLDER') and original_path:
-            old_path = Path(str(Config.MEDIA_FOLDER)) / 'album_art' / Path(original_path).name
-            if old_path.exists(): img_source = str(old_path)
-            
-        if not img_source and original_path:
-            docker_legacy = Path('/music/album_art') / Path(original_path).name
-            if docker_legacy.exists(): img_source = str(docker_legacy)
+            if alt_path.exists():
+                img_source = str(alt_path)
 
-        if not img_source:
-            try:
-                if original_path:
-                    p = original_path.replace('\\\\', '/').replace(':/', ':/')
-                    m = re.match(r'^([A-Za-z]):/(.*)', p)
-                    if m:
-                        alt = '/music/' + m.group(2)
-                        if os.path.exists(alt): img_source = alt
-            except Exception: pass
+    # Nivel 2: Búsqueda heurística inteligente en la carpeta física del audio
+    if not img_source and cancion.ruta_archivo_audio:
+        resolved_audio = resolver_ruta_fisica(cancion.ruta_archivo_audio)
+        if resolved_audio:
+            from app.services.coverart import find_cover_in_audio_dir
+            best_folder_cover = find_cover_in_audio_dir(resolved_audio)
+            if best_folder_cover and os.path.exists(best_folder_cover):
+                img_source = best_folder_cover
 
-        if not img_source:
-            rel = os.path.join(os.getcwd(), original_path or '')
-            if original_path and os.path.exists(rel): img_source = rel
-
-        # Nivel final: Extracción binaria como último recurso
-        if not img_source:
-            img_source = _extract_cover_from_file(cancion.ruta_archivo_audio)
-            if img_source is None and cancion.ruta_archivo_audio:
-                p = cancion.ruta_archivo_audio.replace('\\\\', '/').replace(':/', ':/')
-                m = re.match(r'^([A-Za-z]):/(.*)', p)
-                if m:
-                    alt = '/music/' + m.group(2)
-                    img_source = _extract_cover_from_file(alt)
+    # Nivel final: Extracción binaria incrustada como último recurso
+    if not img_source and cancion.ruta_archivo_audio:
+        resolved_audio = resolver_ruta_fisica(cancion.ruta_archivo_audio)
+        if resolved_audio:
+            img_source = _extract_cover_from_file(resolved_audio)
 
     # 3. Generar la miniatura si encontramos una fuente
     if img_source:

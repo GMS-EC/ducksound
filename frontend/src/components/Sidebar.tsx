@@ -15,7 +15,6 @@ const iconMap: Record<string, any> = {
 const links = [
   { to: "/dashboard", label: "Principal", icon: "house" },
   { to: "/favorites", label: "Favoritos", icon: "heart" },
-  { to: "/folders", label: "Carpetas", icon: "folder" },
   { to: "/colecciones", label: "Playlists", icon: "list" },
 ];
 
@@ -65,6 +64,10 @@ export default function Sidebar() {
           {user?.role === "admin" && (
             <>
               <div className="sidebar-divider" />
+              <NavLink to="/folders" className={({ isActive }) => "sidebar-nav-link" + (isActive ? " active" : "")}>
+                <FolderTree size={17} />
+                Carpetas
+              </NavLink>
               <NavLink to="/admin" className={({ isActive }) => "sidebar-nav-link" + (isActive ? " active" : "")}>
                 <Shield size={17} />
                 Admin

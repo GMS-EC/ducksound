@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useAuth } from "./contexts/AuthContext";
 import Sidebar from "./components/Sidebar";
@@ -7,6 +8,7 @@ import LoginPage from "./pages/LoginPage";
 import { ContextMenuProvider } from "./contexts/ContextMenuContext";
 import ContextMenu from "./components/ContextMenu";
 import AudioInfoModal from "./components/AudioInfoModal";
+import EditTagsModal from "./components/EditTagsModal";
 import DashboardPage from "./pages/DashboardPage";
 import ExplorePage from "./pages/ExplorePage";
 import FavoritesPage from "./pages/FavoritesPage";
@@ -21,6 +23,26 @@ import ColeccionDetailPage from "./pages/ColeccionDetailPage";
 import ProfilePage from "./pages/ProfilePage";
 
 function AppContent() {
+  const { user } = useAuth();
+
+  // Suscripción en tiempo real a Server-Sent Events (SSE)
+  useEffect(() => {
+    if (!user) return;
+    const es = new EventSource("/api/events/stream");
+
+    es.addEventListener("library_updated", () => {
+      window.dispatchEvent(new Event("ducksound:library_updated"));
+    });
+
+    es.addEventListener("track_updated", () => {
+      window.dispatchEvent(new Event("ducksound:library_updated"));
+    });
+
+    return () => {
+      es.close();
+    };
+  }, [user]);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
@@ -35,8 +57,6 @@ function AppContent() {
             <Route path="/folders" element={<FoldersPage />} />
             <Route path="/colecciones" element={<ColeccionesPage />} />
             <Route path="/admin" element={<AdminPage />} />
-            <Route path="/artists" element={<ArtistsPage />} />
-            <Route path="/albums" element={<AlbumsPage />} />
             <Route path="/artist/:id" element={<ArtistDetailPage />} />
             <Route path="/album/:id" element={<AlbumDetailPage />} />
             <Route path="/coleccion/:id" element={<ColeccionDetailPage />} />
@@ -49,6 +69,7 @@ function AppContent() {
       <PlayerBar />
       <ContextMenu />
       <AudioInfoModal />
+      <EditTagsModal />
     </div>
   );
 }

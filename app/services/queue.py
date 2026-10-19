@@ -181,15 +181,21 @@ def scan_get_active():
 # ==========================================================
 
 def progress_set(key, data, ttl=7200):
-    """Registra datos de progreso genéricos (ej. 'lyrics', 'mb')."""
+    """Registra datos de progreso genéricos (ej. 'lyrics', 'mb') y despacha eventos SSE."""
     if is_redis_available():
         try:
             get_connection().setex(f'{REDIS_PROGRESS_PREFIX}{key}', ttl, json.dumps(data))
-            return
         except Exception:
             pass
     with _mem_lock:
         _mem_progress[key] = data.copy()
+
+    # Emitir evento en tiempo real a clientes web conectados
+    try:
+        from app.services.events import event_bus
+        event_bus.dispatch(f'{key}_progress', data)
+    except Exception:
+        pass
 
 
 def progress_get(key):

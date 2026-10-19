@@ -1,8 +1,11 @@
-import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Volume2, VolumeX } from "lucide-react";
+import { useState } from "react";
+import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Volume2, VolumeX, Maximize2 } from "lucide-react";
 import { usePlayer } from "../contexts/PlayerContext";
 import Equalizer from "./Equalizer";
+import NowPlayingModal from "./NowPlayingModal";
 
 export default function PlayerBar() {
+  const [showFullscreen, setShowFullscreen] = useState(false);
   const {
     currentSong, playing, volume, muted, shuffle, repeat,
     currentTime, duration,
@@ -18,6 +21,7 @@ export default function PlayerBar() {
   };
 
   const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!duration || !isFinite(duration) || duration <= 0) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const pct = Math.max(0, Math.min(1, x / rect.width));
@@ -103,7 +107,17 @@ export default function PlayerBar() {
             onChange={(e) => setVolume(parseFloat(e.target.value))}
           />
         </div>
+        <button
+          onClick={() => setShowFullscreen(true)}
+          className="player-control-btn"
+          title="Pantalla completa (Now Playing)"
+          disabled={!currentSong}
+          style={{ opacity: currentSong ? 1 : 0.4 }}
+        >
+          <Maximize2 size={17} />
+        </button>
       </div>
+      <NowPlayingModal isOpen={showFullscreen} onClose={() => setShowFullscreen(false)} />
     </div>
   );
 }

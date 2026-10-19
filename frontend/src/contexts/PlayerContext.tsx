@@ -101,6 +101,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const prevVolumeRef = useRef(volume);
+  const silencePaddingRef = useRef<{ trim_start: number; trim_end: number } | null>(null);
 
   const initialTimeRef = useRef<number>(0);
   const hasInitializedTime = useRef(false);
@@ -176,6 +177,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       // Reset currentTime on song transition
       localStorage.setItem('ducksound:currentTime', '0');
       initialTimeRef.current = 0;
+      silencePaddingRef.current = null;
       if (audioRef.current) {
         audioRef.current.currentTime = 0;
       }
@@ -217,6 +219,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       // Reset currentTime on song transition
       localStorage.setItem('ducksound:currentTime', '0');
       initialTimeRef.current = 0;
+      silencePaddingRef.current = null;
       if (audioRef.current) {
         audioRef.current.currentTime = 0;
       }
@@ -251,6 +254,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           // ignore
         }
       }
+
+      // Salto de silencio final automático para reproducción Gapless continua
+      const silence = silencePaddingRef.current;
+      if (silence && silence.trim_end > 0 && time >= silence.trim_end - 0.25 && repeatRef.current !== 'one') {
+        silencePaddingRef.current = null;
+        playNext();
+      }
     };
     const onDurationChange = () => setDuration(audio.duration || 0);
     const onLoadedMetadata = () => {
@@ -263,6 +273,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       }
     };
     const onEnded = () => {
+      silencePaddingRef.current = null;
       if (repeatRef.current === 'one') {
         audio.currentTime = 0;
         localStorage.setItem('ducksound:currentTime', '0');
@@ -303,6 +314,23 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       if (audio.src !== absoluteAudioUrl) {
         audio.src = audioUrl;
         audio.load();
+
+        // Obtener cortes de silencio para la pista en segundo plano
+        fetch(`/api/song/${currentSong.id}/silence`)
+          .then((res) => res.json())
+          .then((data) => {
+            if (data && typeof data.trim_end === 'number' && data.trim_end > 0) {
+              silencePaddingRef.current = {
+                trim_start: data.trim_start || 0,
+                trim_end: data.trim_end,
+              };
+              // Si la canción apenas arranca y tiene silencio inicial > 150ms, avanzar al primer sonido
+              if (audio.currentTime < 0.1 && data.trim_start > 0.15) {
+                audio.currentTime = data.trim_start;
+              }
+            }
+          })
+          .catch(() => {});
       }
 
       audio.playbackRate = playbackRate;
@@ -318,6 +346,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     } else {
       audio.pause();
       audio.src = '';
+      silencePaddingRef.current = null;
     }
   }, [currentSong, playing, playbackRate]);
 
@@ -331,6 +360,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       // Reset currentTime
       localStorage.setItem('ducksound:currentTime', '0');
       initialTimeRef.current = 0;
+      silencePaddingRef.current = null;
       if (audioRef.current) {
         audioRef.current.currentTime = 0;
       }
@@ -357,10 +387,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const seek = useCallback((time: number) => {
+    if (!isFinite(time) || isNaN(time) || time < 0) return;
     const audio = audioRef.current;
     if (audio) {
-      audio.currentTime = time;
-      setCurrentTime(time);
+      try {
+        audio.currentTime = time;
+        setCurrentTime(time);
+        try {
+          localStorage.setItem('ducksound:currentTime', time.toString());
+        } catch {}
+      } catch (err) {
+        console.error("Seek error:", err);
+      }
     }
   }, []);
 

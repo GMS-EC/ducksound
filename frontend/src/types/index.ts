@@ -33,6 +33,7 @@ export interface Album {
   portada_url: string | null;
   artista_id: number;
   musicbrainz_id: string | null;
+  play_count?: number;
 }
 
 export interface Cancion {
@@ -56,6 +57,9 @@ export interface Cancion {
   rms_level: number | null;
   total_samples: number | null;
   bit_rate: number | null;
+  play_count?: number;
+  play_duration?: number;
+  last_played?: string | null;
 }
 
 export interface DailyMix {

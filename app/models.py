@@ -140,6 +140,7 @@ class Album(db.Model):
     portada_url = db.Column(db.String(500), nullable=True) # Ruta de la portada descargada localmente
     artista_id = db.Column(db.Integer, db.ForeignKey('artistas.id'), nullable=False)
     musicbrainz_id = db.Column(db.String(36), nullable=True, unique=True)
+    play_count = db.Column(db.Integer, default=0, nullable=False, index=True)
 
     # Relaciones
     artista = db.relationship('Artista', back_populates='albums')
@@ -153,6 +154,7 @@ class Album(db.Model):
             'portada_url': self.portada_url,
             'artista_id': self.artista_id,
             'musicbrainz_id': self.musicbrainz_id,
+            'play_count': self.play_count or 0,
         }
 
     def __repr__(self):
@@ -332,6 +334,11 @@ class Cancion(db.Model):
     # Número de disco en álbumes dobles o boxsets
     numero_disco = db.Column(db.Integer, nullable=True)
 
+    # Contadores y métricas rápidas de reproducción (denormalized fast counters)
+    play_count = db.Column(db.Integer, default=0, nullable=False, index=True)
+    play_duration = db.Column(db.Integer, default=0, nullable=False)
+    last_played = db.Column(db.DateTime, nullable=True, index=True)
+
     # Relaciones directas con Artista y Álbum
     artista_obj = db.relationship('Artista', back_populates='canciones')
     album_obj = db.relationship('Album', back_populates='canciones')
@@ -364,6 +371,9 @@ class Cancion(db.Model):
             'peak_level': self.peak_level,
             'rms_level': self.rms_level,
             'total_samples': self.total_samples,
-            'bit_rate': self.bit_rate
+            'bit_rate': self.bit_rate,
+            'play_count': self.play_count or 0,
+            'play_duration': self.play_duration or 0,
+            'last_played': self.last_played.isoformat() if self.last_played else None,
         }
         return data

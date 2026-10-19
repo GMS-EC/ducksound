@@ -14,6 +14,8 @@ export default function ArtistDetailPage() {
   const { showMenu } = useContextMenu();
   const [artist, setArtist] = useState<Artista | null>(null);
   const [albums, setAlbums] = useState<AlbumData[]>([]);
+  const [singlesEps, setSinglesEps] = useState<AlbumData[]>([]);
+  const [appearsOn, setAppearsOn] = useState<AlbumData[]>([]);
   const [songs, setSongs] = useState<Cancion[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -23,7 +25,12 @@ export default function ArtistDetailPage() {
     client.get("/artist/" + id)
       .then((res) => {
         setArtist(res.data.artist);
-        setAlbums(res.data.albums_data);
+        const mainAlbums = (res.data.albums_only && res.data.albums_only.length > 0)
+          ? res.data.albums_only
+          : (res.data.singles_eps && res.data.singles_eps.length > 0 ? [] : (res.data.albums_data || []));
+        setAlbums(mainAlbums);
+        setSinglesEps(res.data.singles_eps || []);
+        setAppearsOn(res.data.appears_on || []);
         setSongs(res.data.songs);
       })
       .catch(console.error)
@@ -52,8 +59,9 @@ export default function ArtistDetailPage() {
           <h1 className="artist-header-title">{artist.nombre}</h1>
           {artist.biografia && <p className="artist-bio">{artist.biografia}</p>}
           <div className="artist-header-stats">
-            <span>{albums.length} álbumes</span>
-            <span>{songs.length} canciones</span>
+            <span>{albums.length + singlesEps.length} lanzamientos</span>
+            {appearsOn.length > 0 && <span> • {appearsOn.length} colaboraciones</span>}
+            <span> • {songs.length} canciones</span>
           </div>
           <div className="artist-header-actions">
             <button className="btn-play-now" onClick={playAll} title="Reproducir todo">
@@ -77,7 +85,51 @@ export default function ArtistDetailPage() {
                 </div>
                 <div className="album-card-info">
                   <div className="album-card-title">{al.album.titulo}</div>
-                  <div className="album-card-meta">{al.track_count} canciones</div>
+                  <div className="album-card-meta">{al.album.anio ? `${al.album.anio} • ` : ""}{al.track_count} canciones</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {singlesEps.length > 0 && (
+        <>
+          <div className="section-header" style={{ padding: "0 0 16px" }}>
+            <h2 className="section-title">Sencillos y EPs</h2>
+          </div>
+          <div className="card-grid" style={{ padding: "0 0 32px" }}>
+            {singlesEps.map((al) => (
+              <div key={al.album.id} className="album-card" onClick={() => navigate("/album/" + al.album.id)}>
+                <div className="album-card-cover">
+                  {al.cover_url ? <img src={al.cover_url} alt={al.album.titulo} /> : <span className="album-card-placeholder">♫</span>}
+                  <div className="album-card-overlay"><button className="album-card-play"><Play size={18} fill="currentColor" /></button></div>
+                </div>
+                <div className="album-card-info">
+                  <div className="album-card-title">{al.album.titulo}</div>
+                  <div className="album-card-meta">{al.album.anio ? `${al.album.anio} • ` : ""}{al.track_count} {al.track_count === 1 ? "canción" : "canciones"}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {appearsOn.length > 0 && (
+        <>
+          <div className="section-header" style={{ padding: "0 0 16px" }}>
+            <h2 className="section-title">Apariciones y Colaboraciones</h2>
+          </div>
+          <div className="card-grid" style={{ padding: "0 0 32px" }}>
+            {appearsOn.map((al) => (
+              <div key={al.album.id} className="album-card" onClick={() => navigate("/album/" + al.album.id)}>
+                <div className="album-card-cover">
+                  {al.cover_url ? <img src={al.cover_url} alt={al.album.titulo} /> : <span className="album-card-placeholder">♫</span>}
+                  <div className="album-card-overlay"><button className="album-card-play"><Play size={18} fill="currentColor" /></button></div>
+                </div>
+                <div className="album-card-info">
+                  <div className="album-card-title">{al.album.titulo}</div>
+                  <div className="album-card-meta">{al.album.anio ? `${al.album.anio} • ` : ""}{al.track_count} canciones</div>
                 </div>
               </div>
             ))}

@@ -67,19 +67,11 @@ def transcodificar_cancion(cancion_id, calidad='high', forzar=False):
         logger.error(f"[Transcoder] Canción ID {cancion_id} no encontrada en la base de datos.")
         return None
 
-    original_path = cancion.ruta_archivo_audio
+    from app.routes.audio import resolver_ruta_fisica
+    original_path = resolver_ruta_fisica(cancion.ruta_archivo_audio)
     if not original_path or not os.path.exists(original_path):
-        # Intentar ruta alternativa de Docker si la original no existe físicamente
-        alt_path = original_path.replace('\\\\', '/').replace(':/', ':/')
-        import re
-        m = re.match(r'^([A-Za-z]):/(.*)', alt_path)
-        if m:
-            alt_path = '/music/' + m.group(2)
-        if os.path.exists(alt_path):
-            original_path = alt_path
-        else:
-            logger.error(f"[Transcoder] Archivo original no encontrado en disco: {original_path}")
-            return None
+        logger.error(f"[Transcoder] Archivo original no encontrado en disco: {cancion.ruta_archivo_audio}")
+        return None
 
     # Determinar si el archivo original ya es un formato compatible que NO requiere transcodificación
     ext = Path(original_path).suffix.lower()

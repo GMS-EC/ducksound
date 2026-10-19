@@ -4,9 +4,8 @@ import client from "../api/client";
 import { Globe, Music, Loader2 } from "lucide-react";
 import type { Cancion } from "../types";
 import Equalizer from "./Equalizer";
-import VisualizerTab from "./VisualizerTab";
 
-type Tab = "upnext" | "lyrics" | "related" | "visualizer";
+type Tab = "upnext" | "lyrics" | "related";
 
 interface LyricCue {
   start: number | null;
@@ -16,7 +15,7 @@ interface LyricCue {
 
 export default function RightPanel() {
   const [tab, setTab] = useState<Tab>("lyrics");
-  const { currentSong, currentTime, seek, queue, currentIndex, play, playing } = usePlayer();
+  const { currentSong, currentTime, seek, queue, currentIndex, play } = usePlayer();
 
   const [lyrics, setLyrics] = useState<LyricCue[] | null>(null);
   const [lyricType, setLyricType] = useState<"lrc" | "txt" | null>(null);
@@ -131,7 +130,7 @@ export default function RightPanel() {
         const text = raw.replace(timeTag, '').trim();
         if (!tags.length) continue;
         if (!text) continue;
-        if (/contribuciones/i.test(text)) continue;
+        if (/\b(?:contributors|contribuciones|lyrics|embed)\b/i.test(text) && text.length < 80) continue;
         for (const t of tags) {
           cues.push({ start: t, text: text });
         }
@@ -141,7 +140,7 @@ export default function RightPanel() {
       for (let i = 0; i < lines.length; i++) {
         const text = lines[i].trim();
         if (!text) continue;
-        if (/contribuciones/i.test(text)) continue;
+        if (/\b(?:contributors|contribuciones|lyrics|embed)\b/i.test(text) && text.length < 80) continue;
         cues.push({ start: null, text: text });
       }
       return cues;
@@ -209,13 +208,13 @@ export default function RightPanel() {
   return (
     <aside className="right-panel">
       <div className="right-tabs">
-        {(["upnext", "lyrics", "related", "visualizer"] as Tab[]).map((t) => (
+        {(["upnext", "lyrics", "related"] as Tab[]).map((t) => (
           <button
             key={t}
             className={"right-tab" + (tab === t ? " active" : "")}
             onClick={() => setTab(t)}
           >
-            {t === "upnext" ? "A CONTINUACIÓN" : t === "lyrics" ? "LETRA" : t === "related" ? "SIMILARES" : "VISUALIZADOR"}
+            {t === "upnext" ? "A CONTINUACIÓN" : t === "lyrics" ? "LETRA" : "SIMILARES"}
           </button>
         ))}
       </div>
@@ -339,7 +338,7 @@ export default function RightPanel() {
                     </div>
                   )}
                   {lyrics && (
-                    <div className="lyrics-lines">
+                    <div className={`lyrics-lines ${lyricType === "lrc" ? "synced" : "plain"}`}>
                       {lyrics.map((c, i) => {
                         const isActive = i === activeIndex;
                         return (
@@ -490,9 +489,6 @@ export default function RightPanel() {
               </div>
             )}
           </div>
-        )}
-        {tab === "visualizer" && (
-          <VisualizerTab playing={playing} />
         )}
       </div>
     </aside>
