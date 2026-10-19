@@ -6,7 +6,10 @@ services:
     container_name: ducksound_dev_backend
     restart: unless-stopped
     volumes:
-      - ${MUSIC_PATH}:/music:ro
+      - type: bind
+        source: ${MUSIC_PATH}
+        target: /music
+        read_only: true
       - ducksound_data:/data
       - ./app:/app/app
       - ./config.py:/app/config.py

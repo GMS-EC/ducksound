@@ -4,7 +4,10 @@ services:
     container_name: ducksound
     restart: unless-stopped
     volumes:
-      - ${MUSIC_PATH}:/music:ro
+      - type: bind
+        source: ${MUSIC_PATH}
+        target: /music
+        read_only: true
       - ducksound_data:/data
     environment:
       - ADMIN_SECRET_TOKEN=${ADMIN_SECRET_TOKEN:-ducksound_admin_token}
