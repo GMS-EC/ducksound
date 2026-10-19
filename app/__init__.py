@@ -7,7 +7,7 @@ import os
 import sys
 import secrets
 from datetime import datetime, timedelta
-from flask import Flask, session, redirect, url_for, request, jsonify, current_app
+from flask import Flask, session, redirect, url_for, request, jsonify, current_app, abort
 from flask_compress import Compress
 from flask_cors import CORS
 from config import Config
@@ -32,7 +32,7 @@ def create_app(config_class=Config):
     Returns:
         Flask: Instancia completamente configurada de la aplicación Flask.
     """
-    app = Flask(__name__)
+    app = Flask(__name__, static_folder='../frontend/dist', static_url_path='/')
     app.config.from_object(config_class)
 
     # 1. Inicialización de extensiones
@@ -127,30 +127,44 @@ def create_app(config_class=Config):
         return response
 
     @app.before_request
+    def serve_spa():
+        """
+        Interviene antes de require_login y de la ejecución de rutas.
+        Si la petición es GET, acepta 'text/html' y no se refiere a rutas
+        especiales de medios/API directas, sirve directamente la SPA (index.html).
+        """
+        if request.method in ('GET', 'HEAD') and 'text/html' in request.headers.get('Accept', ''):
+            if (request.path.startswith('/audio/') or 
+                request.path.startswith('/album-art/') or 
+                request.path.startswith('/lyrics/') or
+                request.path.startswith('/api/')):
+                return None
+            
+            try:
+                return app.send_static_file('index.html')
+            except Exception:
+                abort(404)
+
+    @app.before_request
     def require_login():
         """
         Escudo global: Intercepta todas las peticiones entrantes.
         Si la sesión de usuario no está activa y el recurso es privado, deniega el acceso.
         Valida además que la sesión no haya sido revocada remotamente.
         """
-        # Se incluye tanto 'main.index' como 'index' y 'auth.login' para evitar bucles de redirección
-        allowed_endpoints = ['auth.login', 'static', 'favicon', 'index', 'main.index']
+        # Se incluye catch_all para permitir cargar el index de la SPA sin redirección infinita
+        allowed_endpoints = ['auth.login', 'static', 'favicon', 'index', 'catch_all']
         
         if request.method == 'OPTIONS':
             return
             
         # Si no hay sesión activa y el endpoint es privado
         if request.endpoint and request.endpoint not in allowed_endpoints and 'user_id' not in session:
-            # Peticiones AJAX / API
-            if request.path.startswith('/api/'):
-                return jsonify({'error': 'Acceso denegado: Inicia sesión primero'}), 401
-                
             # Respuestas planas de audio, letras y carátulas (previene fugas de HTML a reproductores)
             if request.path.startswith('/audio/') or request.path.startswith('/album-art/') or request.path.startswith('/lyrics/'):
                 return "Acceso denegado", 401
                 
-            # Redireccionar a la página de login
-            return redirect(url_for('auth.login'))
+            return jsonify({'error': 'Acceso denegado: Inicia sesión primero'}), 401
         
         # Validar que la sesión no haya sido revocada remotamente
         if 'user_id' in session and request.endpoint and request.endpoint not in allowed_endpoints:
@@ -222,47 +236,7 @@ def create_app(config_class=Config):
             if not req_token or req_token != token:
                 return jsonify({'error': 'Token CSRF inválido o faltante'}), 403
 
-    def generate_csrf_token():
-        """Genera un token CSRF seguro en formato hexadecimal para la sesión actual."""
-        if '_csrf_token' not in session:
-            session['_csrf_token'] = secrets.token_hex(32)
-        return session['_csrf_token']
 
-    # Registrar el generador de token CSRF en el motor de plantillas Jinja2
-    app.jinja_env.globals['csrf_token'] = generate_csrf_token
-
-    # Proxy inteligente para url_for en Jinja para asegurar compatibilidad de plantillas monolíticas antiguas sin namespace
-    original_url_for = app.jinja_env.globals.get('url_for')
-    if original_url_for:
-        def smart_url_for(endpoint, **values):
-            try:
-                return original_url_for(endpoint, **values)
-            except Exception:
-                # Si el endpoint tiene un namespace antiguo o incorrecto (ej: 'browse.explore'),
-                # extraemos solo el nombre de la función ('explore') para intentar resolverlo.
-                func_name = endpoint.split('.')[-1]
-                for prefix in ['main', 'audio', 'api', 'auth', 'admin']:
-                    try:
-                        return original_url_for(f"{prefix}.{func_name}", **values)
-                    except Exception:
-                        pass
-                raise
-        app.jinja_env.globals['url_for'] = smart_url_for
-
-    @app.context_processor
-    def inject_user_info():
-        """Inyecta información básica de sesión del usuario en todas las plantillas Jinja2."""
-        user_info = {
-            'usuario_autenticado': session.get('nombre_usuario'),
-            'user_id': session.get('user_id'),
-            'app_version': Config.APP_VERSION
-        }
-        if session.get('user_id'):
-            user_obj = db.session.get(Usuario, session['user_id'])
-            user_info['es_admin'] = user_obj.is_admin() if user_obj else False
-        else:
-            user_info['es_admin'] = False
-        return user_info
 
     # 4. Registro centralizado de Blueprints
     from app.routes import auth_bp, admin_bp, audio_bp, main_bp, api_bp
@@ -271,6 +245,17 @@ def create_app(config_class=Config):
     app.register_blueprint(audio_bp)
     app.register_blueprint(main_bp)
     app.register_blueprint(api_bp)
+
+    @app.route('/', defaults={'path': ''})
+    @app.route('/<path:path>')
+    def catch_all(path):
+        # Evitar capturar rutas de la API, audio, admin o ficheros estáticos de assets
+        if path.startswith('api/') or path.startswith('audio/') or path.startswith('admin/') or path.startswith('login') or path.startswith('logout') or path.startswith('album-art/') or path.startswith('lyrics/'):
+            abort(404)
+        try:
+            return app.send_static_file('index.html')
+        except Exception:
+            abort(404)
 
     return app
 

@@ -21,7 +21,7 @@ from pathlib import Path
 from sqlalchemy import func as sqlfunc
 from sqlalchemy.orm import joinedload
 
-from flask import Blueprint, request, redirect, url_for, session, abort, current_app
+from flask import Blueprint, request, redirect, url_for, session, abort, current_app, jsonify
 from config import Config
 from app.models import db, Usuario, Artista, Album, Cancion, Favorito, Coleccion, DailyMix, HistorialEscucha
 
@@ -33,8 +33,9 @@ main_bp = Blueprint('main', __name__)
 
 
 def _album_card_payload(album, track_count=0, total_duration=None, cover_url=None):
-    """Datos planos que consume React para tarjetas de album."""
+    """Datos que consume React para tarjetas de album."""
     payload = {
+        'album': album.to_dict(),
         'album_id': album.id,
         'id': album.id,
         'titulo': album.titulo,
@@ -51,13 +52,6 @@ def _album_card_payload(album, track_count=0, total_duration=None, cover_url=Non
 # ==============================================================================
 # SECCIÓN 1: VISTA DE INICIO Y REDIRECCIONES DE ACCESO
 # ==============================================================================
-
-@main_bp.route('/')
-def index():
-    """Redirige al dashboard si el usuario está autenticado, o al login en caso contrario."""
-    if 'user_id' in session:
-        return redirect(url_for('main.dashboard'))
-    return redirect(url_for('auth.login'))
 
 
 # ==============================================================================
@@ -324,6 +318,7 @@ def explore():
     albums_data = []
     for al, track_count in album_stats:
         albums_data.append(_album_card_payload(al, track_count=track_count))
+
     return {'artists': [a.to_dict() for a in artists], 'albums_data': albums_data}
 
 
@@ -359,7 +354,7 @@ def artists_list():
         cover_url = _album_cover_url(fa) if fa else None
         
         artists_data.append({
-            'artist': a,
+            'artist': a.to_dict(),
             'album_count': ac,
             'song_count': sc,
             'cover_url': cover_url
@@ -388,6 +383,7 @@ def artist_detail(artist_id):
     albums_data = []
     for al, track_count in album_stats:
         albums_data.append(_album_card_payload(al, track_count=track_count))
+
     album_count = len(albums_data)
     song_count = len(songs)
     return {
@@ -414,6 +410,7 @@ def albums_list():
     albums_data = []
     for al, track_count, total_dur in album_stats:
         albums_data.append(_album_card_payload(al, track_count=track_count, total_duration=total_dur))
+
     return {'albums_data': albums_data}
 
 

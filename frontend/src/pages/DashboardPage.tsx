@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Play, Shuffle } from "lucide-react";
 import client from "../api/client";
@@ -26,7 +26,7 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
-  const { play } = usePlayer();
+  const { currentSong, playing, play } = usePlayer();
 
   useEffect(() => {
     client.get("/dashboard")
@@ -35,12 +35,15 @@ export default function DashboardPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const playAlbum = async (albumId: number) => {
+  const handlePlayAlbum = async (e: React.MouseEvent, albumId: number) => {
+    e.stopPropagation();
     try {
       const res = await client.get(`/api/album/${albumId}/canciones`);
-      if (res.data?.length) play(res.data, 0);
-    } catch (error) {
-      console.error(error);
+      if (res.data?.length) {
+        play(res.data, 0);
+      }
+    } catch (err) {
+      console.error("Error playing album:", err);
     }
   };
 
@@ -70,7 +73,18 @@ export default function DashboardPage() {
         <>
           <div className="spotlight">
             <div className="spotlight-cover">
-              <img src={`/daily-mix-cover/${spotlight_mix.id}`} alt={spotlight_mix.nombre} />
+              <img
+                src={`/daily-mix-cover/${spotlight_mix.id}`}
+                alt={spotlight_mix.nombre}
+                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).style.display = 'none';
+                  if (e.currentTarget.nextElementSibling) {
+                    (e.currentTarget.nextElementSibling as HTMLElement).style.display = 'inline';
+                  }
+                }}
+              />
+              <span style={{ fontSize: 48, color: "#666", display: 'none' }}>♪</span>
             </div>
             <div className="spotlight-copy">
               <div className="spotlight-kicker">Mezcla diaria</div>
@@ -102,15 +116,15 @@ export default function DashboardPage() {
           </div>
 
           <div className="stat-strip">
-            <div className="stat-item">
+            <div className="stat-item" onClick={() => navigate("/explore")}>
               <strong>{dashboard_stats.canciones}</strong>
               <span>Canciones</span>
             </div>
-            <div className="stat-item">
+            <div className="stat-item" onClick={() => navigate("/explore")}>
               <strong>{dashboard_stats.albumes}</strong>
               <span>Álbumes</span>
             </div>
-            <div className="stat-item">
+            <div className="stat-item" onClick={() => navigate("/explore")}>
               <strong>{dashboard_stats.artistas}</strong>
               <span>Artistas</span>
             </div>
@@ -127,9 +141,20 @@ export default function DashboardPage() {
             {data.daily_mixes.map((mix) => (
               <div key={mix.id} className="card" onClick={() => play(mix.canciones, 0)}>
                 <div className="card-cover">
-                  <img src={`/daily-mix-cover/${mix.id}`} alt={mix.nombre} />
+                  <img
+                    src={`/daily-mix-cover/${mix.id}`}
+                    alt={mix.nombre}
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).style.display = 'none';
+                      if (e.currentTarget.nextElementSibling) {
+                        (e.currentTarget.nextElementSibling as HTMLElement).style.display = 'inline';
+                      }
+                    }}
+                  />
+                  <span style={{ fontSize: 28, opacity: 0.6, display: 'none' }}>♪</span>
                   <div className="card-overlay">
-                    <button className="card-play-btn" title="Reproducir">
+                    <button className="card-play-btn" onClick={(e) => { e.stopPropagation(); play(mix.canciones, 0); }}>
                       <Play size={18} fill="currentColor" />
                     </button>
                   </div>
@@ -150,35 +175,37 @@ export default function DashboardPage() {
             <h2 className="shelf-title">Álbumes recientes</h2>
           </div>
           <div className="scroll-grid">
-            {albumes_recientes.map((album) => (
-              <div key={album.album_id} className="card" onClick={() => navigate(`/album/${album.album_id}`)}>
-                <div className="card-cover">
-                  {album.cover_url ? (
-                    <img src={album.cover_url} alt={album.titulo} />
-                  ) : (
-                    <span className="card-placeholder">♫</span>
-                  )}
-                  <div className="card-overlay">
-                    <button
-                      className="card-play-btn"
-                      title="Reproducir álbum"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        playAlbum(album.album_id);
-                      }}
-                    >
-                      <Play size={18} fill="currentColor" />
-                    </button>
+            {albumes_recientes.map((album) => {
+              const albumId = album.album_id || album.id || (album.album && album.album.id);
+              const title = album.titulo || (album.album && album.album.titulo) || "";
+              const year = album.anio ?? (album.album && album.album.anio);
+              return (
+                <div key={albumId} className="card" onClick={() => navigate(`/album/${albumId}`)}>
+                  <div className="card-cover">
+                    {album.cover_url ? (
+                      <img src={album.cover_url} alt={title} />
+                    ) : (
+                      <span className="card-placeholder">♫</span>
+                    )}
+                    <div className="card-overlay">
+                      <button
+                        className="card-play-btn"
+                        title="Reproducir álbum"
+                        onClick={(e) => handlePlayAlbum(e, albumId!)}
+                      >
+                        <Play size={18} fill="currentColor" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="card-info">
+                    <div className="card-title">{title}</div>
+                    <div className="card-subtitle">
+                      {album.track_count} canciones{year ? ` · ${year}` : ""}
+                    </div>
                   </div>
                 </div>
-                <div className="card-info">
-                  <div className="card-title">{album.titulo}</div>
-                  <div className="card-subtitle">
-                    {album.track_count} canciones{album.anio ? ` · ${album.anio}` : ""}
-                  </div>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       )}
@@ -210,24 +237,46 @@ export default function DashboardPage() {
           <div className="shelf-header" style={{ padding: 0, marginBottom: 16 }}>
             <h2 className="shelf-title">Más escuchadas</h2>
           </div>
-          {top_canciones.map((item, index) => (
-            <div
-              key={item.cancion.id}
-              className="track-item"
-              onClick={() => play(top_canciones.map((track) => track.cancion), index)}
-            >
-              <span className="track-num">{index + 1}</span>
-              <div className="track-cover-sm">
-                <img src={`/album-art/${item.cancion.id}?size=small`} alt={item.cancion.titulo} />
+          {top_canciones.map((item, index) => {
+            const isCurrent = currentSong?.id === item.cancion.id;
+            return (
+              <div
+                key={item.cancion.id}
+                className={`track-item ${isCurrent ? `playing ${playing ? "" : "paused"}` : ""}`}
+                onClick={() => play(top_canciones.map((track) => track.cancion), index)}
+              >
+                {isCurrent ? (
+                  <div className={`playing-eq ${playing ? "" : "paused"}`}>
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </div>
+                ) : (
+                  <span className="track-num">{index + 1}</span>
+                )}
+                <div className="track-cover-sm">
+                  <img
+                    src={`/album-art/${item.cancion.id}?size=small`}
+                    alt={item.cancion.titulo}
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).style.display = 'none';
+                      if (e.currentTarget.nextElementSibling) {
+                        (e.currentTarget.nextElementSibling as HTMLElement).style.display = 'inline';
+                      }
+                    }}
+                  />
+                  <span style={{ fontSize: 14, color: "#666", display: 'none' }}>♪</span>
+                </div>
+                <div className="track-info">
+                  <div className="track-title">{item.cancion.titulo}</div>
+                  <div className="track-artist">{item.cancion.artista}</div>
+                </div>
+                <div className="track-plays">{item.plays} plays</div>
+                <div className="track-duration">{formatDuration(item.cancion.duracion)}</div>
               </div>
-              <div className="track-info">
-                <div className="track-title">{item.cancion.titulo}</div>
-                <div className="track-artist">{item.cancion.artista}</div>
-              </div>
-              <div className="track-plays">{item.plays} plays</div>
-              <div className="track-duration">{formatDuration(item.cancion.duracion)}</div>
-            </div>
-          ))}
+            );
+          })}
         </section>
       )}
     </div>

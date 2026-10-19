@@ -8,7 +8,7 @@ import type { Artista, AlbumData, Cancion } from "../types";
 export default function ArtistDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { play } = usePlayer();
+  const { currentSong, playing, play } = usePlayer();
   const [artist, setArtist] = useState<Artista | null>(null);
   const [albums, setAlbums] = useState<AlbumData[]>([]);
   const [songs, setSongs] = useState<Cancion[]>([]);
@@ -66,13 +66,13 @@ export default function ArtistDetailPage() {
           </div>
           <div className="card-grid" style={{ padding: "0 0 32px" }}>
             {albums.map((al) => (
-              <div key={al.album_id} className="album-card" onClick={() => navigate("/album/" + al.album_id)}>
+              <div key={al.album.id} className="album-card" onClick={() => navigate("/album/" + al.album.id)}>
                 <div className="album-card-cover">
-                  {al.cover_url ? <img src={al.cover_url} alt={al.titulo} /> : <span className="album-card-placeholder">♫</span>}
+                  {al.cover_url ? <img src={al.cover_url} alt={al.album.titulo} /> : <span className="album-card-placeholder">♫</span>}
                   <div className="album-card-overlay"><button className="album-card-play"><Play size={18} fill="currentColor" /></button></div>
                 </div>
                 <div className="album-card-info">
-                  <div className="album-card-title">{al.titulo}</div>
+                  <div className="album-card-title">{al.album.titulo}</div>
                   <div className="album-card-meta">{al.track_count} canciones</div>
                 </div>
               </div>
@@ -85,19 +85,35 @@ export default function ArtistDetailPage() {
         <div className="section-header" style={{ padding: "0 0 16px" }}>
           <h2 className="section-title">Canciones</h2>
         </div>
-        {songs.map((c, i) => (
-          <div key={c.id} className="track-item-grid" onClick={() => play(songs, i)}>
-            <span className="track-num-sm">{i + 1}</span>
-            <div className="track-info">
-              <div className="track-title">{c.titulo}</div>
-              <div className="track-artist">{c.album}</div>
+        {songs.map((c, i) => {
+          const isCurrent = currentSong?.id === c.id;
+          return (
+            <div
+              key={c.id}
+              className={`track-item-grid ${isCurrent ? `playing ${playing ? "" : "paused"}` : ""}`}
+              onClick={() => play(songs, i)}
+            >
+              {isCurrent ? (
+                <div className={`playing-eq ${playing ? "" : "paused"}`}>
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </div>
+              ) : (
+                <span className="track-num-sm">{i + 1}</span>
+              )}
+              <div className="track-info">
+                <div className="track-title">{c.titulo}</div>
+                <div className="track-artist">{c.album}</div>
+              </div>
+              <div className="track-duration">
+                {c.duracion ? Math.floor(c.duracion / 60) + ":" + String(c.duracion % 60).padStart(2, "0") : "—"}
+              </div>
+              <div></div>
             </div>
-            <div className="track-duration">
-              {c.duracion ? Math.floor(c.duracion / 60) + ":" + String(c.duracion % 60).padStart(2, "0") : "—"}
-            </div>
-            <div></div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

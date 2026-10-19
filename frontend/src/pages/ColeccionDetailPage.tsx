@@ -8,7 +8,7 @@ import type { Coleccion, Cancion } from "../types";
 export default function ColeccionDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { play } = usePlayer();
+  const { currentSong, playing, play } = usePlayer();
   const [coleccion, setColeccion] = useState<Coleccion | null>(null);
   const [songs, setSongs] = useState<Cancion[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,19 +47,35 @@ export default function ColeccionDetailPage() {
 
       {songs.length > 0 ? (
         <div className="tracklist-standalone">
-          {songs.map((c, i) => (
-            <div key={c.id} className="track-item-grid" onClick={() => play(songs, i)}>
-              <span className="track-num-sm">{i + 1}</span>
-              <div className="track-info">
-                <div className="track-title">{c.titulo}</div>
-                <div className="track-artist">{c.artista}</div>
+          {songs.map((c, i) => {
+            const isCurrent = currentSong?.id === c.id;
+            return (
+              <div
+                key={c.id}
+                className={`track-item-grid ${isCurrent ? `playing ${playing ? "" : "paused"}` : ""}`}
+                onClick={() => play(songs, i)}
+              >
+                {isCurrent ? (
+                  <div className={`playing-eq ${playing ? "" : "paused"}`}>
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </div>
+                ) : (
+                  <span className="track-num-sm">{i + 1}</span>
+                )}
+                <div className="track-info">
+                  <div className="track-title">{c.titulo}</div>
+                  <div className="track-artist">{c.artista}</div>
+                </div>
+                <div className="track-duration">
+                  {c.duracion ? Math.floor(c.duracion / 60) + ":" + String(c.duracion % 60).padStart(2, "0") : "—"}
+                </div>
+                <div></div>
               </div>
-              <div className="track-duration">
-                {c.duracion ? Math.floor(c.duracion / 60) + ":" + String(c.duracion % 60).padStart(2, "0") : "—"}
-              </div>
-              <div></div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <div className="empty-state">

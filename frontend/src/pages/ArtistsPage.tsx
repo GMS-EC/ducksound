@@ -34,7 +34,7 @@ export default function ArtistsPage() {
               )}
             </div>
             <div className="artist-card-big-name">{item.artist.nombre}</div>
-            <div className="artist-card-big-meta">{item.album_count} \u00e1lbumes \u2022 {item.song_count} canciones</div>
+            <div className="artist-card-big-meta">{item.album_count} álbumes • {item.song_count} canciones</div>
           </div>
         ))}
       </div>

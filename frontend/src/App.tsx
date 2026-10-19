@@ -26,6 +26,8 @@ function AppContent() {
           <Routes>
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/explore" element={<ExplorePage />} />
+            <Route path="/artists" element={<ArtistsPage />} />
+            <Route path="/albums" element={<AlbumsPage />} />
             <Route path="/favorites" element={<FavoritesPage />} />
             <Route path="/folders" element={<FoldersPage />} />
             <Route path="/colecciones" element={<ColeccionesPage />} />

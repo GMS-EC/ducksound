@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink } from "react-router-dom";
 import {
   House, Heart, FolderTree, List, Compass, Users, Disc3,
   Shield, Search, User,
