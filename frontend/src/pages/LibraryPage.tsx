@@ -64,7 +64,7 @@ export default function LibraryPage() {
   const [showCreatePlaylist, setShowCreatePlaylist] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState("");
 
-  const { currentSong, playing, play } = usePlayer();
+  const { currentSong, play } = usePlayer();
   const { showMenu } = useContextMenu();
 
   const fetchFavorites = () => {
