@@ -1,0 +1,2 @@
+# Force LF for shell scripts in Docker
+*.sh text eol=lf
