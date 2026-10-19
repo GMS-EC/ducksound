@@ -2,15 +2,16 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, development]
   pull_request:
-    branches: [main, master]
+    branches: [main, master, development]
 
 jobs:
   test:
+    name: Backend Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     env:
-      DATABASE_URL: sqlite:///:memory:
+      DATABASE_URL: "sqlite:///:memory:"
     strategy:
       matrix:
         python-version: ["3.10", "3.11"]
@@ -32,30 +33,39 @@ jobs:
 
       - name: Check syntax
         run: |
-          python -m py_compile app.py
-          python -m py_compile config.py
-          python -m py_compile app/models.py
-          python -m py_compile app/__init__.py
-          python -m py_compile app/routes/admin.py
-          python -m py_compile app/routes/api.py
-          python -m py_compile app/routes/audio.py
-          python -m py_compile app/routes/auth.py
-          python -m py_compile app/routes/main.py
-          python -m py_compile app/services/audio_analyzer.py
-          python -m py_compile app/services/lyrics.py
-          python -m py_compile app/services/metadata.py
-          python -m py_compile app/services/queue.py
-          python -m py_compile app/services/recommender.py
-          python -m py_compile app/services/scanner.py
+          python -m compileall app/ config.py app.py run_worker.py regenerate_mixes.py
 
       - name: Run tests
         run: |
           python -m pytest tests/ -v
 
-  docker:
-    needs: test
+  frontend:
+    name: Frontend Build (TypeScript & Vite)
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Type check and build
+        working-directory: frontend
+        run: npm run build
+
+  docker:
+    name: Docker Image Build
+    needs: [test, frontend]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/development'
 
     steps:
       - uses: actions/checkout@v4
