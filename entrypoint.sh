@@ -74,13 +74,13 @@ wait_for_service() {
     done
 }
 
-# Esperar PostgreSQL si hay DATABASE_URL configurado
-if [ -n "$DATABASE_URL" ]; then
-    wait_for_service "PostgreSQL" "postgres" "5432"
+# Esperar PostgreSQL solo si DATABASE_URL o DB_HOST apuntan a Postgres
+if [[ "$DATABASE_URL" == *"postgres"* ]] || { [ -n "$DB_HOST" ] && [ "$DB_HOST" != "localhost" ] && [ "$DB_HOST" != "none" ] && [ "$DB_HOST" != "sqlite" ]; }; then
+    wait_for_service "PostgreSQL" "${DB_HOST:-postgres}" "${DB_PORT:-5432}"
 fi
 
-# Esperar Redis si hay host remoto configurado
-if [ -n "$REDIS_HOST" ] && [ "$REDIS_HOST" != "localhost" ]; then
+# Esperar Redis solo si hay host remoto configurado
+if [ -n "$REDIS_HOST" ] && [ "$REDIS_HOST" != "localhost" ] && [ "$REDIS_HOST" != "none" ]; then
     wait_for_service "Redis" "$REDIS_HOST" "${REDIS_PORT:-6379}"
 fi
 

@@ -42,33 +42,36 @@ def create_app(config_class=Config):
     # CORS: permitir que el frontend (React en :5173) acceda a la API
     CORS(app, supports_credentials=True, origins=["http://localhost:5173", "http://127.0.0.1:5173"])
 
+    # Optimización para SQLite: WAL mode para lecturas instantáneas y alta concurrencia
+    if app.config['SQLALCHEMY_DATABASE_URI'].startswith('sqlite'):
+        from sqlalchemy import event
+        from sqlalchemy.engine import Engine
+        @event.listens_for(Engine, "connect")
+        def set_sqlite_pragma(dbapi_connection, connection_record):
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+
     # 2. Creación automática de esquemas de base de datos
     with app.app_context():
         db.create_all()
         
-        # Migración de base de datos para la columna 'audio_quality'
+        # Migración segura agnóstica para 'audio_quality'
         try:
-            from sqlalchemy import text
-            with db.engine.connect() as conn:
-                # Comprobar si la columna existe (funciona para Postgres y SQLite)
-                columnas = conn.execute(text(
-                    "SELECT column_name FROM information_schema.columns "
-                    "WHERE table_name='usuarios' AND column_name='audio_quality'"
-                )).fetchall()
-                if not columnas:
-                    try:
+            from sqlalchemy import inspect, text
+            inspector = inspect(db.engine)
+            if 'usuarios' in inspector.get_table_names():
+                columns = [c['name'] for c in inspector.get_columns('usuarios')]
+                if 'audio_quality' not in columns:
+                    with db.engine.connect() as conn:
                         conn.execute(text("ALTER TABLE usuarios ADD COLUMN audio_quality VARCHAR(20) NOT NULL DEFAULT 'lossless'"))
                         conn.commit()
-                        print("✅ [DuckSound] Columna 'audio_quality' agregada exitosamente a la tabla usuarios.")
-                    except Exception as sqle:
-                        if "duplicate column" in str(sqle).lower() or "already exists" in str(sqle).lower():
-                            pass
-                        else:
-                            raise sqle
-                else:
-                    print("✅ [DuckSound] La columna 'audio_quality' ya existe en la tabla usuarios.")
+                    print("✅ [DuckSound] Columna 'audio_quality' agregada exitosamente a la tabla usuarios.")
         except Exception as e:
             print(f"⚠️ [DuckSound] Error en migración de base de datos para 'audio_quality': {e}")
+
         
         # Crear un usuario administrador inicial por defecto si la base de datos está vacía
         try:
@@ -116,7 +119,10 @@ def create_app(config_class=Config):
 
     @app.route('/favicon.ico')
     def favicon():
-        return redirect(url_for('static', filename='img/favicon.png'))
+        try:
+            return app.send_static_file('favicon.png')
+        except Exception:
+            return '', 204
 
     @app.after_request
     def add_security_headers(response):

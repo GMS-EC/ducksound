@@ -1,19 +1,23 @@
 # -*- coding: utf-8 -*-
 """
 Servicio de Cola de Tareas en Segundo Plano - DuckSound
-Wrapper para interactuar con Redis RQ (Redis Queue), gestionar tareas de escaneo
-e indexación asíncrona, y rastrear el porcentaje de progreso mediante claves persistentes en Redis.
+======================================================
+Permite ejecutar tareas pesadas de escaneo, transcodificación y enriquecimiento
+en segundo plano.
+- Modo Ultra-Ligero (por defecto si no hay Redis): Utiliza un ThreadPoolExecutor en memoria.
+- Modo Distribuido: Utiliza Redis y RQ si Redis está activo.
 """
 import os
 import json
 import time
-import redis
-from rq import Queue
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 # Configuración de conexiones de Redis desde variables de entorno
 REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
 REDIS_PORT = int(os.getenv('REDIS_PORT', 6379))
 REDIS_DB = int(os.getenv('REDIS_DB', 0))
+REDIS_ENABLED = os.getenv('REDIS_ENABLED', 'auto').lower()
 
 # Prefijos para claves dentro de Redis
 REDIS_SCAN_PREFIX = 'ducksound:scan:'
@@ -22,81 +26,153 @@ REDIS_PROGRESS_PREFIX = 'ducksound:progress:'
 
 _conn = None
 _queue = None
+_redis_available = None
+
+# Almacenamiento en memoria para modo ultra-ligero sin Redis
+_mem_lock = threading.Lock()
+_mem_tasks = {}
+_mem_active_scan_id = None
+_mem_progress = {}
+_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix='ducksound_bg')
+
+
+def is_redis_available():
+    """Comprueba si Redis está disponible para su uso."""
+    global _redis_available
+    if REDIS_ENABLED in ('false', '0', 'no', 'none'):
+        return False
+    if _redis_available is not None:
+        return _redis_available
+    try:
+        import redis
+        client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB,
+                             socket_connect_timeout=1, socket_timeout=2)
+        client.ping()
+        _redis_available = True
+    except Exception:
+        _redis_available = False
+    return _redis_available
 
 
 def get_connection():
-    """Inicializa y retorna la conexión persistente con el servidor de Redis."""
+    """Inicializa y retorna la conexión con Redis si está disponible."""
     global _conn
+    if not is_redis_available():
+        return None
     if _conn is None:
+        import redis
         _conn = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB,
-                            socket_connect_timeout=5, socket_timeout=10,
+                            socket_connect_timeout=3, socket_timeout=5,
                             retry_on_timeout=True)
     return _conn
 
 
 def get_queue():
-    """Retorna la cola de tareas asíncronas de RQ para DuckSound."""
+    """Retorna la cola de tareas asíncronas de RQ para DuckSound si Redis está disponible."""
     global _queue
+    if not is_redis_available():
+        return None
     if _queue is None:
+        from rq import Queue
         _queue = Queue('ducksound', connection=get_connection(), default_timeout=3600)
     return _queue
 
 
 def enqueue(func, *args, **kwargs):
-    """Agrega una función a la cola de tareas de Redis RQ para ejecución en un worker separado."""
-    q = get_queue()
-    return q.enqueue(func, *args, **kwargs)
+    """
+    Agrega una tarea a la cola:
+    - Si Redis está disponible, encola en RQ.
+    - Si no hay Redis (Modo Ultra-Ligero), ejecuta asíncronamente en el ThreadPoolExecutor.
+    """
+    if is_redis_available():
+        try:
+            q = get_queue()
+            if q:
+                return q.enqueue(func, *args, **kwargs)
+        except Exception:
+            pass
+    # Modo local en segundo plano (ThreadPool)
+    return _executor.submit(func, *args, **kwargs)
 
 
 # ==========================================================
-# 📊 CONTROL DE ESTADOS DE ESCANEO DE CANCIONES (Redis)
+# 📊 CONTROL DE ESTADOS DE ESCANEO DE CANCIONES
 # ==========================================================
-
-def _r():
-    """Helper simple para obtener la conexión activa de Redis."""
-    return get_connection()
-
 
 def scan_task_set(task_id, data):
-    """Guarda el estado e información de avance de una tarea de escaneo con un TTL de 2 horas."""
+    """Guarda el estado e información de avance de una tarea de escaneo."""
     data['updated_at'] = time.time()
-    _r().setex(f'{REDIS_SCAN_PREFIX}{task_id}', 7200, json.dumps(data))
+    if is_redis_available():
+        try:
+            get_connection().setex(f'{REDIS_SCAN_PREFIX}{task_id}', 7200, json.dumps(data))
+            return
+        except Exception:
+            pass
+    with _mem_lock:
+        _mem_tasks[str(task_id)] = data.copy()
 
 
 def scan_task_get(task_id):
-    """Obtiene el diccionario de estado de una tarea de escaneo guardada en Redis."""
-    raw = _r().get(f'{REDIS_SCAN_PREFIX}{task_id}')
-    if raw:
-        return json.loads(raw)
-    return None
+    """Obtiene el diccionario de estado de una tarea de escaneo."""
+    if is_redis_available():
+        try:
+            raw = get_connection().get(f'{REDIS_SCAN_PREFIX}{task_id}')
+            if raw:
+                return json.loads(raw)
+        except Exception:
+            pass
+    with _mem_lock:
+        data = _mem_tasks.get(str(task_id))
+        return data.copy() if data else None
 
 
 def scan_task_delete(task_id):
-    """Elimina la información de rastreo de una tarea de escaneo en Redis."""
-    _r().delete(f'{REDIS_SCAN_PREFIX}{task_id}')
+    """Elimina la información de rastreo de una tarea de escaneo."""
+    if is_redis_available():
+        try:
+            get_connection().delete(f'{REDIS_SCAN_PREFIX}{task_id}')
+        except Exception:
+            pass
+    with _mem_lock:
+        _mem_tasks.pop(str(task_id), None)
 
 
 def scan_set_active(task_id):
     """Registra cuál es el ID del escaneo en ejecución activa en este instante."""
-    if task_id:
-        _r().set(REDIS_ACTIVE_KEY, task_id, ex=7200)
-    else:
-        _r().delete(REDIS_ACTIVE_KEY)
+    global _mem_active_scan_id
+    if is_redis_available():
+        try:
+            if task_id:
+                get_connection().set(REDIS_ACTIVE_KEY, task_id, ex=7200)
+            else:
+                get_connection().delete(REDIS_ACTIVE_KEY)
+            return
+        except Exception:
+            pass
+    with _mem_lock:
+        _mem_active_scan_id = str(task_id) if task_id else None
 
 
 def scan_get_active():
-    """
-    Retorna el ID y el diccionario de estado del escaneo activo en ejecución.
-    Si la tarea expiró en Redis, limpia el puntero de activo de forma segura.
-    """
-    raw = _r().get(REDIS_ACTIVE_KEY)
-    if raw:
-        tid = raw.decode()
-        task = scan_task_get(tid)
-        if task:
-            return tid, task
-        # Limpieza por consistencia
-        _r().delete(REDIS_ACTIVE_KEY)
+    """Retorna el ID y el diccionario de estado del escaneo activo en ejecución."""
+    global _mem_active_scan_id
+    if is_redis_available():
+        try:
+            raw = get_connection().get(REDIS_ACTIVE_KEY)
+            if raw:
+                tid = raw.decode()
+                task = scan_task_get(tid)
+                if task:
+                    return tid, task
+                get_connection().delete(REDIS_ACTIVE_KEY)
+        except Exception:
+            pass
+    with _mem_lock:
+        if _mem_active_scan_id:
+            task = _mem_tasks.get(_mem_active_scan_id)
+            if task:
+                return _mem_active_scan_id, task.copy()
+            _mem_active_scan_id = None
     return None, None
 
 
@@ -105,16 +181,29 @@ def scan_get_active():
 # ==========================================================
 
 def progress_set(key, data, ttl=7200):
-    """Registra datos de progreso genéricos (ej. 'lyrics', 'mb') con un tiempo de expiración."""
-    _r().setex(f'{REDIS_PROGRESS_PREFIX}{key}', ttl, json.dumps(data))
+    """Registra datos de progreso genéricos (ej. 'lyrics', 'mb')."""
+    if is_redis_available():
+        try:
+            get_connection().setex(f'{REDIS_PROGRESS_PREFIX}{key}', ttl, json.dumps(data))
+            return
+        except Exception:
+            pass
+    with _mem_lock:
+        _mem_progress[key] = data.copy()
 
 
 def progress_get(key):
-    """Recupera la estructura de progreso genérico desde Redis."""
-    raw = _r().get(f'{REDIS_PROGRESS_PREFIX}{key}')
-    if raw:
-        return json.loads(raw)
-    return None
+    """Recupera la estructura de progreso genérico."""
+    if is_redis_available():
+        try:
+            raw = get_connection().get(f'{REDIS_PROGRESS_PREFIX}{key}')
+            if raw:
+                return json.loads(raw)
+        except Exception:
+            pass
+    with _mem_lock:
+        data = _mem_progress.get(key)
+        return data.copy() if data else None
 
 
 def progress_update(key, **kwargs):
@@ -125,18 +214,13 @@ def progress_update(key, **kwargs):
 
 
 # ==========================================================
-# ⚙️ FUNCIONES RUNNER QUE CORREN EN EL WORKER DE RQ
+# ⚙️ FUNCIONES RUNNER QUE CORREN EN SEGUNDO PLANO
 # ==========================================================
 
 def _progress_wrapper(current_task_id):
-    """
-    Retorna una función callback que traduce payloads del escáner en
-    actualizaciones de progreso dentro de la base de datos clave-valor Redis.
-    """
+    """Retorna un callback que actualiza el estado de la tarea de escaneo."""
     def _progress(payload):
-        t = scan_task_get(current_task_id)
-        if not t:
-            return
+        t = scan_task_get(current_task_id) or {}
         t.update({
             'percent': payload.get('percent', t.get('percent', 0)),
             'message': payload.get('message', t.get('message', '')),
@@ -162,10 +246,7 @@ def _progress_wrapper(current_task_id):
 
 
 def run_full_scan(task_id):
-    """
-    Ejecuta un escaneo completo de la carpeta de audio indexando archivos nuevos
-    y analizando la acústica de las canciones. Corre dentro del proceso del worker.
-    """
+    """Ejecuta un escaneo completo de la carpeta de audio."""
     from app import create_app
     from app.services.scanner import escanear_carpeta_audio
 
@@ -174,29 +255,24 @@ def run_full_scan(task_id):
         progress = _progress_wrapper(task_id)
         try:
             resumen = escanear_carpeta_audio(progress_callback=progress)
-            t = scan_task_get(task_id)
-            if t:
-                t['status'] = 'done'
-                t['percent'] = 100
-                t['summary'] = resumen
-                t['message'] = 'Escaneo finalizado'
-                scan_task_set(task_id, t)
+            t = scan_task_get(task_id) or {}
+            t['status'] = 'done'
+            t['percent'] = 100
+            t['summary'] = resumen
+            t['message'] = 'Escaneo finalizado'
+            scan_task_set(task_id, t)
         except Exception as ex:
-            t = scan_task_get(task_id)
-            if t:
-                t['status'] = 'error'
-                t['error'] = str(ex)
-                t['message'] = f'Error: {ex}'
-                scan_task_set(task_id, t)
+            t = scan_task_get(task_id) or {}
+            t['status'] = 'error'
+            t['error'] = str(ex)
+            t['message'] = f'Error: {ex}'
+            scan_task_set(task_id, t)
         finally:
             scan_set_active(None)
 
 
 def run_quick_scan(task_id):
-    """
-    Ejecuta un escaneo rápido (comparando marcas de tiempo de archivos en disco).
-    Evita reprocesar archivos estables acelerando el inicio. Corre dentro del worker.
-    """
+    """Ejecuta un escaneo rápido."""
     from app import create_app
     from app.services.scanner import escaneo_rapido
 
@@ -205,28 +281,24 @@ def run_quick_scan(task_id):
         progress = _progress_wrapper(task_id)
         try:
             resumen = escaneo_rapido(progress_callback=progress)
-            t = scan_task_get(task_id)
-            if t:
-                t['status'] = 'done'
-                t['percent'] = 100
-                t['summary'] = resumen
-                t['message'] = 'Escaneo rápido finalizado'
-                scan_task_set(task_id, t)
+            t = scan_task_get(task_id) or {}
+            t['status'] = 'done'
+            t['percent'] = 100
+            t['summary'] = resumen
+            t['message'] = 'Escaneo rápido finalizado'
+            scan_task_set(task_id, t)
         except Exception as ex:
-            t = scan_task_get(task_id)
-            if t:
-                t['status'] = 'error'
-                t['error'] = str(ex)
-                t['message'] = f'Error: {ex}'
-                scan_task_set(task_id, t)
+            t = scan_task_get(task_id) or {}
+            t['status'] = 'error'
+            t['error'] = str(ex)
+            t['message'] = f'Error: {ex}'
+            scan_task_set(task_id, t)
         finally:
             scan_set_active(None)
 
 
 def run_generate_daily_mixes(usuario_id):
-    """
-    Ejecuta la generación de mixes diarios en segundo plano dentro del worker RQ.
-    """
+    """Ejecuta la generación de mixes diarios en segundo plano."""
     from app import create_app
     from app.services.recommender import generate_daily_mixes_for_user
 
@@ -235,5 +307,4 @@ def run_generate_daily_mixes(usuario_id):
         try:
             generate_daily_mixes_for_user(usuario_id)
         except Exception as e:
-            app.logger.error(f"[RQ Daily Mixes] Error al generar mixes en segundo plano: {e}")
-
+            app.logger.error(f"[Daily Mixes] Error al generar mixes en segundo plano: {e}")
