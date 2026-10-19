@@ -21,7 +21,7 @@ from pathlib import Path
 from sqlalchemy import func as sqlfunc
 from sqlalchemy.orm import joinedload
 
-from flask import Blueprint, render_template, request, redirect, url_for, session, abort, current_app
+from flask import Blueprint, request, redirect, url_for, session, abort, current_app, jsonify
 from config import Config
 from app.models import db, Usuario, Artista, Album, Cancion, Favorito, Coleccion, DailyMix, HistorialEscucha
 
@@ -32,16 +32,26 @@ from app.services.recommender import generate_daily_mixes_for_user
 main_bp = Blueprint('main', __name__)
 
 
+def _album_card_payload(album, track_count=0, total_duration=None, cover_url=None):
+    """Datos que consume React para tarjetas de album."""
+    payload = {
+        'album': album.to_dict(),
+        'album_id': album.id,
+        'id': album.id,
+        'titulo': album.titulo,
+        'anio': album.anio,
+        'artista_id': album.artista_id,
+        'cover_url': cover_url if cover_url is not None else _album_cover_url(album),
+        'track_count': int(track_count or 0),
+    }
+    if total_duration is not None:
+        payload['total_duration'] = int(total_duration or 0)
+    return payload
+
+
 # ==============================================================================
 # SECCIÓN 1: VISTA DE INICIO Y REDIRECCIONES DE ACCESO
 # ==============================================================================
-
-@main_bp.route('/')
-def index():
-    """Redirige al dashboard si el usuario está autenticado, o al login en caso contrario."""
-    if 'user_id' in session:
-        return redirect(url_for('main.dashboard'))
-    return redirect(url_for('auth.login'))
 
 
 # ==============================================================================
@@ -55,9 +65,6 @@ def dashboard():
     Renderiza la biblioteca completa ordenada por título junto a los mixes del día,
     álbumes nuevos, artistas agregados y un listado de descubrimientos recientes.
     """
-    if 'user_id' not in session:
-        return redirect(url_for('auth.login'))
-    
     # Evitamos cargar la biblioteca completa (Cancion.query.all()) en el dashboard
     # ya que no se renderiza en la vista principal y degrada masivamente el rendimiento.
     canciones = []
@@ -90,19 +97,27 @@ def dashboard():
     # 2. Obtener feeds de descubrimiento para la interfaz fluida
     albumes_recientes = Album.query.order_by(Album.id.desc()).limit(12).all()
     artistas_recientes = Artista.query.order_by(Artista.id.desc()).limit(12).all()
-    top_canciones = db.session.query(
-        Cancion,
-        sqlfunc.count(HistorialEscucha.id).label('plays')
-    ).join(
-        HistorialEscucha,
-        HistorialEscucha.cancion_id == Cancion.id
-    ).filter(
-        HistorialEscucha.skip == False
-    ).group_by(
-        Cancion
-    ).order_by(
-        db.desc('plays')
-    ).limit(5).all()
+    
+    # Canciones más reproducidas: consulta directa rápida por play_count indexado
+    top_canciones_list = Cancion.query.filter(Cancion.play_count > 0).order_by(Cancion.play_count.desc()).limit(5).all()
+    if top_canciones_list:
+        top_canciones_data = [{'cancion': c.to_dict(), 'plays': int(c.play_count)} for c in top_canciones_list]
+    else:
+        top_canciones = db.session.query(
+            Cancion,
+            sqlfunc.count(HistorialEscucha.id).label('plays')
+        ).join(
+            HistorialEscucha,
+            HistorialEscucha.cancion_id == Cancion.id
+        ).filter(
+            HistorialEscucha.skip == False
+        ).group_by(
+            Cancion
+        ).order_by(
+            db.desc('plays')
+        ).limit(5).all()
+        top_canciones_data = [{'cancion': c.to_dict(), 'plays': int(plays)} for c, plays in top_canciones]
+
     canciones_recientes = Cancion.query.order_by(Cancion.fecha_agregada.desc()).limit(5).all()
     dashboard_stats = {
         'canciones': Cancion.query.count(),
@@ -111,41 +126,36 @@ def dashboard():
         'mixes': len(daily_mixes)
     }
 
-    return render_template('dashboard.html', 
-                           canciones=canciones, 
-                           usuario=session.get('nombre_usuario'), 
-                           is_admin=is_admin, 
-                           es_favoritos=False,
-                           daily_mixes=daily_mixes,
-                           spotlight_mix=spotlight_mix,
-                           albumes_recientes=albumes_recientes,
-                           artistas_recientes=artistas_recientes,
-                           dashboard_stats=dashboard_stats,
-                           top_canciones=top_canciones,
-                           canciones_recientes=canciones_recientes)
+    return {
+        'usuario': session.get('nombre_usuario'),
+        'is_admin': is_admin,
+        'daily_mixes': [m.to_dict() for m in daily_mixes],
+        'spotlight_mix': spotlight_mix.to_dict() if spotlight_mix else None,
+        'albumes_recientes': [_album_card_payload(a, track_count=len(a.canciones)) for a in albumes_recientes],
+        'artistas_recientes': [art.to_dict() for art in artistas_recientes],
+        'dashboard_stats': dashboard_stats,
+        'top_canciones': top_canciones_data,
+        'canciones_recientes': [c.to_dict() for c in canciones_recientes]
+    }
 
 
 @main_bp.route('/favoritos')
 def favoritos():
     """Lista las canciones que el usuario ha marcado con 'Me gusta'."""
-    if 'user_id' not in session:
-        return redirect(url_for('auth.login'))
-        
     usuario_obj = db.session.get(Usuario, session['user_id'])
     is_admin = usuario_obj.is_admin() if usuario_obj else False
     
-    favoritos_rel = Favorito.query.filter_by(usuario_id=session['user_id'])\
-        .order_by(Favorito.fecha_agregado.desc()).all()
-        
-    canciones = []
-    for fav in favoritos_rel:
-        c = db.session.get(Cancion, fav.cancion_id)
-        if c:
-            canciones.append(c)
+    canciones = Cancion.query.join(
+        Favorito, Favorito.cancion_id == Cancion.id
+    ).filter(
+        Favorito.usuario_id == session['user_id']
+    ).order_by(Favorito.fecha_agregado.desc()).all()
             
-    return render_template('dashboard.html', canciones=canciones,
-                           usuario=session.get('nombre_usuario'),
-                           is_admin=is_admin, es_favoritos=True)
+    return {
+        'usuario': session.get('nombre_usuario'),
+        'is_admin': is_admin,
+        'favoritos': [c.to_dict() for c in canciones]
+    }
 
 
 # ==============================================================================
@@ -158,32 +168,40 @@ def folders():
     Escanea la carpeta de música física montada en el servidor y genera una vista
     en árbol para permitir explorar las canciones por directorios. Muestra en tiempo real
     cuántas pistas de cada subcarpeta ya han sido indexadas en DuckSound.
+    Optimizado para evitar consultas N+1 en bases de datos grandes.
     """
-    if 'user_id' not in session:
-        return redirect(url_for('auth.login'))
-        
-    usuario_obj = db.session.get(Usuario, session['user_id'])
+    usuario_obj = db.session.get(Usuario, session.get('user_id'))
     is_admin = usuario_obj.is_admin() if usuario_obj else False
 
-    audio_dir = Config.AUDIO_FOLDER
-    tree = {}
+    audio_dir = str(Config.AUDIO_FOLDER)
+    if not os.path.exists(audio_dir):
+        return {'is_admin': is_admin, 'tree': []}
 
-    def build_tree(dirpath, prefix=''):
-        """Función recursiva para escanear y compilar carpetas físicas de audio."""
+    # Cargar rutas de canciones en memoria en una sola consulta para conteo instantáneo
+    try:
+        rutas_db = [r[0].replace('\\', '/') for r in db.session.query(Cancion.ruta_archivo_audio).all() if r[0]]
+    except Exception:
+        rutas_db = []
+
+    def build_tree(dirpath, depth=0):
+        if depth > 3:  # Limitar profundidad para prevenir sobrecargas
+            return []
         items = []
         try:
-            # Ordenar primero carpetas, luego archivos
             for entry in sorted(os.scandir(dirpath), key=lambda e: (not e.is_dir(), e.name.lower())):
+                entry_norm = entry.path.replace('\\', '/')
                 if entry.is_dir():
-                    children = build_tree(entry.path, prefix + entry.name + '/')
-                    # Contar en base de datos cuántas canciones registradas tienen esta subruta
-                    songs = Cancion.query.filter(Cancion.ruta_archivo_audio.like(entry.path.replace('\\', '/') + '%')).count()
+                    if entry.name.startswith(('.', '$')):
+                        continue
+                    children = build_tree(entry.path, depth + 1)
+                    # Conteo rápido en memoria
+                    songs_count = sum(1 for r in rutas_db if r.startswith(entry_norm + '/'))
                     items.append({
                         'name': entry.name,
                         'path': entry.path,
                         'type': 'folder',
                         'children': children,
-                        'song_count': songs
+                        'song_count': songs_count
                     })
                 elif entry.name.lower().endswith(tuple(('.mp3', '.flac', '.wav', '.m4a', '.ogg'))):
                     items.append({
@@ -191,12 +209,13 @@ def folders():
                         'path': entry.path,
                         'type': 'file'
                     })
-        except PermissionError:
-            pass  # Ignorar subcarpetas protegidas sin lanzar error 500
+        except (PermissionError, OSError):
+            pass
         return items
 
     tree = build_tree(audio_dir)
-    return render_template('folders.html', tree=tree, is_admin=is_admin)
+    return {'is_admin': is_admin, 'tree': tree}
+
 
 
 # ==============================================================================
@@ -206,23 +225,17 @@ def folders():
 @main_bp.route('/colecciones')
 def colecciones_list():
     """Muestra todas las listas de reproducción creadas por el usuario autenticado."""
-    if 'user_id' not in session:
-        return redirect(url_for('auth.login'))
-        
     usuario_obj = db.session.get(Usuario, session['user_id'])
     is_admin = usuario_obj.is_admin() if usuario_obj else False
     
     colecciones = Coleccion.query.filter_by(usuario_id=session['user_id'])\
         .order_by(Coleccion.fecha_creacion.desc()).all()
-    return render_template('colecciones.html', colecciones=colecciones, is_admin=is_admin)
+    return {'is_admin': is_admin, 'colecciones': [c.to_dict() for c in colecciones]}
 
 
 @main_bp.route('/coleccion/<int:coleccion_id>')
 def coleccion_detail(coleccion_id):
     """Muestra el catálogo y la cola de canciones de una playlist/colección."""
-    if 'user_id' not in session:
-        return redirect(url_for('auth.login'))
-        
     coleccion = Coleccion.query.get_or_404(coleccion_id)
     
     # Restricción de propiedad: no permitir a usuarios ver playlists ajenas
@@ -231,7 +244,11 @@ def coleccion_detail(coleccion_id):
         
     usuario_obj = db.session.get(Usuario, session['user_id'])
     is_admin = usuario_obj.is_admin() if usuario_obj else False
-    return render_template('coleccion_detail.html', coleccion=coleccion, is_admin=is_admin)
+    return {
+        'is_admin': is_admin,
+        'coleccion': coleccion.to_dict(),
+        'songs': [c.to_dict() for c in coleccion.canciones]
+    }
 
 
 # ==============================================================================
@@ -242,26 +259,19 @@ def coleccion_detail(coleccion_id):
 @main_bp.route('/daily-mixes')
 def daily_mixes_redirect():
     """Compatibilidad: la lista de mixes vive en el dashboard principal."""
-    if 'user_id' not in session:
-        return redirect(url_for('auth.login'))
     return redirect(url_for('main.dashboard'))
 
 
 @main_bp.route('/daily-mix/<int:mix_id>')
 def daily_mix_detail(mix_id):
     """Muestra el tracklist y la interfaz de reproducción de una mezcla diaria."""
-    if 'user_id' not in session:
-        return redirect(url_for('auth.login'))
-        
     mix = DailyMix.query.get_or_404(mix_id)
     if mix.usuario_id != session['user_id']:
         abort(403)
     
-    print(f"DEBUG: Mix {mix_id} songs count: {len(mix.canciones)}")
-    
     usuario_obj = db.session.get(Usuario, session['user_id'])
     is_admin = usuario_obj.is_admin() if usuario_obj else False
-    return render_template('daily_mix_detail.html', mix=mix, is_admin=is_admin)
+    return {'is_admin': is_admin, 'mix': mix.to_dict()}
 
 
 # ==============================================================================
@@ -290,9 +300,6 @@ def _album_total_duration(album):
 @main_bp.route('/explore')
 def explore():
     """Ruta del Dashboard de Exploración. Muestra el mosaico de artistas y álbumes."""
-    if 'user_id' not in session:
-        return redirect(url_for('auth.login'))
-        
     artists = Artista.query.order_by(Artista.nombre).all()
     
     # Conteo agrupado y eficiente en una sola transacción SQL para evitar N+1
@@ -302,20 +309,14 @@ def explore():
     
     albums_data = []
     for al, track_count in album_stats:
-        albums_data.append({
-            'album': al,
-            'cover_url': _album_cover_url(al),
-            'track_count': track_count
-        })
-    return render_template('explore.html', artists=artists, albums_data=albums_data)
+        albums_data.append(_album_card_payload(al, track_count=track_count))
+
+    return {'artists': [a.to_dict() for a in artists], 'albums_data': albums_data}
 
 
 @main_bp.route('/artists')
 def artists_list():
     """Lista completa de artistas de la plataforma con agregaciones cargadas previamente."""
-    if 'user_id' not in session:
-        return redirect(url_for('auth.login'))
-
     # Agrupaciones masivas en base de datos para latencia ultra-baja
     album_counts = db.session.query(Album.artista_id, sqlfunc.count(Album.id)).group_by(Album.artista_id).all()
     album_dict = {a_id: count for a_id, count in album_counts}
@@ -323,7 +324,9 @@ def artists_list():
     song_counts = db.session.query(Cancion.artista_id, sqlfunc.count(Cancion.id)).group_by(Cancion.artista_id).all()
     song_dict = {a_id: count for a_id, count in song_counts}
 
-    artists = Artista.query.order_by(Artista.nombre).all()
+    from app.services.parsers import get_sort_name, natural_sort_key
+    artists = Artista.query.all()
+    artists.sort(key=lambda a: natural_sort_key(get_sort_name(a.nombre)))
     artists_data = []
     
     # Obtener el primer álbum de cada artista de manera masiva para usar su portada en el mosaico
@@ -342,20 +345,17 @@ def artists_list():
         cover_url = _album_cover_url(fa) if fa else None
         
         artists_data.append({
-            'artist': a,
+            'artist': a.to_dict(),
             'album_count': ac,
             'song_count': sc,
             'cover_url': cover_url
         })
-    return render_template('artists.html', artists_data=artists_data)
+    return {'artists_data': artists_data}
 
 
 @main_bp.route('/artist/<int:artist_id>')
 def artist_detail(artist_id):
-    """Muestra el catálogo detallado de un artista (biografía, álbumes e index de canciones)."""
-    if 'user_id' not in session:
-        return redirect(url_for('auth.login'))
-        
+    """Muestra el catálogo detallado de un artista (biografía, álbumes oficiales, apariciones y canciones)."""
     artist = Artista.query.get_or_404(artist_id)
     songs = Cancion.query.filter_by(artista_id=artist.id).order_by(
         Cancion.album_id,
@@ -364,51 +364,98 @@ def artist_detail(artist_id):
         Cancion.titulo.asc()
     ).all()
     
+    # Álbumes oficiales del artista
     album_stats = db.session.query(
         Album, sqlfunc.count(Cancion.id).label('track_count')
     ).outerjoin(Cancion).filter(Album.artista_id == artist.id).group_by(Album.id).order_by(Album.anio.desc()).all()
     
     albums_data = []
+    albums_only = []
+    singles_eps = []
+    own_album_ids = set()
     for al, track_count in album_stats:
-        albums_data.append({
-            'album': al,
-            'cover_url': _album_cover_url(al),
-            'track_count': track_count
-        })
+        own_album_ids.add(al.id)
+        card = _album_card_payload(al, track_count=track_count)
+        albums_data.append(card)
+        if track_count <= 3:
+            singles_eps.append(card)
+        else:
+            albums_only.append(card)
+
+    # Buscar "Aparece en" (Appears On):
+    # Álbumes de otros artistas donde participa este artista (pistas del artista o feat en el título)
+    collab_album_ids = set()
+    # 1. Canciones donde artista_id coincide pero el album no es suyo
+    collab_songs_q = db.session.query(Cancion.album_id).filter(
+        Cancion.artista_id == artist.id,
+        Cancion.album_id.isnot(None)
+    )
+    if own_album_ids:
+        collab_songs_q = collab_songs_q.filter(~Cancion.album_id.in_(own_album_ids))
+    for r in collab_songs_q.distinct().all():
+        if r[0]:
+            collab_album_ids.add(r[0])
+
+    # 2. Canciones de otros artistas donde el título incluye feat/ft con el nombre de este artista
+    feat_filter = (
+        Cancion.titulo.ilike(f'%feat% {artist.nombre}%') |
+        Cancion.titulo.ilike(f'%ft% {artist.nombre}%') |
+        Cancion.titulo.ilike(f'%(feat% {artist.nombre}%)') |
+        Cancion.titulo.ilike(f'%(ft% {artist.nombre}%)')
+    )
+    feat_q = db.session.query(Cancion.album_id).filter(
+        feat_filter,
+        Cancion.album_id.isnot(None)
+    )
+    if own_album_ids:
+        feat_q = feat_q.filter(~Cancion.album_id.in_(own_album_ids))
+    for r in feat_q.distinct().all():
+        if r[0]:
+            collab_album_ids.add(r[0])
+
+    appears_on = []
+    if collab_album_ids:
+        collab_albums = db.session.query(
+            Album, sqlfunc.count(Cancion.id).label('track_count')
+        ).outerjoin(Cancion).filter(Album.id.in_(collab_album_ids)).group_by(Album.id).order_by(Album.anio.desc()).all()
+        for al, track_count in collab_albums:
+            appears_on.append(_album_card_payload(al, track_count=track_count))
+
     album_count = len(albums_data)
     song_count = len(songs)
-    return render_template('artist.html', artist=artist, albums_data=albums_data, songs=songs, album_count=album_count, song_count=song_count)
+    return {
+        'artist': artist.to_dict(),
+        'albums_data': albums_data,
+        'albums_only': albums_only,
+        'singles_eps': singles_eps,
+        'appears_on': appears_on,
+        'songs': [s.to_dict() for s in songs],
+        'album_count': album_count,
+        'song_count': song_count
+    }
 
 
 @main_bp.route('/albums')
 def albums_list():
     """Listado general de Álbumes en DuckSound con sus respectivas agregaciones de tiempo y conteo."""
-    if 'user_id' not in session:
-        return redirect(url_for('auth.login'))
-        
+    from app.services.parsers import get_sort_name, natural_sort_key
     album_stats = db.session.query(
         Album,
         sqlfunc.count(Cancion.id).label('track_count'),
         sqlfunc.coalesce(sqlfunc.sum(Cancion.duracion), 0).label('total_dur')
-    ).outerjoin(Cancion).group_by(Album.id).order_by(Album.titulo).all()
+    ).outerjoin(Cancion).group_by(Album.id).all()
     
     albums_data = []
     for al, track_count, total_dur in album_stats:
-        albums_data.append({
-            'album': al,
-            'cover_url': _album_cover_url(al),
-            'track_count': track_count,
-            'total_duration': total_dur
-        })
-    return render_template('albums.html', albums_data=albums_data)
+        albums_data.append(_album_card_payload(al, track_count=track_count, total_duration=total_dur))
+
+    albums_data.sort(key=lambda card: natural_sort_key(get_sort_name(card['album']['titulo'])))
+    return {'albums_data': albums_data}
 
 
 @main_bp.route('/album/<int:album_id>')
 def album_detail(album_id):
     """Muestra la lista de reproducción estructurada de un álbum, ordenando canciones por disco y pista."""
-    if 'user_id' not in session:
-        return redirect(url_for('auth.login'))
-        
     album = Album.query.get_or_404(album_id)
     songs = Cancion.query.filter_by(album_id=album.id).order_by(
         Cancion.numero_disco.asc(),
@@ -426,22 +473,28 @@ def album_detail(album_id):
     
     discos_ordenados = sorted(discos_dict.items())
     
+    from app.services.parsers import get_track_sort_pos
     def get_track_num(c):
         if hasattr(c, 'numero_pista') and c.numero_pista is not None:
-            return c.numero_pista
-        filename = c.ruta_archivo_audio.replace('\\', '/').split('/')[-1]
-        m = re.match(r'^\s*(\d+)', filename)
-        return int(m.group(1)) if m else 9999
+            t = c.numero_pista
+        else:
+            filename = c.ruta_archivo_audio.replace('\\', '/').split('/')[-1]
+            m = re.match(r'^\s*(\d+)', filename)
+            t = int(m.group(1)) if m else 999
+        return get_track_sort_pos(c.numero_disco, t)
     
     discos = []
     for disc_num, canciones_disco in discos_ordenados:
         canciones_ordenadas = sorted(canciones_disco, key=get_track_num)
-        discos.append((disc_num, canciones_ordenadas))
+        discos.append({
+            'disc_num': disc_num,
+            'songs': [c.to_dict() for c in canciones_ordenadas]
+        })
     
     cover_url = _album_cover_url(album)
     total_dur = _album_total_duration(album)
     track_count = len(songs)
-    return render_template('album.html', album=album, discos=discos, cover_url=cover_url, total_duration=total_dur, track_count=track_count)
+    return {'album': album.to_dict(), 'discos': discos, 'cover_url': cover_url, 'total_duration': total_dur, 'track_count': track_count}
 
 
 # ==============================================================================
@@ -458,58 +511,80 @@ def user_stats():
 def profile():
     """
     Renderiza la ficha de Perfil de Usuario con estadísticas enriquecidas:
-    - Las 10 canciones más escuchadas (excluyendo skips rápidos).
-    - Los 8 artistas más reproducidos.
-    - Volumen de audición global.
-    - Horas acumuladas totales escuchando canciones.
-    - Conteo de canciones reproducidas en las últimas 24 horas.
+    Soporta filtro dinámico por ventana de tiempo con query param: period=week|month|all.
     """
-    if 'user_id' not in session:
-        return redirect(url_for('auth.login'))
-        
+    from flask import request
     usuario = db.session.get(Usuario, session['user_id'])
     if not usuario:
-        return redirect(url_for('auth.login'))
+        session.clear()
+        return jsonify({'error': 'Usuario no encontrado'}), 401
         
     is_admin = usuario.is_admin()
     user_id = session['user_id']
     from app.models import HistorialEscucha
 
+    period = request.args.get('period', 'all').lower()
+    now = datetime.utcnow()
+    start_date = None
+    if period == 'week':
+        start_date = now - timedelta(days=7)
+    elif period == 'month':
+        start_date = now - timedelta(days=30)
+    elif period == 'day':
+        start_date = now - timedelta(days=1)
+
     # 1. Top 10 canciones más escuchadas del usuario
-    top_songs = db.session.query(
+    top_songs_q = db.session.query(
         Cancion, sqlfunc.count(HistorialEscucha.id).label('plays')
     ).join(HistorialEscucha).filter(
         HistorialEscucha.usuario_id == user_id,
         HistorialEscucha.skip == False
-    ).group_by(Cancion).order_by(db.desc('plays')).limit(10).all()
+    )
+    if start_date:
+        top_songs_q = top_songs_q.filter(HistorialEscucha.reproducido_en >= start_date)
+    top_songs = top_songs_q.group_by(Cancion).order_by(db.desc('plays')).limit(10).all()
 
     # 2. Top 8 artistas más reproducidos
-    top_artists = db.session.query(
+    top_artists_q = db.session.query(
         Artista.nombre, Artista.id, sqlfunc.count(HistorialEscucha.id).label('plays')
     ).select_from(HistorialEscucha)\
         .join(Cancion, HistorialEscucha.cancion_id == Cancion.id)\
         .join(Artista, Cancion.artista_id == Artista.id)\
-        .filter(HistorialEscucha.usuario_id == user_id, HistorialEscucha.skip == False)\
-        .group_by(Artista.id)\
-        .order_by(db.desc('plays')).limit(8).all()
+        .filter(HistorialEscucha.usuario_id == user_id, HistorialEscucha.skip == False)
+    if start_date:
+        top_artists_q = top_artists_q.filter(HistorialEscucha.reproducido_en >= start_date)
+    top_artists = top_artists_q.group_by(Artista.id, Artista.nombre).order_by(db.desc('plays')).limit(8).all()
 
     # 3. Suma total de audiciones completas
-    total_plays = HistorialEscucha.query.filter_by(usuario_id=user_id, skip=False).count()
+    plays_q = HistorialEscucha.query.filter_by(usuario_id=user_id, skip=False)
+    if start_date:
+        plays_q = plays_q.filter(HistorialEscucha.reproducido_en >= start_date)
+    total_plays = plays_q.count()
 
     # 4. Horas dedicadas en total
-    total_hours = db.session.query(sqlfunc.sum(Cancion.duracion))\
+    dur_q = db.session.query(sqlfunc.sum(Cancion.duracion))\
         .join(HistorialEscucha)\
         .filter(HistorialEscucha.usuario_id == user_id, HistorialEscucha.skip == False,
-                Cancion.duracion.isnot(None)).scalar() or 0
-    total_hours = total_hours // 3600  # Reducir segundos agregados a horas enteras
+                Cancion.duracion.isnot(None))
+    if start_date:
+        dur_q = dur_q.filter(HistorialEscucha.reproducido_en >= start_date)
+    total_seconds = int(dur_q.scalar() or 0)
+    total_hours = round(total_seconds / 3600.0, 1)
 
     # 5. Escuchas en las últimas 24 horas
     last_24h = HistorialEscucha.query.filter(
         HistorialEscucha.usuario_id == user_id,
-        HistorialEscucha.reproducido_en >= datetime.utcnow() - timedelta(hours=24)
+        HistorialEscucha.reproducido_en >= now - timedelta(hours=24)
     ).count()
 
-    return render_template('profile.html', usuario=usuario, is_admin=is_admin,
-                           top_songs=top_songs, top_artists=top_artists,
-                           total_plays=total_plays, total_hours=total_hours,
-                           last_24h=last_24h)
+    return {
+        'usuario': usuario.to_dict(),
+        'is_admin': is_admin,
+        'period': period,
+        'top_songs': [{'cancion': c[0].to_dict(), 'plays': c[1]} for c in top_songs],
+        'top_artists': [{'nombre': a[0], 'id': a[1], 'plays': a[2]} for a in top_artists],
+        'total_plays': total_plays,
+        'total_hours': total_hours,
+        'total_seconds': total_seconds,
+        'last_24h': last_24h
+    }

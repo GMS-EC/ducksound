@@ -20,7 +20,8 @@ import time as _time
 import requests as _requests
 from datetime import datetime
 
-from flask import Blueprint, render_template, request, redirect, url_for, session, jsonify, current_app
+from flask import Blueprint, request, session, jsonify, current_app, url_for
+
 from config import Config
 from app.models import db, Usuario, Artista, Album, Cancion, Coleccion, Favorito
 
@@ -49,9 +50,6 @@ def _is_admin_session():
     """
     Comprueba si existe un usuario logueado en la sesión actual y si este posee
     el rol de administrador ('admin').
-    
-    Returns:
-        bool: True si el usuario actual es administrador autenticado, False en caso contrario.
     """
     if 'user_id' not in session:
         return False
@@ -61,15 +59,15 @@ def _is_admin_session():
 
 
 def _is_admin_request():
-    """
-    Validador de peticiones administrativas.
-    Al ser el repositorio público, se ha eliminado la validación por token de entorno estático
-    para evitar vulnerabilidades de seguridad, confiando puramente en la autenticación por sesión segura.
-    
-    Returns:
-        bool: True si la sesión actual pertenece a un administrador.
-    """
+    """Validador retrocompatible de peticiones administrativas."""
     return _is_admin_session()
+
+
+@admin_bp.before_request
+def require_admin():
+    """Valida automáticamente que todas las peticiones a rutas de administración pertenezcan a un administrador."""
+    if not _is_admin_session():
+        return jsonify({'error': 'Unauthorized', 'message': 'Acceso administrativo denegado'}), 401
 
 
 # ==============================================================================
@@ -80,17 +78,12 @@ def _is_admin_request():
 def escanear_canciones():
     """
     Despierta síncronamente el escaneo de la biblioteca en disco de música.
-    Muestra directamente el resultado en el navegador una vez concluido el proceso.
     """
-    if not _is_admin_request():
-        return jsonify({'error': 'Unauthorized'}), 401
-
     try:
         resumen = escanear_carpeta_audio()
+        return jsonify({'success': True, 'resumen': resumen})
     except Exception as e:
-        return render_template('scan_result.html', error=str(e), resumen=None)
-
-    return render_template('scan_result.html', error=None, resumen=resumen)
+        return jsonify({'error': str(e)}), 500
 
 
 @admin_bp.route('/admin/clean_metadata', methods=['POST'])
@@ -100,9 +93,6 @@ def admin_clean_metadata():
     Limpia canciones huérfanas físicas, unifica artistas tipográficamente duplicados
     y fusiona álbumes de forma segura.
     """
-    if not _is_admin_request():
-        return jsonify({'error': 'Unauthorized'}), 401
-
     # Bloquear si ya hay una tarea de escaneo o limpieza activa en segundo plano
     existing_tid, existing_task = scan_get_active()
     if existing_tid and existing_task and existing_task.get('status') in ('running', 'enriching'):
@@ -121,7 +111,6 @@ def admin_clean_metadata():
 
     def _run_clean():
         """Rutina asíncrona de limpieza y unificación de la biblioteca de DuckSound."""
-        # Se necesita un contexto de aplicación de Flask para consultas de SQLAlchemy dentro de hilos
         from app import create_app
         app = create_app()
         
@@ -133,126 +122,27 @@ def admin_clean_metadata():
                     scan_task_set(task_id, t)
             
             try:
-                emit({'message': 'Eliminando canciones huérfanas...', 'percent': 5})
-                
-                # 1. Eliminar canciones cuyo archivo físico ya no exista
-                canciones = Cancion.query.all()
-                eliminadas = 0
-                for c in canciones:
-                    if not os.path.exists(c.ruta_archivo_audio):
-                        db.session.delete(c)
-                        eliminadas += 1
-                if eliminadas > 0:
-                    db.session.commit()
-                    
-                    # Eliminar álbumes que se hayan quedado vacíos
-                    albumes_all = Album.query.all()
-                    for a in albumes_all:
-                        if not a.canciones:
-                            db.session.delete(a)
-                            
-                    # Eliminar artistas que no tengan obras ni álbumes
-                    artistas_all = Artista.query.all()
-                    for a in artistas_all:
-                        if not a.canciones and not a.albums:
-                            db.session.delete(a)
-                    db.session.commit()
+                from app.services.scanner import limpiar_entidades_vacias, normalizar_biblioteca
+                emit({'message': 'Eliminando canciones huérfanas y registros vacíos...', 'percent': 10})
+                limpiar_entidades_vacias()
 
-                # 2. Agrupación por coincidencia fonética o tipográfica de Artistas
-                emit({'message': 'Buscando artistas para agrupar...', 'percent': 10})
-                artistas = Artista.query.all()
-                total = len(artistas)
-                
-                mergeados = 0
-                renombrados = 0
-                
-                for idx, artista in enumerate(artistas):
-                    emit({
-                        'percent': 10 + int((idx/total)*40),
-                        'message': f'Artistas: {artista.nombre}',
-                        'processed': idx,
-                        'total': total
-                    })
-                    nombre_norm = normalizar_artista(artista.nombre)
-                    
-                    # Comprobar si existe otro artista con el mismo nombre normalizado pero id inferior
-                    artista_existente = Artista.query.filter(Artista.nombre == nombre_norm, Artista.id < artista.id).first()
-                    if artista_existente:
-                        # Reasignar obras y colecciones al artista canonical principal
-                        from app.services.metadata import actualizar_tags_disco
-                        for cancion in artista.canciones:
-                            cancion.artista_id = artista_existente.id
-                            if cancion.ruta_archivo_audio:
-                                try:
-                                    actualizar_tags_disco(cancion.ruta_archivo_audio, artista=artista_existente.nombre)
-                                except Exception:
-                                    pass
-                        for album in artista.albums:
-                            album.artista_id = artista_existente.id
-                        db.session.delete(artista)
-                        mergeados += 1
-                    elif nombre_norm != artista.nombre:
-                        from app.services.metadata import actualizar_tags_disco
-                        for cancion in artista.canciones:
-                            if cancion.ruta_archivo_audio:
-                                try:
-                                    actualizar_tags_disco(cancion.ruta_archivo_audio, artista=nombre_norm)
-                                except Exception:
-                                    pass
-                        artista.nombre = nombre_norm
-                        renombrados += 1
-                db.session.commit()
-                
-                # 3. Unificación de Álbumes duplicados del mismo artista
-                emit({'message': 'Buscando álbumes para unificar...', 'percent': 50})
-                albumes = Album.query.all()
-                total_al = len(albumes)
-                for idx, album in enumerate(albumes):
-                    emit({
-                        'percent': 50 + int((idx/total_al)*40),
-                        'message': f'Álbumes: {album.titulo}',
-                        'processed': idx,
-                        'total': total_al
-                    })
-                    titulo_norm = normalizar_album(album.titulo)
-                    
-                    album_existente = Album.query.filter(
-                        Album.titulo == titulo_norm,
-                        Album.artista_id == album.artista_id,
-                        Album.id < album.id
-                    ).first()
-                    if album_existente:
-                        from app.services.metadata import actualizar_tags_disco
-                        for cancion in album.canciones:
-                            cancion.album_id = album_existente.id
-                            if cancion.ruta_archivo_audio:
-                                try:
-                                    actualizar_tags_disco(cancion.ruta_archivo_audio, album=album_existente.titulo)
-                                except Exception:
-                                    pass
-                        db.session.delete(album)
-                    elif titulo_norm != album.titulo:
-                        from app.services.metadata import actualizar_tags_disco
-                        for cancion in album.canciones:
-                            if cancion.ruta_archivo_audio:
-                                try:
-                                    actualizar_tags_disco(cancion.ruta_archivo_audio, album=titulo_norm)
-                                except Exception:
-                                    pass
-                        album.titulo = titulo_norm
-                db.session.commit()
-                
-                # Notificar finalización de la tarea en Redis
+                emit({'message': 'Normalizando biblioteca de artistas y álbumes...', 'percent': 30})
+                resumen = normalizar_biblioteca(
+                    progress_callback=lambda p: emit({
+                        'percent': p.get('percent', 50),
+                        'message': p.get('message', 'Normalizando...'),
+                        'processed': p.get('processed', 0),
+                        'total': p.get('total', 0)
+                    }),
+                    percent_start=30,
+                    percent_end=95
+                )
+
                 emit({
                     'status': 'done',
                     'percent': 100,
                     'message': 'Limpieza terminada con éxito.',
-                    'summary': {
-                        'agregadas': 0,
-                        'actualizadas': renombrados,
-                        'omitidas': mergeados,
-                        'procesadas': total + total_al
-                    }
+                    'summary': resumen
                 })
             except Exception as e:
                 emit({'status': 'error', 'message': str(e), 'percent': 100})
@@ -268,8 +158,6 @@ def admin_scan_start():
     Encola un escaneo completo de música de forma asíncrona mediante Redis Queue (RQ).
     Devuelve un task_id para que el cliente realice polling de progreso.
     """
-    if not _is_admin_request():
-        return jsonify({'error': 'Unauthorized'}), 401
 
     existing_tid, existing_task = scan_get_active()
     if existing_tid and existing_task and existing_task.get('status') in ('running', 'enriching'):
@@ -297,8 +185,6 @@ def admin_scan_quick():
     Encola un escaneo rápido de música de forma asíncrona mediante Redis Queue (RQ).
     Compara marcas de tiempo de modificación (mtime) para procesar únicamente archivos nuevos o alterados.
     """
-    if not _is_admin_request():
-        return jsonify({'error': 'Unauthorized'}), 401
 
     existing_tid, existing_task = scan_get_active()
     if existing_tid and existing_task and existing_task.get('status') in ('running', 'enriching'):
@@ -324,8 +210,6 @@ def admin_scan_active():
     """
     API de monitoreo simple para averiguar si existe un escaneo actualmente activo en el sistema.
     """
-    if not _is_admin_request():
-        return jsonify({'error': 'Unauthorized'}), 401
 
     tid, task = scan_get_active()
     if tid and task and task.get('status') in ('running', 'enriching'):
@@ -344,8 +228,6 @@ def admin_scan_status(task_id):
     """
     API detallada de progreso que devuelve el diccionario de avance de un escaneo en base a su ID.
     """
-    if not _is_admin_request():
-        return jsonify({'error': 'Unauthorized'}), 401
 
     task = scan_task_get(task_id)
     if not task:
@@ -373,8 +255,6 @@ def admin_panel():
     Extrae el historial de cambios (CHANGELOG.md) desde la rama `main` en GitHub
     para reflejar las actualizaciones estables, con fallback al archivo local en disco.
     """
-    if not _is_admin_request():
-        return jsonify({'error': 'Unauthorized'}), 401
     
     versions = []
     cl_content = ""
@@ -482,7 +362,7 @@ def admin_panel():
             else:
                 v['status'] = 'older'
     
-    return render_template('admin.html', changelog_versions=versions)
+    return jsonify({'changelog_versions': versions})
 
 
 @admin_bp.route('/admin/check-update', methods=['GET'])
@@ -490,8 +370,6 @@ def admin_check_update():
     """
     Compara la versión local instalada con el tag publicado en el release más reciente de GitHub.
     """
-    if not _is_admin_request():
-        return jsonify({'error': 'Unauthorized'}), 401
 
     current_version = Config.APP_VERSION
     headers = {
@@ -541,8 +419,6 @@ def admin_enrich_artists():
     Llama asíncronamente al enriquecedor de metadatos de artistas.
     Trae biografías y fotos de perfil que falten en la base de datos DuckSound.
     """
-    if not _is_admin_request():
-        return jsonify({'error': 'Unauthorized'}), 401
 
     try:
         actualizados, total = enrich_all_artists()
@@ -559,11 +435,8 @@ def admin_enrich_artists():
 @admin_bp.route('/admin/artistas')
 def admin_artistas():
     """
-    Panel CRUD y visor para editar e ingresar identidades MusicBrainz (MBID)
-    y Deezer ID a los artistas en DuckSound.
+    API para la gestión de artistas.
     """
-    if not _is_admin_request():
-        return redirect(url_for('auth.login'))
         
     query = request.args.get('q', '').strip()
     if query:
@@ -573,7 +446,12 @@ def admin_artistas():
         
     total = Artista.query.count()
     con_mbid = Artista.query.filter(Artista.musicbrainz_id.isnot(None)).count()
-    return render_template('admin_artistas.html', artistas=artistas, total=total, con_mbid=con_mbid, query=query)
+    return jsonify({
+        'artistas': [a.to_dict() for a in artistas],
+        'total': total,
+        'con_mbid': con_mbid,
+        'query': query
+    })
 
 
 @admin_bp.route('/admin/artistas/preview-metadata', methods=['POST'])
@@ -582,8 +460,6 @@ def admin_preview_artist_metadata():
     API instantánea de previsualización que consulta al scraper Deezer/MusicBrainz
     los detalles del artista que se obtendrían de los IDs proporcionados en el body.
     """
-    if not _is_admin_request():
-        return jsonify({'error': 'Unauthorized'}), 401
     
     data = request.get_json(force=True)
     if not data:
@@ -740,8 +616,6 @@ def admin_lookup_artist_mbid(artist_id):
     Busca de manera interactiva y automática en los servidores de MusicBrainz
     proponiendo un MBID para el artista basado en su nombre DuckSound.
     """
-    if not _is_admin_request():
-        return jsonify({'error': 'Unauthorized'}), 401
         
     artista = db.session.get(Artista, artist_id)
     if not artista:
@@ -771,10 +645,9 @@ def admin_estadisticas():
     Carga el Panel de Estadísticas Administrativas.
     Genera métricas de uso agregando el historial global de reproducciones y bibliotecas.
     """
-    if not _is_admin_request():
-        return jsonify({'error': 'Unauthorized'}), 401
 
     from app.models import HistorialEscucha
+    import shutil
     
     resumen = {
         'usuarios': Usuario.query.count(),
@@ -809,13 +682,87 @@ def admin_estadisticas():
 
     # Canciones agregadas recientemente
     canciones_recientes = Cancion.query.order_by(Cancion.fecha_agregada.desc()).limit(8).all()
-    
-    return render_template('admin_stats.html', 
-                           resumen=resumen, 
-                           canciones_recientes=canciones_recientes,
-                           top_songs=top_songs,
-                           top_artist=top_artist,
-                           top_genre=top_genre)
+
+    # Actividad de escucha reciente (últimas 15 reproducciones)
+    recientes = HistorialEscucha.query.order_by(HistorialEscucha.reproducido_en.desc()).limit(15).all()
+    actividad_reciente = []
+    for r in recientes:
+        actividad_reciente.append({
+            'id': r.id,
+            'nombre_usuario': r.usuario.nombre_usuario if r.usuario else 'Desconocido',
+            'cancion_titulo': r.cancion.titulo if r.cancion else 'Desconocido',
+            'artista_nombre': r.cancion.artista_obj.nombre if r.cancion and r.cancion.artista_obj else 'Desconocido',
+            'reproducido_en': r.reproducido_en.isoformat() if r.reproducido_en else None,
+            'skip': r.skip
+        })
+
+    # Información de disco del volumen de datos
+    data_dir = '/data' if os.path.exists('/data') else '.'
+    disk_total, disk_used, disk_free = shutil.disk_usage(data_dir)
+    disk_usage = {
+        'total': disk_total,
+        'used': disk_used,
+        'free': disk_free,
+        'percent': round((disk_used / disk_total) * 100, 1) if disk_total > 0 else 0
+    }
+
+    # Información de tamaños de caché
+    transcode_size = 0
+    original_size = 0
+    try:
+        if Config.TRANSCODE_CACHE_FOLDER.exists():
+            transcode_size = sum(f.stat().st_size for f in Config.TRANSCODE_CACHE_FOLDER.glob('**/*') if f.is_file())
+        if Config.ORIGINAL_CACHE_FOLDER.exists():
+            original_size = sum(f.stat().st_size for f in Config.ORIGINAL_CACHE_FOLDER.glob('**/*') if f.is_file())
+    except Exception as e:
+        current_app.logger.warning(f"Error al calcular tamaños de caché: {e}")
+
+    return jsonify({
+        'resumen': resumen, 
+        'canciones_recientes': [c.to_dict() for c in canciones_recientes],
+        'top_songs': [{'cancion': c.to_dict(), 'plays': p} for c, p in top_songs],
+        'top_artist': {'artista': top_artist[0].to_dict(), 'plays': top_artist[1]} if top_artist else None,
+        'top_genre': {'genero': top_genre[0], 'plays': top_genre[1]} if top_genre else None,
+        'actividad_reciente': actividad_reciente,
+        'disk_usage': disk_usage,
+        'cache': {
+            'transcode_size': transcode_size,
+            'original_size': original_size,
+            'total_size': transcode_size + original_size
+        }
+    })
+
+
+@admin_bp.route('/admin/cache/clear', methods=['POST'])
+def admin_clear_cache():
+    """
+    Vacía las carpetas de caché local de audio transcodificado y original.
+    """
+
+    try:
+        transcode_folder = Config.TRANSCODE_CACHE_FOLDER
+        original_folder = Config.ORIGINAL_CACHE_FOLDER
+        
+        transcode_count = 0
+        if transcode_folder.exists():
+            for f in transcode_folder.iterdir():
+                if f.is_file():
+                    f.unlink()
+                    transcode_count += 1
+                    
+        original_count = 0
+        if original_folder.exists():
+            for f in original_folder.iterdir():
+                if f.is_file():
+                    f.unlink()
+                    original_count += 1
+                    
+        return jsonify({
+            'success': True,
+            'message': f'Caché vaciado. Se eliminaron {transcode_count} archivos de transcodificación y {original_count} archivos originales.'
+        })
+    except Exception as e:
+        return jsonify({'error': f'Error al vaciar caché: {str(e)}'}), 500
 
 
 # ==============================================================================
@@ -825,13 +772,25 @@ def admin_estadisticas():
 @admin_bp.route('/admin/usuarios', methods=['GET'])
 def admin_usuarios_list():
     """
-    Renderiza el Panel de Gestión de Usuarios y lista todas las cuentas registradas.
+    Renderiza el Panel de Gestión de Usuarios y lista todas las cuentas registradas con metadatos enriquecidos.
     """
-    if not _is_admin_request():
-        return jsonify({'error': 'Unauthorized'}), 401
 
     usuarios = Usuario.query.all()
-    return render_template('admin_usuarios.html', usuarios=usuarios)
+    res = []
+    for u in usuarios:
+        d = u.to_dict()
+        d['fecha_creacion'] = u.fecha_creacion.isoformat() if u.fecha_creacion else None
+        d['sesiones_activas'] = u.sesiones.count()
+        
+        # Buscar última actividad
+        last_active = None
+        for s in u.sesiones:
+            if not last_active or (s.ultima_actividad and s.ultima_actividad > last_active):
+                last_active = s.ultima_actividad
+        d['ultima_actividad'] = last_active.isoformat() if last_active else None
+        res.append(d)
+
+    return jsonify({'usuarios': res})
 
 
 @admin_bp.route('/admin/usuarios/crear', methods=['POST'])
@@ -840,8 +799,6 @@ def admin_crear_usuario():
     Crea manualmente una nueva cuenta de usuario en la plataforma.
     Valida contraseñas y unicidad de nombre de usuario de forma segura.
     """
-    if not _is_admin_request():
-        return jsonify({'error': 'Unauthorized'}), 401
 
     data = request.get_json() or {}
     nombre_usuario = data.get('nombre_usuario', '').strip()
@@ -861,26 +818,101 @@ def admin_crear_usuario():
     nuevo_usuario.set_password(password)
     db.session.add(nuevo_usuario)
     db.session.commit()
+    return jsonify({'success': True, 'message': 'Usuario creado correctamente'})
 
-    return jsonify({
-        'id': nuevo_usuario.id,
-        'nombre_usuario': nuevo_usuario.nombre_usuario,
-        'role': nuevo_usuario.role,
-        'message': 'Usuario creado exitosamente'
-    }), 201
+
+@admin_bp.route('/admin/usuarios/<int:user_id>/editar', methods=['POST'])
+def admin_editar_usuario(user_id):
+    """
+    Edita la información de un usuario (nombre, contraseña o rol).
+    """
+
+    usuario = db.session.get(Usuario, user_id)
+    if not usuario:
+        return jsonify({'error': 'Usuario no encontrado'}), 404
+
+    data = request.get_json() or {}
+    nombre_usuario = data.get('nombre_usuario', '').strip()
+    password = data.get('password', '').strip()
+    role = data.get('role', 'user')
+
+    if nombre_usuario:
+        existente = Usuario.query.filter_by(nombre_usuario=nombre_usuario).first()
+        if existente and existente.id != user_id:
+            return jsonify({'error': 'El nombre de usuario ya está en uso'}), 400
+        usuario.nombre_usuario = nombre_usuario
+
+    if password:
+        if len(password) < 6:
+            return jsonify({'error': 'La contraseña debe tener al menos 6 caracteres'}), 400
+        usuario.set_password(password)
+
+    # Prevenir que un admin se quite privilegios a sí mismo
+    from flask import session
+    current_user_id = session.get('user_id')
+    if usuario.id == current_user_id and role != 'admin':
+        return jsonify({'error': 'No puedes quitarte el rol de administrador a ti mismo'}), 400
+
+    usuario.role = role
+
+    try:
+        db.session.commit()
+        return jsonify({'success': True, 'message': 'Usuario actualizado correctamente'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Error al actualizar usuario: {str(e)}'}), 500
+
+
+@admin_bp.route('/admin/usuarios/<int:user_id>/eliminar', methods=['POST'])
+def admin_eliminar_usuario(user_id):
+    """
+    Elimina a un usuario y realiza una limpieza en cascada.
+    """
+
+    usuario = db.session.get(Usuario, user_id)
+    if not usuario:
+        return jsonify({'error': 'Usuario no encontrado'}), 404
+
+    from flask import session
+    current_user_id = session.get('user_id')
+    if usuario.id == current_user_id:
+        return jsonify({'error': 'No puedes eliminar tu propia cuenta de administrador'}), 400
+
+    try:
+        from app.models import SesionActiva, Favorito, Coleccion, HistorialEscucha, DailyMix, daily_mix_canciones
+        
+        # Eliminar relaciones
+        SesionActiva.query.filter_by(usuario_id=user_id).delete()
+        Favorito.query.filter_by(usuario_id=user_id).delete()
+        Coleccion.query.filter_by(usuario_id=user_id).delete()
+        HistorialEscucha.query.filter_by(usuario_id=user_id).delete()
+        
+        # Eliminar Daily Mixes y sus asociaciones
+        mixes = DailyMix.query.filter_by(usuario_id=user_id).all()
+        for m in mixes:
+            db.session.execute(
+                daily_mix_canciones.delete().where(daily_mix_canciones.c.mix_id == m.id)
+            )
+            db.session.delete(m)
+
+        db.session.delete(usuario)
+        db.session.commit()
+        return jsonify({'success': True, 'message': 'Usuario eliminado correctamente'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Error al eliminar usuario: {str(e)}'}), 500
 
 
 # ==============================================================================
 # SECCIÓN 6: GESTIÓN DE LETRAS (BUSCAR, OBTENER Y GUARDAR)
 # ==============================================================================
 
+@admin_bp.route('/admin/lyrics/search', methods=['GET'])
 @admin_bp.route('/api/admin/lyrics/search', methods=['GET'])
 def admin_lyrics_search():
     """
     Busca canciones por título o artista y retorna el estado de sus letras.
     """
-    if not _is_admin_request():
-        return jsonify({'error': 'Unauthorized'}), 401
 
     query_str = request.args.get('q', '').strip()
     if not query_str:
@@ -927,8 +959,6 @@ def admin_get_lyrics(cancion_id):
     """
     Retorna la letra cruda de una canción para editar.
     """
-    if not _is_admin_request():
-        return jsonify({'error': 'Unauthorized'}), 401
 
     cancion = db.session.get(Cancion, cancion_id)
     if not cancion:
@@ -966,8 +996,6 @@ def admin_save_lyrics(cancion_id):
     """
     Guarda las letras editadas/sincronizadas de una canción.
     """
-    if not _is_admin_request():
-        return jsonify({'error': 'Unauthorized'}), 401
 
     cancion = db.session.get(Cancion, cancion_id)
     if not cancion:
@@ -984,7 +1012,11 @@ def admin_save_lyrics(cancion_id):
             except Exception:
                 pass
         cancion.ruta_archivo_lrc = None
-        db.session.commit()
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            return jsonify({'error': 'Failed to delete lyrics from database'}), 500
         from app.services.lyrics import _lyrics_cache
         _lyrics_cache.pop(cancion_id, None)
         return jsonify({'success': True, 'message': 'Letra eliminada'})
@@ -1002,11 +1034,8 @@ def admin_save_lyrics(cancion_id):
 @admin_bp.route('/admin/albumes')
 def admin_albumes():
     """
-    Panel CRUD y visor para editar álbumes, asignarles MusicBrainz ID,
-    año de lanzamiento y portadas oficiales desde Deezer.
+    API para la gestión de álbumes.
     """
-    if not _is_admin_request():
-        return redirect(url_for('auth.login'))
         
     query = request.args.get('q', '').strip()
     if query:
@@ -1020,7 +1049,13 @@ def admin_albumes():
     con_mbid = Album.query.filter(Album.musicbrainz_id.isnot(None)).count()
     con_portada = Album.query.filter(Album.portada_url.isnot(None)).count()
     
-    return render_template('admin_albumes.html', albumes=albumes, total=total, con_mbid=con_mbid, con_portada=con_portada, query=query)
+    return jsonify({
+        'albumes': [a.to_dict() for a in albumes],
+        'total': total,
+        'con_mbid': con_mbid,
+        'con_portada': con_portada,
+        'query': query
+    })
 
 
 @admin_bp.route('/admin/albumes/preview-metadata', methods=['POST'])
@@ -1029,8 +1064,6 @@ def admin_preview_album_metadata():
     API instantánea de previsualización que consulta al scraper Deezer/MusicBrainz
     los detalles del álbum a partir de los IDs provistos.
     """
-    if not _is_admin_request():
-        return jsonify({'error': 'Unauthorized'}), 401
         
     data = request.get_json(force=True)
     if not data:
@@ -1057,8 +1090,6 @@ def admin_update_album_metadata(album_id):
     Actualiza el título, año, MBID y portada de un álbum.
     Limpia el caché de miniaturas para forzar la actualización de imágenes en toda la app.
     """
-    if not _is_admin_request():
-        return jsonify({'error': 'Unauthorized'}), 401
         
     album = db.session.get(Album, album_id)
     if not album:
@@ -1150,4 +1181,140 @@ def admin_update_album_metadata(album_id):
             'portada_url': album.portada_url or ''
         }
     })
+
+
+# ==============================================================================
+# EXPLORADOR DE CARPETAS FÍSICAS (SOLO ADMINISTRADORES)
+# ==============================================================================
+
+@admin_bp.route('/api/admin/folders', methods=['GET'])
+def api_admin_folders():
+    """
+    Lista el contenido de carpetas físicas dentro de AUDIO_FOLDER.
+    Protegido exclusivamente para administradores.
+    """
+    if not _is_admin_session() and not _validate_admin_token(request.headers.get('Authorization')):
+        return jsonify({'error': 'Acceso denegado: solo administradores'}), 403
+
+    from pathlib import Path
+    base_folder = Path(Config.AUDIO_FOLDER).resolve()
+    rel_param = request.args.get('path', '').strip().replace('\\', '/')
+    if rel_param.startswith('/'):
+        rel_param = rel_param.lstrip('/')
+
+    target_dir = (base_folder / rel_param).resolve()
+
+    # Prevenir Directory Traversal fuera de AUDIO_FOLDER
+    try:
+        target_dir.relative_to(base_folder)
+    except ValueError:
+        return jsonify({'error': 'Ruta inválida fuera del directorio de música'}), 400
+
+    if not target_dir.exists() or not target_dir.is_dir():
+        return jsonify({'error': 'El directorio no existe'}), 404
+
+    folders = []
+    files = []
+
+    try:
+        entries = sorted(os.scandir(target_dir), key=lambda e: (not e.is_dir(), e.name.lower()))
+        for entry in entries:
+            if entry.name.startswith('.'):
+                continue
+            
+            entry_rel = str(Path(entry.path).relative_to(base_folder)).replace('\\', '/')
+            if entry.is_dir():
+                # Contar archivos de música internos para dar contexto
+                audio_count = 0
+                try:
+                    for sub in os.scandir(entry.path):
+                        if sub.is_file() and sub.name.rsplit('.', 1)[-1].lower() in Config.ALLOWED_AUDIO_EXTENSIONS:
+                            audio_count += 1
+                except Exception:
+                    pass
+                folders.append({
+                    'name': entry.name,
+                    'path': entry_rel,
+                    'track_count': audio_count
+                })
+            elif entry.is_file():
+                ext = entry.name.rsplit('.', 1)[-1].lower()
+                if ext in Config.ALLOWED_AUDIO_EXTENSIONS:
+                    # Buscar si la canción ya está indexada en la base de datos
+                    cancion = Cancion.query.filter_by(ruta_archivo_audio=os.path.abspath(entry.path)).first()
+                    if not cancion:
+                        # Buscar por coincidencia con ruta relativa o posix
+                        cancion = Cancion.query.filter(Cancion.ruta_archivo_audio.like(f"%{entry.name}")).first()
+                        
+                    files.append({
+                        'name': entry.name,
+                        'path': entry_rel,
+                        'extension': ext,
+                        'size': entry.stat().st_size,
+                        'song': cancion.to_dict() if cancion else None
+                    })
+    except Exception as e:
+        current_app.logger.error(f"[Admin Folders] Error explorando {target_dir}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+    parent_rel = None
+    if target_dir != base_folder:
+        p = target_dir.parent
+        parent_rel = str(p.relative_to(base_folder)).replace('\\', '/') if p != base_folder else ""
+
+    return jsonify({
+        'current_path': rel_param,
+        'parent_path': parent_rel,
+        'folder_name': target_dir.name if target_dir != base_folder else 'Música',
+        'folders': folders,
+        'files': files
+    }), 200
+
+
+@admin_bp.route('/api/admin/folders/play', methods=['POST'])
+def api_admin_folders_play():
+    """
+    Retorna la lista de todas las canciones reproducibles dentro de una carpeta.
+    Permite reproducir un directorio completo al instante.
+    """
+    if not _is_admin_session() and not _validate_admin_token(request.headers.get('Authorization')):
+        return jsonify({'error': 'Acceso denegado: solo administradores'}), 403
+
+    from pathlib import Path
+    data = request.get_json(silent=True) or {}
+    rel_path = data.get('path', '').strip().replace('\\', '/').lstrip('/')
+    
+    base_folder = Path(Config.AUDIO_FOLDER).resolve()
+    target_dir = (base_folder / rel_path).resolve()
+    
+    try:
+        target_dir.relative_to(base_folder)
+    except ValueError:
+        return jsonify({'error': 'Ruta inválida'}), 400
+
+    if not target_dir.exists() or not target_dir.is_dir():
+        return jsonify({'error': 'Directorio no encontrado'}), 404
+
+    songs = []
+    for root, _, filenames in os.walk(target_dir):
+        for fn in sorted(filenames):
+            ext = fn.rsplit('.', 1)[-1].lower()
+            if ext in Config.ALLOWED_AUDIO_EXTENSIONS:
+                f_path = os.path.abspath(os.path.join(root, fn))
+                c = Cancion.query.filter_by(ruta_archivo_audio=f_path).first()
+                if c:
+                    songs.append(c.to_dict())
+                else:
+                    # Crear objeto cancion provisional para streaming directo
+                    songs.append({
+                        'id': f_path,
+                        'titulo': fn.rsplit('.', 1)[0],
+                        'artista': 'Desconocido',
+                        'album': target_dir.name,
+                        'duracion': None,
+                        'ruta_audio': f"/audio/direct?path={os.path.relpath(f_path, base_folder)}",
+                        'ruta_imagen': None
+                    })
+                    
+    return jsonify({'songs': songs, 'count': len(songs)}), 200
 

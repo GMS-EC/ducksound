@@ -7,10 +7,13 @@ import os
 import sys
 import secrets
 from datetime import datetime, timedelta
-from flask import Flask, session, redirect, url_for, request, jsonify, render_template, current_app
+from flask import Flask, session, redirect, url_for, request, jsonify, current_app, abort
 from flask_compress import Compress
+from flask_cors import CORS
 from config import Config
 from app.models import db, Usuario, SesionActiva
+
+__version__ = '1.0.0'
 
 # Habilitar soporte UTF-8 para la salida en consola en entornos de desarrollo Windows
 if sys.platform == 'win32':
@@ -31,52 +34,78 @@ def create_app(config_class=Config):
     Returns:
         Flask: Instancia completamente configurada de la aplicación Flask.
     """
-    app = Flask(__name__)
+    app = Flask(__name__, static_folder='../frontend/dist', static_url_path='/')
+    app.version = __version__
     app.config.from_object(config_class)
 
     # 1. Inicialización de extensiones
     db.init_app(app)
     compress.init_app(app)
+    
+    # CORS: permitir que el frontend (React en :5173) acceda a la API
+    # CORS con configuración dinámica desde config.py
+    cors_origins = app.config.get('CORS_ORIGINS', ["http://localhost:5173", "http://127.0.0.1:5173"])
+    CORS(app, supports_credentials=True, origins=cors_origins)
+
+    # Optimización para SQLite: WAL mode para lecturas instantáneas y alta concurrencia
+    if app.config['SQLALCHEMY_DATABASE_URI'].startswith('sqlite'):
+        from sqlalchemy import event
+        from sqlalchemy.engine import Engine
+        @event.listens_for(Engine, "connect")
+        def set_sqlite_pragma(dbapi_connection, connection_record):
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
 
     # 2. Creación automática de esquemas de base de datos
     with app.app_context():
         db.create_all()
         
-        # Migración de base de datos para la columna 'audio_quality'
+        # Migración segura agnóstica para 'audio_quality'
         try:
-            from sqlalchemy import text
-            with db.engine.connect() as conn:
-                # Comprobar si la columna existe (funciona para Postgres y SQLite)
-                columnas = conn.execute(text(
-                    "SELECT column_name FROM information_schema.columns "
-                    "WHERE table_name='usuarios' AND column_name='audio_quality'"
-                )).fetchall()
-                if not columnas:
-                    try:
+            from sqlalchemy import inspect, text
+            inspector = inspect(db.engine)
+            if 'usuarios' in inspector.get_table_names():
+                columns = [c['name'] for c in inspector.get_columns('usuarios')]
+                if 'audio_quality' not in columns:
+                    with db.engine.connect() as conn:
                         conn.execute(text("ALTER TABLE usuarios ADD COLUMN audio_quality VARCHAR(20) NOT NULL DEFAULT 'lossless'"))
                         conn.commit()
-                        print("✅ [DuckSound] Columna 'audio_quality' agregada exitosamente a la tabla usuarios.")
-                    except Exception as sqle:
-                        if "duplicate column" in str(sqle).lower() or "already exists" in str(sqle).lower():
-                            pass
-                        else:
-                            raise sqle
-                else:
-                    print("✅ [DuckSound] La columna 'audio_quality' ya existe en la tabla usuarios.")
+                    print("✅ [DuckSound] Columna 'audio_quality' agregada exitosamente a la tabla usuarios.")
         except Exception as e:
             print(f"⚠️ [DuckSound] Error en migración de base de datos para 'audio_quality': {e}")
+
         
-        # Crear un usuario administrador inicial por defecto si la base de datos está vacía
+        # Crear o actualizar usuario administrador desde configuración / .env
         try:
-            if Usuario.query.count() == 0:
+            admin_user = Usuario.query.filter_by(role='admin').first()
+            default_user = app.config.get('ADMIN_USERNAME', 'ducksound')
+            default_pass = app.config.get('ADMIN_PASSWORD', 'ducksound')
+
+            if not admin_user:
+                # Si no hay admin, crearlo
                 admin_user = Usuario(
-                    nombre_usuario='ducksound',
+                    nombre_usuario=default_user,
                     role='admin'
                 )
-                admin_user.set_password('ducksound')  # Contraseña por defecto
+                admin_user.set_password(default_pass)
                 db.session.add(admin_user)
                 db.session.commit()
-                print("⚠️ [DuckSound] Usuario administrador inicial creado: ducksound / ducksound")
+                print(f"✅ [DuckSound] Usuario administrador inicial creado: {default_user}")
+            else:
+                # Si se definieron explícitamente en el entorno, sincronizar cambios
+                updated = False
+                if os.environ.get('ADMIN_PASSWORD') and not admin_user.check_password(default_pass):
+                    admin_user.set_password(default_pass)
+                    updated = True
+                if os.environ.get('ADMIN_USERNAME') and admin_user.nombre_usuario != default_user:
+                    admin_user.nombre_usuario = default_user
+                    updated = True
+                if updated:
+                    db.session.commit()
+                    print(f"✅ [DuckSound] Credenciales de administrador sincronizadas desde .env: {admin_user.nombre_usuario}")
         except Exception as e:
             db.session.rollback()
             print(f"⚠️ [DuckSound] No se pudo comprobar/crear usuario inicial: {e}")
@@ -97,22 +126,32 @@ def create_app(config_class=Config):
         except Exception as e:
             print(f"⚠️ [DuckSound] Error limpiando sesiones: {e}")
 
+        # Iniciar vigilancia de archivos en tiempo real (Watchdog del sistema de archivos)
+        try:
+            from app.services.watcher import iniciar_vigilancia
+            iniciar_vigilancia(app)
+        except Exception as e:
+            print(f"⚠️ [DuckSound] Error iniciando vigilancia watchdog: {e}")
+
     # 3. Interceptores de Seguridad y Encabezados HTTP globales
     @app.errorhandler(403)
     def forbidden_error(e):
-        return render_template('errors/403.html'), 403
+        return jsonify({'error': 'Forbidden', 'message': 'Acceso denegado'}), 403
 
     @app.errorhandler(404)
     def not_found_error(e):
-        return render_template('errors/404.html'), 404
+        return jsonify({'error': 'Not Found', 'message': 'El recurso solicitado no existe'}), 404
 
     @app.errorhandler(500)
     def internal_server_error(e):
-        return render_template('errors/500.html'), 500
+        return jsonify({'error': 'Internal Server Error', 'message': 'Ocurrió un error inesperado en el servidor'}), 500
 
     @app.route('/favicon.ico')
     def favicon():
-        return redirect(url_for('static', filename='img/favicon.png'))
+        try:
+            return app.send_static_file('favicon.png')
+        except Exception:
+            return '', 204
 
     @app.after_request
     def add_security_headers(response):
@@ -123,72 +162,75 @@ def create_app(config_class=Config):
         return response
 
     @app.before_request
+    def serve_spa():
+        """
+        Interviene antes de require_login y de la ejecución de rutas.
+        Si la petición es GET, acepta 'text/html' y no se refiere a rutas
+        especiales de medios/API directas, sirve directamente la SPA (index.html).
+        """
+        if request.method in ('GET', 'HEAD') and 'text/html' in request.headers.get('Accept', ''):
+            if (request.path.startswith('/audio/') or 
+                request.path.startswith('/album-art/') or 
+                request.path.startswith('/lyrics/') or
+                request.path.startswith('/api/')):
+                return None
+            
+            try:
+                return app.send_static_file('index.html')
+            except Exception:
+                abort(404)
+
+    @app.before_request
     def require_login():
         """
         Escudo global: Intercepta todas las peticiones entrantes.
         Si la sesión de usuario no está activa y el recurso es privado, deniega el acceso.
         Valida además que la sesión no haya sido revocada remotamente.
         """
-        # Se incluye tanto 'main.index' como 'index' y 'auth.login' para evitar bucles de redirección
-        allowed_endpoints = ['auth.login', 'static', 'favicon', 'index', 'main.index']
+        # Se incluye catch_all para permitir cargar el index de la SPA sin redirección infinita
+        allowed_endpoints = ['auth.login', 'static', 'favicon', 'index', 'catch_all']
         
         if request.method == 'OPTIONS':
             return
             
         # Si no hay sesión activa y el endpoint es privado
         if request.endpoint and request.endpoint not in allowed_endpoints and 'user_id' not in session:
-            # Peticiones AJAX / API
-            if request.path.startswith('/api/'):
-                return jsonify({'error': 'Acceso denegado: Inicia sesión primero'}), 401
-                
             # Respuestas planas de audio, letras y carátulas (previene fugas de HTML a reproductores)
             if request.path.startswith('/audio/') or request.path.startswith('/album-art/') or request.path.startswith('/lyrics/'):
                 return "Acceso denegado", 401
                 
-            # Redireccionar a la página de login
-            return redirect(url_for('auth.login'))
+            return jsonify({'error': 'Acceso denegado: Inicia sesión primero'}), 401
         
         # Validar que la sesión no haya sido revocada remotamente
         if 'user_id' in session and request.endpoint and request.endpoint not in allowed_endpoints:
             token = session.get('session_token')
             if token:
-                # 1. Intentar validación rápida vía Redis
                 from app.services.queue import get_connection
+                sesion_db = None
+                # 1. Intentar validación rápida vía Redis
                 try:
                     r = get_connection()
-                    cached_user_id = r.get(f"ducksound:session:{token}")
-                    if cached_user_id:
-                        # Sesión válida y cacheada
+                    if r and r.get(f"ducksound:session:{token}"):
                         pass
                     else:
-                        # 2. Fallback a DB si no está en caché
                         sesion_db = SesionActiva.query.filter_by(session_token=token).first()
                         if not sesion_db:
-                            # La sesión fue revocada
                             session.clear()
-                            if request.path.startswith('/api/'):
-                                return jsonify({'error': 'Sesión revocada'}), 401
-                            return redirect(url_for('auth.login'))
-                        
-                        # Actualizar caché para futuras peticiones
-                        r.setex(f"ducksound:session:{token}", 3600, sesion_db.usuario_id)
-                except Exception as e:
-                    # En caso de error de Redis, fallamos hacia la DB para no bloquear al usuario
+                            return jsonify({'error': 'Sesión revocada'}), 401
+                        if r:
+                            r.setex(f"ducksound:session:{token}", 3600, sesion_db.usuario_id)
+                except Exception:
+                    # En caso de error de Redis, fallback a la DB
                     sesion_db = SesionActiva.query.filter_by(session_token=token).first()
                     if not sesion_db:
                         session.clear()
-                        if request.path.startswith('/api/'):
-                            return jsonify({'error': 'Sesión revocada'}), 401
-                        return redirect(url_for('auth.login'))
+                        return jsonify({'error': 'Sesión revocada'}), 401
                 
                 # Actualizar última actividad cada 5 minutos para no saturar la DB
                 ahora = datetime.utcnow()
-                # Solo intentamos actualizar si ya tenemos el objeto sesion_db o si ha pasado tiempo
-                # Para evitar el UnboundLocalError, primero nos aseguramos de tener el objeto si queremos actualizarlo
                 try:
-                    if 'sesion_db' not in locals():
+                    if sesion_db is None:
                         sesion_db = SesionActiva.query.filter_by(session_token=token).first()
-                    
                     if sesion_db and (not sesion_db.ultima_actividad or (ahora - sesion_db.ultima_actividad) > timedelta(minutes=5)):
                         sesion_db.ultima_actividad = ahora
                         db.session.commit()
@@ -204,7 +246,7 @@ def create_app(config_class=Config):
         """
         if request.method not in ["GET", "HEAD", "OPTIONS", "TRACE"]:
             # Eximir APIs y administración
-            if request.path.startswith('/api/') or request.path.startswith('/admin/'):
+            if request.path.startswith('/api/') or request.path.startswith('/admin/') or request.path == '/login':
                 return
             
             token = session.get('_csrf_token')
@@ -218,47 +260,7 @@ def create_app(config_class=Config):
             if not req_token or req_token != token:
                 return jsonify({'error': 'Token CSRF inválido o faltante'}), 403
 
-    def generate_csrf_token():
-        """Genera un token CSRF seguro en formato hexadecimal para la sesión actual."""
-        if '_csrf_token' not in session:
-            session['_csrf_token'] = secrets.token_hex(32)
-        return session['_csrf_token']
 
-    # Registrar el generador de token CSRF en el motor de plantillas Jinja2
-    app.jinja_env.globals['csrf_token'] = generate_csrf_token
-
-    # Proxy inteligente para url_for en Jinja para asegurar compatibilidad de plantillas monolíticas antiguas sin namespace
-    original_url_for = app.jinja_env.globals.get('url_for')
-    if original_url_for:
-        def smart_url_for(endpoint, **values):
-            try:
-                return original_url_for(endpoint, **values)
-            except Exception:
-                # Si el endpoint tiene un namespace antiguo o incorrecto (ej: 'browse.explore'),
-                # extraemos solo el nombre de la función ('explore') para intentar resolverlo.
-                func_name = endpoint.split('.')[-1]
-                for prefix in ['main', 'audio', 'api', 'auth', 'admin']:
-                    try:
-                        return original_url_for(f"{prefix}.{func_name}", **values)
-                    except Exception:
-                        pass
-                raise
-        app.jinja_env.globals['url_for'] = smart_url_for
-
-    @app.context_processor
-    def inject_user_info():
-        """Inyecta información básica de sesión del usuario en todas las plantillas Jinja2."""
-        user_info = {
-            'usuario_autenticado': session.get('nombre_usuario'),
-            'user_id': session.get('user_id'),
-            'app_version': Config.APP_VERSION
-        }
-        if session.get('user_id'):
-            user_obj = db.session.get(Usuario, session['user_id'])
-            user_info['es_admin'] = user_obj.is_admin() if user_obj else False
-        else:
-            user_info['es_admin'] = False
-        return user_info
 
     # 4. Registro centralizado de Blueprints
     from app.routes import auth_bp, admin_bp, audio_bp, main_bp, api_bp
@@ -267,6 +269,17 @@ def create_app(config_class=Config):
     app.register_blueprint(audio_bp)
     app.register_blueprint(main_bp)
     app.register_blueprint(api_bp)
+
+    @app.route('/', defaults={'path': ''})
+    @app.route('/<path:path>')
+    def catch_all(path):
+        # Evitar capturar rutas de la API, audio, admin o ficheros estáticos de assets
+        if path.startswith('api/') or path.startswith('audio/') or path.startswith('admin/') or path.startswith('login') or path.startswith('logout') or path.startswith('album-art/') or path.startswith('lyrics/'):
+            abort(404)
+        try:
+            return app.send_static_file('index.html')
+        except Exception:
+            abort(404)
 
     return app
 

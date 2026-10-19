@@ -74,13 +74,13 @@ wait_for_service() {
     done
 }
 
-# Esperar PostgreSQL si hay DATABASE_URL configurado
-if [ -n "$DATABASE_URL" ]; then
-    wait_for_service "PostgreSQL" "postgres" "5432"
+# Esperar PostgreSQL solo si DATABASE_URL o DB_HOST apuntan a Postgres
+if [[ "$DATABASE_URL" == *"postgres"* ]] || { [ -n "$DB_HOST" ] && [ "$DB_HOST" != "localhost" ] && [ "$DB_HOST" != "none" ] && [ "$DB_HOST" != "sqlite" ]; }; then
+    wait_for_service "PostgreSQL" "${DB_HOST:-postgres}" "${DB_PORT:-5432}"
 fi
 
-# Esperar Redis si hay host remoto configurado
-if [ -n "$REDIS_HOST" ] && [ "$REDIS_HOST" != "localhost" ]; then
+# Esperar Redis solo si hay host remoto configurado
+if [ -n "$REDIS_HOST" ] && [ "$REDIS_HOST" != "localhost" ] && [ "$REDIS_HOST" != "none" ]; then
     wait_for_service "Redis" "$REDIS_HOST" "${REDIS_PORT:-6379}"
 fi
 
@@ -101,6 +101,15 @@ with app.app_context():
         'ALTER TABLE artistas ADD COLUMN IF NOT EXISTS musicbrainz_id VARCHAR(36)',
         'ALTER TABLE artistas ADD COLUMN IF NOT EXISTS nombre_normalizado VARCHAR(200)',
         'ALTER TABLE albums ADD COLUMN IF NOT EXISTS musicbrainz_id VARCHAR(36)',
+        'ALTER TABLE albums ADD COLUMN IF NOT EXISTS play_count INTEGER DEFAULT 0',
+        'ALTER TABLE canciones ADD COLUMN IF NOT EXISTS play_count INTEGER DEFAULT 0',
+        'ALTER TABLE canciones ADD COLUMN IF NOT EXISTS play_duration INTEGER DEFAULT 0',
+        'ALTER TABLE canciones ADD COLUMN IF NOT EXISTS last_played TIMESTAMP',
+        # Fallback sin 'IF NOT EXISTS' para motores SQLite
+        'ALTER TABLE albums ADD COLUMN play_count INTEGER DEFAULT 0',
+        'ALTER TABLE canciones ADD COLUMN play_count INTEGER DEFAULT 0',
+        'ALTER TABLE canciones ADD COLUMN play_duration INTEGER DEFAULT 0',
+        'ALTER TABLE canciones ADD COLUMN last_played TIMESTAMP',
     ]:
         try:
             db.session.execute(text(col))
@@ -112,6 +121,9 @@ with app.app_context():
         'CREATE INDEX IF NOT EXISTS idx_artistas_nombre_normalizado ON artistas(nombre_normalizado)',
         'CREATE INDEX IF NOT EXISTS idx_artistas_mbid ON artistas(musicbrainz_id)',
         'CREATE INDEX IF NOT EXISTS idx_albums_mbid ON albums(musicbrainz_id)',
+        'CREATE INDEX IF NOT EXISTS idx_canciones_play_count ON canciones(play_count)',
+        'CREATE INDEX IF NOT EXISTS idx_canciones_last_played ON canciones(last_played)',
+        'CREATE INDEX IF NOT EXISTS idx_albums_play_count ON albums(play_count)',
     ]:
         try:
             db.session.execute(text(idx))

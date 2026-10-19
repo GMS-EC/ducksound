@@ -4,22 +4,24 @@ Controlador de Rutas de Audio y Multimedia - DuckSound
 ======================================================
 Este módulo encapsula todas las funciones y endpoints relacionados con el motor de
 reproducción de sonido y metadatos multimedia de la plataforma:
-1. Iframe contenedor persistente para blindar el AudioContext.
-2. Streaming de audio compatible con cabeceras de rango HTTP 206 (Conditional Byte-Range Streaming)
+1. Streaming de audio compatible con cabeceras de rango HTTP 206 (Conditional Byte-Range Streaming)
    para permitir rebobinar, adelantar y cargar búferes parciales en reproductores HTML5.
-3. Servidor de carátulas (Album Art) con cascada de 6 niveles (incluyendo extracción directa
+2. Servidor de carátulas (Album Art) con cascada de 6 niveles (incluyendo extracción directa
    "on the fly" de metadatos incrustados APIC/Vorbis y fallback elegante en gráficos vectoriales SVG).
-4. Servidor de letras (Karaoke LRC) sincronizadas.
-5. Inyección del script Service Worker de la PWA desde la raíz del dominio.
+3. Servidor de letras (Karaoke LRC) sincronizadas.
+4. Inyección del script Service Worker de la PWA desde la raíz del dominio.
 """
 
 import os
 import io
 import re
+import threading
+import shutil
+import time
 from pathlib import Path
 from PIL import Image
 
-from flask import Blueprint, render_template, send_file, send_from_directory, make_response, Response, current_app
+from flask import Blueprint, send_file, send_from_directory, make_response, Response, current_app
 from config import Config
 from app.models import db, Cancion
 
@@ -29,18 +31,45 @@ from app.services.lyrics import obtener_o_descargar_letra
 # Definición del Blueprint de Audio
 audio_bp = Blueprint('audio', __name__)
 
+def resolver_ruta_fisica(original_path):
+    """Resuelve la ruta física real de un archivo en disco soportando entornos Docker/Linux y Windows."""
+    if not original_path:
+        return None
+    if os.path.exists(original_path):
+        return original_path
+        
+    # Conversión heurística de rutas Windows montadas en volúmenes Docker/Linux
+    try:
+        p = original_path.replace('\\', '/')
+        m = re.match(r'^([A-Za-z]):/(.*)', p)
+        if m:
+            alt = '/music/' + m.group(2)
+            if os.path.exists(alt):
+                return alt
+            alt2 = str(Config.MUSIC_FOLDER / m.group(2))
+            if os.path.exists(alt2):
+                return alt2
+    except Exception:
+        pass
 
-# ==============================================================================
-# SECCIÓN 1: VISTA DEL CONTENEDOR PERSISTENTE (PLAYER FRAME)
-# ==============================================================================
+    # Búsqueda directa por nombre en la carpeta de música de Docker
+    try:
+        fname = Path(original_path).name
+        direct_music = Path('/music') / fname
+        if direct_music.exists():
+            return str(direct_music)
+        cfg_music = Config.MUSIC_FOLDER / fname
+        if cfg_music.exists():
+            return str(cfg_music)
+    except Exception:
+        pass
 
-@audio_bp.route('/player_frame')
-def player_frame():
-    """
-    Sirve el marco iframe dedicado del reproductor para aislar y blindar el AudioContext.
-    Evita cortes de sonido durante la navegación SPA del usuario.
-    """
-    return render_template('player_frame.html')
+    # Intentar buscar como ruta relativa al directorio actual
+    rel = os.path.join(os.getcwd(), original_path)
+    if os.path.exists(rel):
+        return rel
+        
+    return None
 
 
 # ==============================================================================
@@ -50,55 +79,19 @@ def player_frame():
 @audio_bp.route('/audio/<int:cancion_id>')
 def servir_audio(cancion_id):
     """
-    Transmite el archivo de audio físico correspondiente a una canción.
-    
-    > [!IMPORTANT]
-    > **Streaming Seekable de Alto Rendimiento:**
-    > Utiliza `conditional=True` en `send_file` para indicarle a Flask/Waitress que procese
-    > y responda nativamente con rangos parciales HTTP 206. Esto permite a los reproductores
-    > HTML5 pausar, retroceder y adelantar de forma instantánea sin descargar todo el archivo.
+    Transmite el archivo de audio correspondiente a una canción, utilizando
+    caché local y streaming al vuelo para evitar latencias de FUSE/Rclone.
     """
     cancion = db.session.get(Cancion, cancion_id)
     if not cancion:
         return "Canción no encontrada", 404
         
     original_path = cancion.ruta_archivo_audio
-    tried_paths = [original_path]
-
-    # ─── PREFERENCIA DE CALIDAD DE AUDIO DEL USUARIO Y TRANSCODIFICACIÓN ───
-    from flask import session
-    usuario_id = session.get('user_id')
-    calidad = 'lossless'
-    if usuario_id:
-        from app.models import Usuario
-        usuario = db.session.get(Usuario, usuario_id)
-        if usuario:
-            calidad = usuario.audio_quality or 'lossless'
-
-    ext_original = Path(original_path).suffix.lower()
+    resolved_path = resolver_ruta_fisica(original_path)
     
-    if calidad == 'lossless':
-        current_app.logger.info(f"[Audio Server] Calidad configurada: Hi-Res Lossless. Transmisión original sin pérdidas (bit-perfect) para ID {cancion_id}.")
-    else:
-        # Si la canción es un formato pesado sin compresión nativa (FLAC, WAV, OGG), verificar caché de transcodificación
-        if ext_original in ['.flac', '.wav', '.ogg']:
-            try:
-                from app.services.transcoder import obtener_ruta_cache, run_background_transcode
-                from app.services.queue import enqueue
-                
-                # Usamos la calidad configurada por el usuario ('high', 'standard', 'saver')
-                ruta_cache = obtener_ruta_cache(cancion_id, calidad=calidad)
-                if ruta_cache.exists() and ruta_cache.stat().st_size > 0:
-                    current_app.logger.info(f"[Audio Server] Sirviendo versión transcodificada ({calidad}) desde caché: {ruta_cache}")
-                    return send_file(str(ruta_cache), mimetype='audio/mpeg', conditional=True, max_age=86400)
-                
-                # Si no está en caché, disparar transcodificación asíncrona y servir original inmediatamente
-                # para evitar el delay de ffmpeg bloqueando la petición.
-                current_app.logger.info(f"[Audio Server] Caché ({calidad}) no disponible para ID {cancion_id}. Encolando transcodificación y sirviendo original.")
-                enqueue(run_background_transcode, cancion_id, calidad)
-                
-            except Exception as e:
-                current_app.logger.error(f"[Audio Server] Error gestionando transcodificación asíncrona: {e}")
+    if not resolved_path:
+        current_app.logger.error(f"[Audio Server] Archivo no encontrado para id={cancion_id}. Ruta original: {original_path}")
+        return "Archivo de audio no encontrado", 404
 
     def _mime_for(p):
         """Devuelve el MIME type correcto en base a la extensión del archivo de audio."""
@@ -111,35 +104,51 @@ def servir_audio(cancion_id):
             '.ogg': 'audio/ogg'
         }.get(ext, 'audio/mpeg')
 
-    # 1. Intentar servir por la ruta exacta registrada directamente en disco
-    if os.path.exists(original_path):
-        current_app.logger.debug(f"[Audio Server] Sirviendo ruta física original: {original_path}")
-        return send_file(original_path, mimetype=_mime_for(original_path), conditional=True, max_age=86400)
+    # ─── PREFERENCIA DE CALIDAD DE AUDIO DEL USUARIO Y TRANSCODIFICACIÓN ───
+    from flask import session
+    usuario_id = session.get('user_id')
+    calidad = 'lossless'
+    if usuario_id:
+        from app.models import Usuario
+        usuario = db.session.get(Usuario, usuario_id)
+        if usuario:
+            calidad = usuario.audio_quality or 'lossless'
 
-    # 2. Conversión Heurística de rutas Windows montadas en volúmenes Docker/Linux
-    try:
-        p = original_path.replace('\\\\', '/').replace(':/', ':/')
-        # Detectar patrones del estilo 'G:/Musica/cancion.mp3' para mapearlas a '/music/'
-        m = re.match(r'^([A-Za-z]):/(.*)', p)
-        if m:
-            rest = m.group(2)
-            alt = '/music/' + rest
-            tried_paths.append(alt)
-            if os.path.exists(alt):
-                current_app.logger.debug(f"[Audio Server] Sirviendo ruta mapeada Docker: {alt}")
-                return send_file(alt, mimetype=_mime_for(alt), conditional=True, max_age=86400)
-    except Exception as e:
-        current_app.logger.error(f"[Audio Server] Error al mapear ruta Windows-Docker: {e}")
+    ext_original = Path(resolved_path).suffix.lower()
+    requires_transcode = (calidad != 'lossless') and (ext_original in ['.flac', '.wav', '.ogg'])
 
-    # 3. Intentar como ruta relativa en el directorio de trabajo local de la app
-    rel = os.path.join(os.getcwd(), original_path)
-    tried_paths.append(rel)
-    if os.path.exists(rel):
-        current_app.logger.debug(f"[Audio Server] Sirviendo ruta relativa: {rel}")
-        return send_file(rel, mimetype=_mime_for(rel), conditional=True, max_age=86400)
+    if requires_transcode:
+        # --- CASO 1: TRANSCODIFICACIÓN A MP3 (CON SOPORTE DE RANGOS) ---
+        from app.services.transcoder import obtener_ruta_cache, transcodificar_cancion
+        
+        ruta_final = obtener_ruta_cache(cancion_id, calidad=calidad)
+        if not (ruta_final.exists() and ruta_final.stat().st_size > 0):
+            current_app.logger.info(f"[Audio Server] Transcodificando al vuelo ID {cancion_id} a calidad {calidad}...")
+            transcodificar_cancion(cancion_id, calidad)
+            
+        if ruta_final.exists() and ruta_final.stat().st_size > 0:
+            current_app.logger.info(f"[Audio Server] Sirviendo versión transcodificada ({calidad}) con rangos: {ruta_final}")
+            resp = send_file(str(ruta_final), mimetype='audio/mpeg', conditional=True, max_age=86400)
+            resp.headers['Accept-Ranges'] = 'bytes'
+            return resp
+        else:
+            current_app.logger.warning(f"[Audio Server] Falló la transcodificación para ID {cancion_id}. Sirviendo original con rangos.")
+            resp = send_file(resolved_path, mimetype=_mime_for(resolved_path), conditional=True, max_age=86400)
+            resp.headers['Accept-Ranges'] = 'bytes'
+            return resp
 
-    current_app.logger.error(f"[Audio Server] Archivo no encontrado para id={cancion_id}. Intentos: {tried_paths}")
-    return "Archivo de audio no encontrado", 404
+    else:
+        # --- CASO 2: SERVIR ORIGINAL DIRECTAMENTE CON SOPORTE COMPLETO HTTP 206 BYTE-RANGE ---
+        # send_file con conditional=True gestiona nativamente cabeceras Range, Content-Range, 206 Partial Content y seeking
+        resp = send_file(
+            resolved_path,
+            mimetype=_mime_for(resolved_path),
+            conditional=True,
+            max_age=86400
+        )
+        resp.headers['Accept-Ranges'] = 'bytes'
+        return resp
+
 
 
 # ==============================================================================
@@ -166,32 +175,12 @@ def servir_lyrics(cancion_id):
         return response
     
     # Fallback físico directo si el scraping falló
-    original_path = cancion.ruta_archivo_lrc
-    tried_paths = [original_path]
+    if cancion.ruta_archivo_lrc:
+        resolved_lrc = resolver_ruta_fisica(cancion.ruta_archivo_lrc)
+        if resolved_lrc and os.path.exists(resolved_lrc):
+            return send_file(resolved_lrc, mimetype='text/plain', max_age=0)
 
-    if original_path and os.path.exists(original_path):
-        return send_file(original_path, mimetype='text/plain', max_age=0)
-
-    # Conversión de rutas Windows a volúmenes Docker
-    try:
-        if original_path:
-            p = original_path.replace('\\\\', '/').replace(':/', ':/')
-            m = re.match(r'^([A-Za-z]):/(.*)', p)
-            if m:
-                alt = '/music/' + m.group(2)
-                tried_paths.append(alt)
-                if os.path.exists(alt):
-                    return send_file(alt, mimetype='text/plain')
-    except Exception as e:
-        current_app.logger.error(f"[Lyrics Server] Error al mapear ruta física LRC: {e}")
-
-    # Intentar buscar bajo ruta relativa
-    rel = os.path.join(os.getcwd(), original_path or '')
-    tried_paths.append(rel)
-    if original_path and os.path.exists(rel):
-        return send_file(rel, mimetype='text/plain')
-
-    current_app.logger.warning(f"[Lyrics Server] Letras no encontradas para id={cancion_id}. Intentos: {tried_paths}")
+    current_app.logger.warning(f"[Lyrics Server] Letras no encontradas para id={cancion_id}.")
     return "Archivo de letras no encontrado", 404
 
 
@@ -304,44 +293,29 @@ def servir_album_art(cancion_id):
         elif os.path.exists(portada):
             img_source = portada
 
-    if not img_source:
-        if original_path and os.path.exists(original_path):
-            img_source = original_path
-        elif original_path:
+    if not img_source and original_path:
+        resolved_art = resolver_ruta_fisica(original_path)
+        if resolved_art and os.path.exists(resolved_art):
+            img_source = resolved_art
+        else:
             alt_path = Config.ALBUM_ART_FOLDER / Path(original_path).name
-            if alt_path.exists(): img_source = str(alt_path)
-        
-        if not img_source and hasattr(Config, 'MEDIA_FOLDER') and original_path:
-            old_path = Path(str(Config.MEDIA_FOLDER)) / 'album_art' / Path(original_path).name
-            if old_path.exists(): img_source = str(old_path)
-            
-        if not img_source and original_path:
-            docker_legacy = Path('/music/album_art') / Path(original_path).name
-            if docker_legacy.exists(): img_source = str(docker_legacy)
+            if alt_path.exists():
+                img_source = str(alt_path)
 
-        if not img_source:
-            try:
-                if original_path:
-                    p = original_path.replace('\\\\', '/').replace(':/', ':/')
-                    m = re.match(r'^([A-Za-z]):/(.*)', p)
-                    if m:
-                        alt = '/music/' + m.group(2)
-                        if os.path.exists(alt): img_source = alt
-            except Exception: pass
+    # Nivel 2: Búsqueda heurística inteligente en la carpeta física del audio
+    if not img_source and cancion.ruta_archivo_audio:
+        resolved_audio = resolver_ruta_fisica(cancion.ruta_archivo_audio)
+        if resolved_audio:
+            from app.services.coverart import find_cover_in_audio_dir
+            best_folder_cover = find_cover_in_audio_dir(resolved_audio)
+            if best_folder_cover and os.path.exists(best_folder_cover):
+                img_source = best_folder_cover
 
-        if not img_source:
-            rel = os.path.join(os.getcwd(), original_path or '')
-            if original_path and os.path.exists(rel): img_source = rel
-
-        # Nivel final: Extracción binaria como último recurso
-        if not img_source:
-            img_source = _extract_cover_from_file(cancion.ruta_archivo_audio)
-            if img_source is None and cancion.ruta_archivo_audio:
-                p = cancion.ruta_archivo_audio.replace('\\\\', '/').replace(':/', ':/')
-                m = re.match(r'^([A-Za-z]):/(.*)', p)
-                if m:
-                    alt = '/music/' + m.group(2)
-                    img_source = _extract_cover_from_file(alt)
+    # Nivel final: Extracción binaria incrustada como último recurso
+    if not img_source and cancion.ruta_archivo_audio:
+        resolved_audio = resolver_ruta_fisica(cancion.ruta_archivo_audio)
+        if resolved_audio:
+            img_source = _extract_cover_from_file(resolved_audio)
 
     # 3. Generar la miniatura si encontramos una fuente
     if img_source:
@@ -462,7 +436,7 @@ def service_worker():
     y permitir la interceptación de solicitudes en todo el dominio web.
     Desactiva las cabeceras HTTP de caché para forzar al navegador a verificar actualizaciones.
     """
-    response = make_response(send_from_directory('static/js', 'service-worker.js', mimetype='application/javascript'))
+    response = make_response(send_from_directory(current_app.static_folder, 'service-worker.js', mimetype='application/javascript'))
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     response.headers['Pragma'] = 'no-cache'
     response.headers['Expires'] = '0'

@@ -7,6 +7,7 @@ Todos los modelos son compatibles con SQLite (desarrollo local) y PostgreSQL (pr
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
+from sqlalchemy.orm import joinedload
 
 # Instancia central de SQLAlchemy. Se vinculará a la aplicación Flask en la fábrica (create_app).
 db = SQLAlchemy()
@@ -45,6 +46,18 @@ class Usuario(db.Model):
     def display_name(self):
         """Retorna el apodo público si existe; de lo contrario, el nombre de usuario base."""
         return self.nombre_publico or self.nombre_usuario
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'nombre_usuario': self.nombre_usuario,
+            'nombre_publico': self.nombre_publico,
+            'role': self.role,
+            'idioma_preferido': self.idioma_preferido,
+            'audio_quality': self.audio_quality,
+            'crossfade_enabled': self.crossfade_enabled,
+            'activity_tracking': self.activity_tracking,
+        }
 
     def __repr__(self):
         return f'<Usuario {self.nombre_usuario}>'
@@ -101,6 +114,17 @@ class Artista(db.Model):
     albums = db.relationship('Album', back_populates='artista', cascade='all, delete-orphan')
     canciones = db.relationship('Cancion', back_populates='artista_obj', cascade='all, delete-orphan')
 
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'nombre': self.nombre,
+            'nombre_normalizado': self.nombre_normalizado,
+            'musicbrainz_id': self.musicbrainz_id,
+            'foto_url': self.foto_url,
+            'biografia': self.biografia,
+            'fecha_creacion': self.fecha_creacion.isoformat() if self.fecha_creacion else None,
+        }
+
     def __repr__(self):
         return f'<Artista {self.nombre}>'
 
@@ -117,10 +141,22 @@ class Album(db.Model):
     portada_url = db.Column(db.String(500), nullable=True) # Ruta de la portada descargada localmente
     artista_id = db.Column(db.Integer, db.ForeignKey('artistas.id'), nullable=False)
     musicbrainz_id = db.Column(db.String(36), nullable=True, unique=True)
+    play_count = db.Column(db.Integer, default=0, nullable=False, index=True)
 
     # Relaciones
     artista = db.relationship('Artista', back_populates='albums')
     canciones = db.relationship('Cancion', back_populates='album_obj', cascade='all, delete-orphan')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'titulo': self.titulo,
+            'anio': self.anio,
+            'portada_url': self.portada_url,
+            'artista_id': self.artista_id,
+            'musicbrainz_id': self.musicbrainz_id,
+            'play_count': self.play_count or 0,
+        }
 
     def __repr__(self):
         return f'<Album {self.titulo} ({self.anio})>'
@@ -168,6 +204,27 @@ class Favorito(db.Model):
         return f'<Favorito usuario={self.usuario_id} cancion={self.cancion_id}>'
 
 
+class AlbumGuardado(db.Model):
+    """
+    Modelo de Álbumes Guardados en Biblioteca.
+    Vincula a un usuario con los álbumes que ha guardado en su biblioteca personal.
+    """
+    __tablename__ = 'albums_guardados'
+
+    id = db.Column(db.Integer, primary_key=True)
+    usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
+    album_id = db.Column(db.Integer, db.ForeignKey('albums.id'), nullable=False)
+    fecha_agregado = db.Column(db.DateTime, default=datetime.utcnow)
+
+    usuario = db.relationship('Usuario', backref=db.backref('albums_guardados', lazy='dynamic'))
+    album = db.relationship('Album', backref=db.backref('guardados', lazy='dynamic'))
+
+    __table_args__ = (db.UniqueConstraint('usuario_id', 'album_id', name='uq_usuario_album'),)
+
+    def __repr__(self):
+        return f'<AlbumGuardado usuario={self.usuario_id} album={self.album_id}>'
+
+
 # Tabla auxiliar de asociación muchos a muchos entre Colecciones y Canciones
 coleccion_canciones = db.Table(
     'coleccion_canciones',
@@ -191,6 +248,16 @@ class Coleccion(db.Model):
 
     usuario = db.relationship('Usuario', backref=db.backref('colecciones', lazy='dynamic'))
     canciones = db.relationship('Cancion', secondary=coleccion_canciones, backref='colecciones')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'nombre': self.nombre,
+            'descripcion': self.descripcion,
+            'portada_url': self.portada_url,
+            'usuario_id': self.usuario_id,
+            'fecha_creacion': self.fecha_creacion.isoformat() if self.fecha_creacion else None,
+        }
 
     def __repr__(self):
         return f'<Coleccion {self.nombre}>'
@@ -238,6 +305,22 @@ class DailyMix(db.Model):
     canciones = db.relationship('Cancion', secondary=daily_mix_canciones, lazy='select')
 
 
+    def to_dict(self):
+        from app.models import Cancion
+        canciones = db.session.query(Cancion)\
+            .options(joinedload(Cancion.artista_obj), joinedload(Cancion.album_obj))\
+            .join(daily_mix_canciones, daily_mix_canciones.c.cancion_id == Cancion.id)\
+            .filter(daily_mix_canciones.c.daily_mix_id == self.id)\
+            .all()
+        return {
+            'id': self.id,
+            'usuario_id': self.usuario_id,
+            'nombre': self.nombre,
+            'fecha': self.fecha.isoformat() if self.fecha else None,
+            'fecha_creacion': self.fecha_creacion.isoformat() if self.fecha_creacion else None,
+            'canciones': [c.to_dict() for c in canciones],
+        }
+
     def __repr__(self):
         return f'<DailyMix {self.nombre} {self.fecha}>'
 
@@ -279,6 +362,11 @@ class Cancion(db.Model):
     # Número de disco en álbumes dobles o boxsets
     numero_disco = db.Column(db.Integer, nullable=True)
 
+    # Contadores y métricas rápidas de reproducción (denormalized fast counters)
+    play_count = db.Column(db.Integer, default=0, nullable=False, index=True)
+    play_duration = db.Column(db.Integer, default=0, nullable=False)
+    last_played = db.Column(db.DateTime, nullable=True, index=True)
+
     # Relaciones directas con Artista y Álbum
     artista_obj = db.relationship('Artista', back_populates='canciones')
     album_obj = db.relationship('Album', back_populates='canciones')
@@ -295,11 +383,16 @@ class Cancion(db.Model):
             'id': self.id,
             'titulo': self.titulo,
             'artista': artista,
+            'artista_id': self.artista_id,
             'album': album,
+            'album_id': self.album_id,
+            'anio': self.album_obj.anio if self.album_obj else None,
             'duracion': self.duracion,
             'ruta_audio': self.ruta_archivo_audio,
             'ruta_lrc': self.ruta_archivo_lrc,
             'ruta_imagen': self.ruta_imagen_album,
+            'numero_pista': self.numero_pista,
+            'numero_disco': self.numero_disco,
             'genero': self.genero,
             'sample_rate': self.sample_rate,
             'bit_depth': self.bit_depth,
@@ -309,6 +402,10 @@ class Cancion(db.Model):
             'peak_level': self.peak_level,
             'rms_level': self.rms_level,
             'total_samples': self.total_samples,
-            'bit_rate': self.bit_rate
+            'bit_rate': self.bit_rate,
+            'play_count': self.play_count or 0,
+            'play_duration': self.play_duration or 0,
+            'last_played': self.last_played.isoformat() if self.last_played else None,
         }
         return data
+

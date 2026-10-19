@@ -1,0 +1,96 @@
+import { useEffect } from "react";
+import { Routes, Route, Navigate } from "react-router-dom";
+import { useAuth } from "./contexts/AuthContext";
+import Sidebar from "./components/Sidebar";
+import PlayerBar from "./components/PlayerBar";
+import RightPanel from "./components/RightPanel";
+import LoginPage from "./pages/LoginPage";
+import { ContextMenuProvider } from "./contexts/ContextMenuContext";
+import ContextMenu from "./components/ContextMenu";
+import AudioInfoModal from "./components/AudioInfoModal";
+import EditTagsModal from "./components/EditTagsModal";
+import DashboardPage from "./pages/DashboardPage";
+import ExplorePage from "./pages/ExplorePage";
+import AdminPage from "./pages/AdminPage";
+import ArtistDetailPage from "./pages/ArtistDetailPage";
+import AlbumDetailPage from "./pages/AlbumDetailPage";
+import ArtistsPage from "./pages/ArtistsPage";
+import AlbumsPage from "./pages/AlbumsPage";
+import ColeccionDetailPage from "./pages/ColeccionDetailPage";
+import ProfilePage from "./pages/ProfilePage";
+import LibraryPage from "./pages/LibraryPage";
+
+function AppContent() {
+  const { user } = useAuth();
+
+  // Suscripción en tiempo real a Server-Sent Events (SSE)
+  useEffect(() => {
+    if (!user) return;
+    const es = new EventSource("/api/events/stream");
+
+    es.addEventListener("library_updated", () => {
+      window.dispatchEvent(new Event("ducksound:library_updated"));
+    });
+
+    es.addEventListener("track_updated", () => {
+      window.dispatchEvent(new Event("ducksound:library_updated"));
+    });
+
+    return () => {
+      es.close();
+    };
+  }, [user]);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
+      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+        <Sidebar />
+        <main className="main-content">
+          <Routes>
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/explore" element={<ExplorePage />} />
+            <Route path="/artists" element={<ArtistsPage />} />
+            <Route path="/albums" element={<AlbumsPage />} />
+            {/* Redirects de rutas antiguas a Biblioteca */}
+            <Route path="/favorites" element={<Navigate to="/biblioteca" replace />} />
+            <Route path="/colecciones" element={<Navigate to="/biblioteca?tab=playlists" replace />} />
+            <Route path="/admin" element={<AdminPage />} />
+            <Route path="/artist/:id" element={<ArtistDetailPage />} />
+            <Route path="/album/:id" element={<AlbumDetailPage />} />
+            <Route path="/coleccion/:id" element={<ColeccionDetailPage />} />
+            <Route path="/profile" element={<ProfilePage />} />
+            <Route path="/biblioteca" element={<LibraryPage />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        </main>
+        <RightPanel />
+      </div>
+      <PlayerBar />
+      <ContextMenu />
+      <AudioInfoModal />
+      <EditTagsModal />
+    </div>
+  );
+}
+
+export default function App() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div style={{ display: "flex", height: "100vh", alignItems: "center", justifyContent: "center", background: "#1a1a1f" }}>
+        <div style={{ color: "#9ca3af" }}>Cargando...</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginPage />;
+  }
+
+  return (
+    <ContextMenuProvider>
+      <AppContent />
+    </ContextMenuProvider>
+  );
+}

@@ -19,4 +19,5 @@ from app import app, db
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8604))
     print(f"🎵 Iniciando DuckSound en el puerto {port}...")
-    app.run(host='0.0.0.0', port=port, debug=True)
+    debug_mode = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
+    app.run(host='0.0.0.0', port=port, debug=debug_mode)
