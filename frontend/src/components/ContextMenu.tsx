@@ -131,8 +131,7 @@ export default function ContextMenu() {
       // but since toggle is a clean action, we'll let the user see the change instantly.
       // We can also trigger a window event or simple state reload if we want page integration,
       // but for general tracklists, updating the like state is enough.
-      if (window.location.pathname.includes("/favorites")) {
-        // Simple reload or custom event to notify FavoritesPage
+      if (window.location.pathname.includes("/biblioteca") || window.location.pathname.includes("/favorites")) {
         window.dispatchEvent(new Event("ducksound:favorites_changed"));
       }
       closeMenu();

@@ -3,30 +3,39 @@
 ## Diagrama de Arquitectura
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      DuckSound Server                        │
-│                                                              │
-│  ┌─────────────┐    ┌──────────┐    ┌──────────────────┐    │
-│  │  Gunicorn    │    │  Redis   │    │   RQ Worker      │    │
-│  │  4 workers   │◀──▶│  Queue + │◀──▶│  (proceso       │    │
-│  │  2 threads   │    │  Cache   │    │   separado)      │    │
-│  │              │    └──────────┘    │                  │    │
-│  │  ├ routes/  │         │          │  ├ run_full_scan │    │
-│  │  │  main.py │         │          │  ├ run_quick_scan│    │
-│  │  │  audio.py│         │          │  ├ enriquecer    │    │
-│  │  │  api.py  │         │          │  └ descargar_lrc │    │
-│  │  │  admin.py│         │          └──────────────────┘    │
-│  │  └  browse.py         │                                  │
-│  └──────┬──────┘         │                                  │
-│         │                ▼                                  │
-│         ▼        ┌──────────┐                               │
-│  ┌──────────┐    │  /data   │                               │
-│  │PostgreSQL│    │ (letras, │                               │
-│  │(usuarios,│    │  covers) │                               │
-│  │  música, │    └──────────┘                               │
-│  │  stats)  │                                               │
-│  └──────────┘                                               │
-└─────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────┐
+│                        DuckSound Architecture                          │
+│                                                                        │
+│   ┌───────────────────────────────────────────────────────────────┐    │
+│   │                    React 18 SPA (Frontend)                    │    │
+│   │   TypeScript · Vite · Glassmorphism · NowPlaying Modal        │    │
+│   │   PlayerContext · ContextMenuContext · Realtime SSE Client    │    │
+│   └──────────────────────────────┬────────────────────────────────┘    │
+│                                  │ REST API / SSE / Audio 206          │
+│                                  ▼                                     │
+│   ┌───────────────────────────────────────────────────────────────┐    │
+│   │                  Flask 3.0 Backend Engine                     │    │
+│   │  ├ routes/                                                    │    │
+│   │  │  main.py · audio.py · api.py · admin.py · auth.py          │    │
+│   │  ├ services/                                                  │    │
+│   │  │  silence.py   (Gapless FFmpeg)                             │    │
+│   │  │  tagger.py    (In-App Tag Editor)                          │    │
+│   │  │  recipes.py   (Smart Mixes & Gap Rule)                     │    │
+│   │  │  coverart.py  (Semantic Aspect Ratio Ranking)              │    │
+│   │  │  color.py     (Pillow Dynamic Palette Extraction)          │    │
+│   │  │  events.py    (Server-Sent Events Bus)                     │    │
+│   │  │  watcher.py   (Real-time Library Watchdog)                 │    │
+│   │  │  scanner.py · metadata.py · lyrics.py · queue.py           │    │
+│   │  └────────────────────────────────────────────────────────────┘    │
+│                                  │                                     │
+│         ┌────────────────────────┴────────────────────────┐            │
+│         ▼                                                 ▼            │
+│  ┌──────────────┐                                  ┌─────────────┐     │
+│  │ SQLite (WAL) │                                  │    /data    │     │
+│  │ o PostgreSQL │                                  │  (lyrics,   │     │
+│  └──────────────┘                                  │   covers)   │     │
+│                                                    └─────────────┘     │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -35,52 +44,79 @@
 
 ```
 DuckSound/
-├── app.py                  # Punto de entrada de la aplicación Flask
-├── app/
-│   ├── __init__.py         # Factory create_app(), blueprints, smart_url_for()
-│   ├── models.py           # SQLAlchemy: Usuario, Artista, Album, Cancion, Playlist
+├── app.py                      # Punto de entrada de la aplicación Flask
+├── config.py                   # Configuración central (rutas, base de datos, CORS, versión)
+├── entrypoint.sh               # Migraciones automáticas + inicio de servicios
+├── Dockerfile                  # Multi-stage: Node 20 (Vite build) + Python 3.10-slim
+├── docker-compose.yml          # Despliegue unificado ultra-ligero
+├── requirements.txt            # Dependencias Python
+├── CHANGELOG.md                # Historial de versiones Keep a Changelog
+├── ARCHITECTURE.md             # Esta documentación técnica
+│
+├── app/                        # Backend Flask RESTful & SSE
+│   ├── __init__.py             # Factory create_app(), Blueprints, middleware
+│   ├── models.py               # SQLAlchemy: Usuario, Artista, Album, Cancion, AlbumGuardado, Favorito
 │   │
 │   ├── routes/
-│   │   ├── main.py         # Dashboard, perfil, letras, favoritos, artistas, álbumes
-│   │   ├── audio.py        # Streaming de audio, portadas, transcoding
-│   │   ├── api.py          # API JSON: canciones, info técnica, similares, playlists
-│   │   ├── admin.py        # Panel admin: escaneo, usuarios, estadísticas
-│   │   └── browse.py       # Exploración: géneros, artistas, álbumes, búsqueda
+│   │   ├── api.py              # Endpoints JSON: biblioteca, canciones, recetas, búsqueda fuzzy, tags
+│   │   ├── audio.py            # Streaming HTTP 206 con Byte-Ranges, portadas, letras
+│   │   ├── main.py             # Rutas base, detalle de álbumes, artistas, carpetas
+│   │   ├── admin.py            # Panel administrativo: escaneo, gestión, estadísticas
+│   │   └── auth.py             # Autenticación, tokens de sesión y CSRF
 │   │
-│   ├── services/
-│   │   ├── scanner.py      # Motor de escaneo completo e incremental (análisis paralelo)
-│   │   ├── audio_analyzer.py  # Análisis técnico: sample_rate, bit_depth, BPM, RMS, Peak
-│   │   ├── transcoder.py   # Transcodificación bajo demanda (MP3/OGG para baja calidad)
-│   │   ├── lyrics.py       # LRCLIB + Lyrics.ovh + Genius (descarga en 2do plano)
-│   │   ├── metadata.py     # MusicBrainz API (MBID, deduplicación, enriquecimiento)
-│   │   ├── recommender.py  # Motor de recomendaciones acústico-híbrido
-│   │   ├── queue.py        # Conexión Redis, RQ queue, enqueue helper
-│   │   └── tasks.py        # Funciones RQ: run_full_scan, run_quick_scan
-│   │
-│   ├── templates/          # 20+ templates Jinja2
-│   │   ├── base.html       # Layout principal + reproductor + modal Audio Quality
-│   │   ├── dashboard.html  # Página principal del usuario
-│   │   ├── profile.html    # Perfil, estadísticas, preferencias de calidad
-│   │   ├── admin/          # Panel de administración
-│   │   └── ...
-│   │
-│   └── static/
-│       ├── css/style.css   # Design system dark theme + responsive + audio-info grid
-│       ├── js/
-│       │   ├── player_parent.js   # Bridge iframe: controles, letras, cola, toast
-│       │   ├── player_frame.js    # Engine de audio: reproducción, crossfade, cola
-│       │   └── album_card_player.js  # Play desde tarjetas de álbum
-│       └── img/            # Logo SVG, favicon
+│   └── services/
+│       ├── silence.py          # FFmpeg silencedetect para True Gapless playback
+│       ├── tagger.py           # In-App Tagger (Mutagen ID3, FLAC, Vorbis, M4A)
+│       ├── recipes.py          # Recetas dinámicas, balance_mix (Gap Rule) y estaciones
+│       ├── coverart.py         # Ranking semántico de carátulas y aspecto 1:1
+│       ├── color.py            # Extracción cromática adaptativa con Pillow
+│       ├── events.py           # Bus en tiempo real con Server-Sent Events (SSE)
+│       ├── watcher.py          # Vigilancia reactiva de archivos en disco (Watchdog)
+│       ├── scanner.py          # Motor de escaneo completo e incremental
+│       ├── audio_analyzer.py   # Análisis acústico (BPM, RMS, Dynamic Range, Peak)
+│       ├── transcoder.py       # Transcodificación al vuelo con caché en disco
+│       ├── lyrics.py           # Descarga y sincronización de letras (LRCLIB, Genius)
+│       ├── metadata.py         # Integración y deduplicación con MusicBrainz
+│       ├── recommender.py      # Motor de recomendación por similitud acústica
+│       └── queue.py            # Cola de tareas asíncronas Redis / RQ
 │
-├── config.py               # Config: Docker/local, PostgreSQL, rutas, versión
-├── run_worker.py           # Entrypoint del worker RQ
-├── merge_duplicates.py     # Script de fusión de artistas/álbumes duplicados
-├── clean_db.py             # Script de limpieza de base de datos
-├── entrypoint.sh           # Migraciones automáticas + inicio de servicios
-├── Dockerfile              # Python 3.10-slim + libsndfile + ffmpeg
-├── docker-compose.yml      # 4 servicios: postgres + redis + web + worker
-├── CHANGELOG.md            # Historial de versiones
-└── requirements.txt        # Dependencias Python
+├── frontend/                   # Frontend SPA React 18
+│   ├── package.json            # Dependencias npm (React 18, Vite, Lucide, Tailwind)
+│   ├── vite.config.ts          # Configuración del bundler y proxy de desarrollo
+│   ├── index.html              # Shell HTML5 de la aplicación
+│   │
+│   └── src/
+│       ├── App.tsx             # Enrutamiento React Router y suscripción a eventos SSE
+│       ├── index.css           # Design system glassmorphism, temas y estilos globales
+│       │
+│       ├── contexts/
+│       │   ├── PlayerContext.tsx     # Estado global de audio, gapless, colas y volumen
+│       │   ├── AuthContext.tsx       # Ciclo de vida de autenticación y usuario
+│       │   └── ContextMenuContext.tsx # Menú contextual flotante interactivo
+│       │
+│       ├── components/
+│       │   ├── NowPlayingModal.tsx   # Modal inmersivo a pantalla completa con letras karaoke
+│       │   ├── EditTagsModal.tsx     # Modal de edición de etiquetas de audio en vivo
+│       │   ├── AudioInfoModal.tsx    # Modal de especificaciones técnicas y análisis acústico
+│       │   ├── PlayerBar.tsx         # Barra inferior de reproducción persistente
+│       │   ├── RightPanel.tsx        # Panel lateral (Ahora suena, letras y cola de reproducción)
+│       │   ├── Sidebar.tsx           # Navegación lateral persistente
+│       │   ├── SearchDialog.tsx      # Diálogo de búsqueda rápida
+│       │   └── ContextMenu.tsx       # Menú contextual de canciones y colecciones
+│       │
+│       └── pages/
+│           ├── LibraryPage.tsx       # Biblioteca unificada (Favoritos, Álbumes, Playlists)
+│           ├── DashboardPage.tsx     # Portada con mezclas inteligentes y novedades
+│           ├── AlbumDetailPage.tsx   # Vista de álbum con paleta adaptativa y multi-disco
+│           ├── ArtistDetailPage.tsx  # Vista de artista y discografía completa
+│           ├── FoldersPage.tsx       # Explorador físico de directorios musicales
+│           ├── ExplorePage.tsx       # Exploración por géneros y recomendaciones
+│           ├── ProfilePage.tsx       # Perfil, métricas y preferencias de usuario
+│           └── AdminPage.tsx         # Panel de control y administración del servidor
+│
+└── tests/                      # Suite de pruebas automatizadas
+    ├── test_backend_routes.py  # 21 tests de integración para rutas y servicios
+    └── test_normalizacion.py   # Tests de normalización y deduplicación
 ```
 
 ---
@@ -89,19 +125,17 @@ DuckSound/
 
 | Componente | Tecnología |
 |---|---|
+| Frontend | React 18, TypeScript, Vite, Glassmorphism CSS |
+| Estado Frontend | Context API (`PlayerContext`, `AuthContext`, `ContextMenuContext`) |
 | Backend | Flask 3.0, SQLAlchemy, Werkzeug |
-| Arquitectura | Blueprints modulares (`main`, `audio`, `api`, `admin`, `browse`) |
-| Base de datos | PostgreSQL 16 |
-| Cache / Queue | Redis 7 + RQ (Redis Queue) |
-| Audio parsing | Mutagen (cabeceras rápidas), TinyTag (duración), librosa/numpy (DSP avanzado, opcional) |
-| Transcodificación | ffmpeg (bajo demanda, en worker, basado en preferencia de calidad del usuario) |
-| APIs externas | MusicBrainz (MBID), Deezer (fotos/portadas), LRCLIB + Lyrics.ovh + Genius (letras) |
-| Traducción | LibreTranslate (primario) / Google Translate (fallback) |
-| Frontend | HTML5, CSS3 (custom design system dark), JavaScript vanilla, Jinja2 |
-| Reproductor | Arquitectura iframe + postMessage (persistente entre páginas) |
-| Servidor web | Gunicorn (4 workers, 2 threads, gthread) |
-| Contenedor | Docker + docker-compose (4 servicios) |
-| CI/CD | GitHub Actions (pytest + build Docker) |
+| Base de datos | SQLite 3 (WAL mode) / PostgreSQL 16 |
+| Cache / Cola | Redis 7 + RQ / Worker interno |
+| Streaming | HTTP 206 Partial Content (Byte-Ranges), Gapless con `silencedetect` |
+| Editor de Tags | Mutagen (ID3v2, Vorbis Comments, MP4 Atoms) |
+| Carátulas y Color | Pillow (extracción cromática y ranking semántico de imagen) |
+| Eventos Push | Server-Sent Events (SSE) y Watchdog |
+| Servidor web | Gunicorn (gthread) |
+| Contenedores | Docker (multi-stage build) y Docker Compose |
 
 ---
 

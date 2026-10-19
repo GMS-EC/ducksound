@@ -2,10 +2,11 @@
 
 **DuckSound** es un servidor de streaming de música personal, self-hosted, con interfaz web estilo Spotify, reproductor persistente, letras automatizadas desde múltiples fuentes, deduplicación con MusicBrainz, análisis técnico de calidad de audio y recomendaciones inteligentes.
 
-![Flask](https://img.shields.io/badge/Flask-3.0-blue)
+![React](https://img.shields.io/badge/React-18-blue)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-blue)
+![Vite](https://img.shields.io/badge/Vite-5-purple)
+![Flask](https://img.shields.io/badge/Flask-3.0-lightgrey)
 ![Python](https://img.shields.io/badge/Python-3.10+-yellow)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue)
-![Redis](https://img.shields.io/badge/Redis-7-red)
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue)
 ![License](https://img.shields.io/badge/License-AGPL_v3-blue)
 [![Sponsor](https://img.shields.io/badge/Sponsor-Takenos-orange)](https://app.takenos.com/pay/b6515307-a660-446d-8117-3214a4a89a80)
@@ -21,15 +22,16 @@
 
 ## ✨ Funcionalidades
 
-### 🎵 Reproductor de música
-- **Reproductor persistente** con arquitectura iframe/postMessage — la música no se detiene al navegar
-- Controles: play/pausa, siguiente, anterior, avance/retroceso 10s, barra de progreso clickeable
-- **Cola de reproducción dinámica** con hasta 20 canciones en vista previa
-- **Shuffle, Repeat** (ninguno / una / todas) y **Crossfade** configurable
-- **Atajos de teclado**: Espacio (play), ←/→ (10s), Ctrl+←/→ (anterior/siguiente), ↑/↓ (volumen), M (mute), S (shuffle), R (repeat)
-- **Color adaptativo** dinámico según portada del álbum
-- Soporte para **MP3, FLAC, WAV, M4A y OGG**
-- **Panel de Calidad de Audio** — botón ⓘ en el reproductor muestra specs técnicas en tiempo real: Sample Rate, Bit Depth, Channels, Nyquist, Dynamic Range, Peak, RMS, Total Samples, Bit Rate y Tempo (BPM)
+### 🎵 Reproductor de música & Frontend React 18 SPA
+- **Single Page Application (SPA)** reactiva construida en React 18, TypeScript y Vite con diseño Glassmorphism y fluidez total.
+- **Reproducción Continua (True Gapless)** y streaming HTTP con soporte `206 Partial Content` (byte ranges).
+- **Vista de Pantalla Completa (`NowPlayingModal`)** con carátula cuadrada protegida, letras sincronizadas estilo Karaoke y buscador interactivo.
+- **Cola de reproducción dinámica** con hasta 20 canciones en vista previa, shuffle y repeat.
+- **Editor de Etiquetas en Caliente (`EditTagsModal`)** para editar metadatos en disco y base de datos directamente desde la web.
+- **Atajos de teclado**: Espacio (play), ←/→ (10s), Ctrl+←/→ (anterior/siguiente), ↑/↓ (volumen), M (mute), S (shuffle), R (repeat).
+- **Color adaptativo** dinámico según portada del álbum extraído con Pillow.
+- Soporte para **MP3, FLAC, WAV, M4A y OGG**.
+- **Panel de Calidad de Audio** — botón ⓘ en el reproductor muestra specs técnicas en tiempo real: Sample Rate, Bit Depth, Channels, Nyquist, Dynamic Range, Peak, RMS, Total Samples, Bit Rate y Tempo (BPM).
 
 ### 🎧 Calidad de audio seleccionable
 - **Hi-Res Lossless** — stream directo del archivo original (FLAC, WAV) sin ninguna pérdida de calidad
