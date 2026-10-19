@@ -828,11 +828,16 @@ function LyricsTab() {
 
   // Sync refs to avoid stale closures in keydown listener
   const activeIndexRef = useRef(0);
-  activeIndexRef.current = activeIndex;
   const syncLinesRef = useRef<LyricLine[]>([]);
-  syncLinesRef.current = syncLines;
   const currentTimeRef = useRef(0);
-  currentTimeRef.current = currentTime;
+  const stampCurrentLineRef = useRef<() => void>(() => {});
+  const triggerUndoRef = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    activeIndexRef.current = activeIndex;
+    syncLinesRef.current = syncLines;
+    currentTimeRef.current = currentTime;
+  }, [activeIndex, syncLines, currentTime]);
 
   // Stamping and Undo implementations
   const stampCurrentLine = () => {
@@ -920,6 +925,11 @@ function LyricsTab() {
     }
   };
 
+  useEffect(() => {
+    stampCurrentLineRef.current = stampCurrentLine;
+    triggerUndoRef.current = triggerUndo;
+  }, [stampCurrentLine, triggerUndo]);
+
   // Keyboard shortcut listener
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -932,7 +942,7 @@ function LyricsTab() {
 
       if (e.key === " ") {
         e.preventDefault();
-        stampCurrentLine();
+        stampCurrentLineRef.current();
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
         if (activeIndexRef.current > 0) {
@@ -945,7 +955,7 @@ function LyricsTab() {
         }
       } else if (e.key === "Backspace") {
         e.preventDefault();
-        triggerUndo();
+        triggerUndoRef.current();
       }
     };
 

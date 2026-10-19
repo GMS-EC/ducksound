@@ -53,7 +53,7 @@ class AudioFileHandler:
             with self.app.app_context():
                 from app.services.scanner import escanear_carpeta_audio
                 print("👀 [DuckSound Watchdog] Cambio detectado en biblioteca. Ejecutando actualización incremental...")
-                escanear_carpeta_audio(Config.AUDIO_FOLDER, es_rapido=True)
+                escanear_carpeta_audio()
                 print("✅ [DuckSound Watchdog] Biblioteca actualizada automáticamente con éxito.")
                 try:
                     from app.services.events import event_bus

@@ -21,30 +21,15 @@ export default function ContextMenu() {
   const [creating, setCreating] = useState(false);
 
   // Position adjustments to prevent off-screen rendering
-  const [adjustedPos, setAdjustedPos] = useState({ left: 0, top: 0 });
-
-  useEffect(() => {
-    if (!menuPosition) return;
-
-    // Viewport coordinates
-    const { x, y } = menuPosition;
-    const menuWidth = 200;
-    const menuHeight = 220; // approximate main menu height
-    const screenWidth = window.innerWidth;
-    const screenHeight = window.innerHeight;
-
-    let left = x;
-    let top = y;
-
-    if (x + menuWidth > screenWidth) {
-      left = screenWidth - menuWidth - 10;
-    }
-    if (y + menuHeight > screenHeight) {
-      top = screenHeight - menuHeight - 10;
-    }
-
-    setAdjustedPos({ left: Math.max(0, left), top: Math.max(0, top) });
-  }, [menuPosition]);
+  const menuWidth = 200;
+  const menuHeight = 220;
+  const screenWidth = typeof window !== "undefined" ? window.innerWidth : 1920;
+  const screenHeight = typeof window !== "undefined" ? window.innerHeight : 1080;
+  const rawX = menuPosition?.x ?? 0;
+  const rawY = menuPosition?.y ?? 0;
+  const left = rawX + menuWidth > screenWidth ? screenWidth - menuWidth - 10 : rawX;
+  const top = rawY + menuHeight > screenHeight ? screenHeight - menuHeight - 10 : rawY;
+  const adjustedPos = { left: Math.max(0, left), top: Math.max(0, top) };
 
   // Fetch favorite status and collections
   useEffect(() => {

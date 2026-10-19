@@ -13,6 +13,42 @@ interface LyricCue {
   translation?: string;
 }
 
+const parseLRC = (txt: string): LyricCue[] => {
+  const lines = txt.split(/\r?\n/);
+  const timeTag = /\[(\d+):(\d{2})(?:\.(\d{1,3}))?\]/g;
+
+  let hasTimestamps = false;
+  for (const raw of lines) {
+    if (raw.match(/\[\d+:\d{2}/)) { hasTimestamps = true; break; }
+  }
+
+  const cues: LyricCue[] = [];
+  if (hasTimestamps) {
+    for (const raw of lines) {
+      let match;
+      const tags: number[] = [];
+      timeTag.lastIndex = 0;
+      while ((match = timeTag.exec(raw)) !== null) {
+        const m = parseInt(match[1], 10);
+        const s = parseInt(match[2], 10);
+        const ms = match[3] ? parseInt((match[3] + "00").slice(0, 3), 10) : 0;
+        tags.push(m * 60 + s + ms / 1000);
+      }
+      const text = raw.replace(timeTag, "").trim();
+      if (!tags.length || !text || /contribuciones/i.test(text)) continue;
+      for (const t of tags) cues.push({ start: t, text });
+    }
+    return cues.sort((a, b) => (a.start || 0) - (b.start || 0));
+  } else {
+    for (const raw of lines) {
+      const text = raw.trim();
+      if (!text || /contribuciones/i.test(text)) continue;
+      cues.push({ start: null, text });
+    }
+    return cues;
+  }
+};
+
 export default function RightPanel() {
   const [tab, setTab] = useState<Tab>("nowplaying");
   const navigate = useNavigate();
@@ -25,20 +61,27 @@ export default function RightPanel() {
 
   const [coverError, setCoverError] = useState(false);
   const [useFallbackArt, setUseFallbackArt] = useState(false);
-
-  useEffect(() => {
-    setCoverError(false);
-    setUseFallbackArt(false);
-  }, [currentSong?.id]);
-
-  const primaryCover = currentSong?.cover_url;
-  const albumArtEndpoint = currentSong ? `/album-art/${currentSong.id}?size=small` : "";
-  const coverSrc = (!useFallbackArt && primaryCover) ? primaryCover : albumArtEndpoint;
-
   const [targetLang, setTargetLang] = useState("es");
   const [translating, setTranslating] = useState(false);
   const [translated, setTranslated] = useState(false);
   const [showTranslation, setShowTranslation] = useState(false);
+  const [prevSongId, setPrevSongId] = useState(currentSong?.id);
+
+  if (currentSong?.id !== prevSongId) {
+    setPrevSongId(currentSong?.id);
+    setCoverError(false);
+    setUseFallbackArt(false);
+    if (!currentSong) {
+      setLyrics(null);
+      setLyricType(null);
+      setTranslated(false);
+      setShowTranslation(false);
+    }
+  }
+
+  const primaryCover = currentSong?.cover_url;
+  const albumArtEndpoint = currentSong ? `/album-art/${currentSong.id}?size=small` : "";
+  const coverSrc = (!useFallbackArt && primaryCover) ? primaryCover : albumArtEndpoint;
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -53,13 +96,7 @@ export default function RightPanel() {
 
   // Fetch lyrics when currentSong changes
   useEffect(() => {
-    if (!currentSong) {
-      setLyrics(null);
-      setLyricType(null);
-      setTranslated(false);
-      setShowTranslation(false);
-      return;
-    }
+    if (!currentSong) return;
 
     setLoadingLyrics(true);
     setLyricError(null);
@@ -82,41 +119,6 @@ export default function RightPanel() {
       .finally(() => setLoadingLyrics(false));
   }, [currentSong]);
 
-  const parseLRC = (txt: string): LyricCue[] => {
-    const lines = txt.split(/\r?\n/);
-    const timeTag = /\[(\d+):(\d{2})(?:\.(\d{1,3}))?\]/g;
-
-    let hasTimestamps = false;
-    for (const raw of lines) {
-      if (raw.match(/\[\d+:\d{2}/)) { hasTimestamps = true; break; }
-    }
-
-    const cues: LyricCue[] = [];
-    if (hasTimestamps) {
-      for (const raw of lines) {
-        let match;
-        const tags: number[] = [];
-        timeTag.lastIndex = 0;
-        while ((match = timeTag.exec(raw)) !== null) {
-          const m = parseInt(match[1], 10);
-          const s = parseInt(match[2], 10);
-          const ms = match[3] ? parseInt((match[3] + "00").slice(0, 3), 10) : 0;
-          tags.push(m * 60 + s + ms / 1000);
-        }
-        const text = raw.replace(timeTag, "").trim();
-        if (!tags.length || !text || /contribuciones/i.test(text)) continue;
-        for (const t of tags) cues.push({ start: t, text });
-      }
-      return cues.sort((a, b) => (a.start || 0) - (b.start || 0));
-    } else {
-      for (const raw of lines) {
-        const text = raw.trim();
-        if (!text || /contribuciones/i.test(text)) continue;
-        cues.push({ start: null, text });
-      }
-      return cues;
-    }
-  };
 
   const handleTranslate = async () => {
     if (!lyrics || lyrics.length === 0 || translating) return;

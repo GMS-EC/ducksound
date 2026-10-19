@@ -54,6 +54,10 @@ Thumbs.db
 
 # Base de datos y assets autogenerados
 *.db
+*.db-journal
+*.db-wal
+*.db-shm
+data/
 album_art/
 
 # Secretos

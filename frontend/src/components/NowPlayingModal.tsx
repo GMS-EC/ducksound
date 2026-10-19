@@ -16,6 +16,45 @@ interface NowPlayingModalProps {
   onClose: () => void;
 }
 
+const parseLRC = (txt: string): LyricCue[] => {
+  const lines = txt.split(/\r?\n/);
+  const timeTag = /\[(\d+):(\d{2})(?:\.(\d{1,3}))?\]/g;
+  let hasTimestamps = false;
+  for (const raw of lines) {
+    if (raw.match(/\[\d+:\d{2}/)) {
+      hasTimestamps = true;
+      break;
+    }
+  }
+  const cues: LyricCue[] = [];
+  if (hasTimestamps) {
+    for (const raw of lines) {
+      let match;
+      const tags: number[] = [];
+      timeTag.lastIndex = 0;
+      while ((match = timeTag.exec(raw)) !== null) {
+        const m = parseInt(match[1], 10);
+        const s = parseInt(match[2], 10);
+        const ms = match[3] ? parseInt((match[3] + "00").slice(0, 3), 10) : 0;
+        tags.push(m * 60 + s + ms / 1000);
+      }
+      const text = raw.replace(timeTag, "").trim();
+      if (!tags.length || !text) continue;
+      if (/\b(?:contributors|contribuciones|lyrics|embed)\b/i.test(text) && text.length < 80) continue;
+      for (const t of tags) cues.push({ start: t, text });
+    }
+    return cues.sort((a, b) => (a.start || 0) - (b.start || 0));
+  } else {
+    for (const raw of lines) {
+      const text = raw.trim();
+      if (!text) continue;
+      if (/\b(?:contributors|contribuciones|lyrics|embed)\b/i.test(text) && text.length < 80) continue;
+      cues.push({ start: null, text });
+    }
+    return cues;
+  }
+};
+
 export default function NowPlayingModal({ isOpen, onClose }: NowPlayingModalProps) {
   const {
     currentSong, playing, currentTime, duration,
@@ -29,12 +68,14 @@ export default function NowPlayingModal({ isOpen, onClose }: NowPlayingModalProp
   const [isLiked, setIsLiked] = useState(false);
   const [coverError, setCoverError] = useState(false);
   const [useFallbackArt, setUseFallbackArt] = useState(false);
+  const [prevSongId, setPrevSongId] = useState(currentSong?.id);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  if (currentSong?.id !== prevSongId) {
+    setPrevSongId(currentSong?.id);
     setCoverError(false);
     setUseFallbackArt(false);
-  }, [currentSong?.id]);
+  }
 
   const primaryCover = currentSong?.cover_url;
   const albumArtEndpoint = currentSong ? `/album-art/${currentSong.id}?size=large` : "";
@@ -73,45 +114,6 @@ export default function NowPlayingModal({ isOpen, onClose }: NowPlayingModalProp
       .catch(() => {});
   }, [currentSong, isOpen]);
 
-  // Parse LRC Helper
-  const parseLRC = (txt: string): LyricCue[] => {
-    const lines = txt.split(/\r?\n/);
-    const timeTag = /\[(\d+):(\d{2})(?:\.(\d{1,3}))?\]/g;
-    let hasTimestamps = false;
-    for (const raw of lines) {
-      if (raw.match(/\[\d+:\d{2}/)) {
-        hasTimestamps = true;
-        break;
-      }
-    }
-    const cues: LyricCue[] = [];
-    if (hasTimestamps) {
-      for (const raw of lines) {
-        let match;
-        const tags: number[] = [];
-        timeTag.lastIndex = 0;
-        while ((match = timeTag.exec(raw)) !== null) {
-          const m = parseInt(match[1], 10);
-          const s = parseInt(match[2], 10);
-          const ms = match[3] ? parseInt((match[3] + "00").slice(0, 3), 10) : 0;
-          tags.push(m * 60 + s + ms / 1000);
-        }
-        const text = raw.replace(timeTag, "").trim();
-        if (!tags.length || !text) continue;
-        if (/\b(?:contributors|contribuciones|lyrics|embed)\b/i.test(text) && text.length < 80) continue;
-        for (const t of tags) cues.push({ start: t, text });
-      }
-      return cues.sort((a, b) => (a.start || 0) - (b.start || 0));
-    } else {
-      for (const raw of lines) {
-        const text = raw.trim();
-        if (!text) continue;
-        if (/\b(?:contributors|contribuciones|lyrics|embed)\b/i.test(text) && text.length < 80) continue;
-        cues.push({ start: null, text });
-      }
-      return cues;
-    }
-  };
 
   // Keyboard shortcut ESC to close
   useEffect(() => {

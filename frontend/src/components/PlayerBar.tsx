@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Volume2, VolumeX, Maximize2 } from "lucide-react";
 import { usePlayer } from "../contexts/PlayerContext";
 import Equalizer from "./Equalizer";
@@ -16,10 +16,13 @@ export default function PlayerBar() {
     toggleShuffle, toggleRepeat,
   } = usePlayer();
 
-  useEffect(() => {
+  const [prevSongId, setPrevSongId] = useState(currentSong?.id);
+
+  if (currentSong?.id !== prevSongId) {
+    setPrevSongId(currentSong?.id);
     setCoverError(false);
     setUseFallbackArt(false);
-  }, [currentSong?.id]);
+  }
 
   const primaryCover = currentSong?.cover_url;
   const albumArtEndpoint = currentSong ? `/album-art/${currentSong.id}?size=small` : "";

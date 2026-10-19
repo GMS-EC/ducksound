@@ -58,15 +58,27 @@ def _is_admin_session():
     return bool(usuario and usuario.is_admin())
 
 
+def _validate_admin_token(auth_header):
+    """
+    Valida un token administrativo enviado en el encabezado Authorization.
+    Permite llamadas programáticas o de servicios con Bearer token.
+    """
+    if not auth_header:
+        return False
+    token = auth_header.replace('Bearer ', '').strip()
+    admin_token = os.environ.get('ADMIN_SECRET_TOKEN')
+    return bool(admin_token and token == admin_token)
+
+
 def _is_admin_request():
     """Validador retrocompatible de peticiones administrativas."""
-    return _is_admin_session()
+    return _is_admin_session() or _validate_admin_token(request.headers.get('Authorization'))
 
 
 @admin_bp.before_request
 def require_admin():
     """Valida automáticamente que todas las peticiones a rutas de administración pertenezcan a un administrador."""
-    if not _is_admin_session():
+    if not _is_admin_session() and not _validate_admin_token(request.headers.get('Authorization')):
         return jsonify({'error': 'Unauthorized', 'message': 'Acceso administrativo denegado'}), 401
 
 

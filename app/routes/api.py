@@ -23,7 +23,7 @@ import requests
 from datetime import datetime, timedelta
 from urllib.parse import quote
 
-from flask import Blueprint, jsonify, request, session, url_for, current_app, Response
+from flask import Blueprint, jsonify, request, session, url_for, current_app, Response, redirect
 from sqlalchemy import func, desc
 from app.models import db, Usuario, Artista, Album, Playlist, Cancion, Favorito, Coleccion, DailyMix, HistorialEscucha, SesionActiva, AlbumGuardado
 from app.services.queue import get_connection as get_redis_connection
